@@ -1,14 +1,16 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-import AddSales from './pages/AddSales.jsx'
-import Sales from './pages/Sales.jsx'
-import Login from './pages/Login.jsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import App from "./App.jsx";
+import AddSales from "./pages/AddSales.jsx";
+import Sales from "./pages/Sales.jsx";
+import Login from "./pages/Login.jsx";
+import AddPurchase from "./pages/AddPurchase.jsx";
+import Purchase from "./pages/Purchase.jsx";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./Layout";
 import ProtectedRoute from "./ProtectedRoute.jsx";
-createRoot(document.getElementById('root')).render(
+createRoot(document.getElementById("root")).render(
   <BrowserRouter>
     <Routes>
       {/* Public Route */}
@@ -25,7 +27,9 @@ createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/sales" element={<Sales />} />
         <Route path="/addsales" element={<AddSales />} />
+        <Route path="/purchase" element={<Purchase />} />
+        <Route path="/addpurchase" element={<AddPurchase />} />
       </Route>
     </Routes>
-  </BrowserRouter>
-)
+  </BrowserRouter>,
+);
