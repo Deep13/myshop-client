@@ -9,10 +9,12 @@ export default function Login() {
   const [name, setname] = useState("");
   const [password, setPassword] = useState("");
   const [responseMsg, setResponseMsg] = useState("");
-  // 🔥 If already logged in → redirect to home
+  const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+
+  // If already logged in → redirect
   useEffect(() => {
     if (isLoggedIn) {
-      navigate("/");
+      navigate(isMobile ? "/m/sale" : "/");
     }
     userRef.current.focus();
   }, []);
@@ -32,8 +34,8 @@ export default function Login() {
         // Save in localStorage
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.setItem("auth", "true");
-        // redirect...
-        window.location.href = "/";
+        // redirect — mobile goes to /m/sale, desktop goes to /
+        window.location.href = isMobile ? "/m/sale" : "/";
       } else {
         setResponseMsg(data.message);
       }

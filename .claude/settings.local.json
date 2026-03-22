@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite:*)",
+      "Read(//d/Development/React/**)",
+      "Bash(ls /c/xampp/htdocs/myshop-backend/*.php)",
+      "Bash(find c:xampphtdocsmyshop-backend -type f \\\\\\(-name *.sql -o -name *.sql.php -o -name *migration* -o -name *schema* \\\\\\))",
+      "Bash(php seed_dummy_data.php)",
+      "Bash(\"c:/xampp/php/php.exe\" \"c:/xampp/htdocs/myshop-backend/seed_dummy_data.php\")",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(curl -s \"http://localhost/myshop-backend/get_purchase_report.php?from=2026-01-01&to=2026-03-20\")"
+    ]
+  }
+}

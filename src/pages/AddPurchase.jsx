@@ -1,1244 +1,852 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Form, Table, Button, Card, Modal } from "react-bootstrap";
-import { IoMdAddCircle } from "react-icons/io";
 import { useSearchParams } from "react-router-dom";
-const API_BASE = "http://localhost/myshop-backend";
-const todayISO = () => new Date().toISOString().slice(0, 10);
-function SimpleModal({ show, title, onClose, children, footer }) {
-  React.useEffect(() => {
-    if (!show) return;
+import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload } from "react-icons/fi";
+import * as XLSX from "xlsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
 
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
+/* ── helpers ── */
+const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
+const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
+const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+function calcRowAmt(row) {
+  return asNum(row.qty) * asNum(row.purchasePrice);
+}
 
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [show, onClose]);
-
-  if (!show) return null;
-
+function SectionHead({ num, title, icon, actions }) {
   return (
-    <div
-      onMouseDown={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.45)",
-        zIndex: 99999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      <div
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          width: 520,
-          maxWidth: "100%",
-          background: "#fff",
-          borderRadius: 12,
-          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "12px 14px",
-            borderBottom: "1px solid #eee",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <div style={{ fontWeight: 700 }}>{title}</div>
-          <button
-            onClick={onClose}
-            style={{
-              border: "1px solid #ddd",
-              background: "#fff",
-              borderRadius: 8,
-              padding: "6px 10px",
-              cursor: "pointer",
-            }}
-          >
-            ✕
-          </button>
+    <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{num}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ color: C.brand }}>{icon}</span>
+          <span style={{ fontWeight: 800, fontSize: 15, color: C.text }}>{title}</span>
         </div>
-
-        <div style={{ padding: 14 }}>{children}</div>
-
-        {footer ? (
-          <div
-            style={{
-              padding: 14,
-              borderTop: "1px solid #eee",
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 10,
-            }}
-          >
-            {footer}
-          </div>
-        ) : null}
       </div>
+      {actions && <div style={{ display: "flex", gap: 8 }}>{actions}</div>}
     </div>
   );
 }
-// -------------------- Initial Item Master --------------------
-const INITIAL_ITEM_MASTER = [
-  { id: 1, code: "PCM650", name: "Paracetamol 650", hsn: "30045010", mrp: 50, salePrice: 48, purchasePrice: 40, tax: 12 },
-  { id: 2, code: "CET10", name: "Cetirizine 10", hsn: "30049099", mrp: 30, salePrice: 28, purchasePrice: 22, tax: 5 },
-  { id: 3, code: "OMP20", name: "Omeprazole 20", hsn: "30049099", mrp: 90, salePrice: 85, purchasePrice: 70, tax: 12 },
-];
-
-// -------------------- helpers --------------------
-const asNum = (x) => {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const blankRow = () => ({
-  itemName: "",
-  code: "",
-  hsn: "",
-  batchNo: "",
-  expDate: "",
-  mrp: "",
-  qty: "",
-  purchasePrice: "",
-  salePrice: "",
-  discount: "",
-  tax: "",
-  amount: "",
-});
-
-function parsePercentOrNumber(val) {
-  const s = String(val ?? "").trim();
-  if (!s) return { type: null, value: 0 };
-  if (s.endsWith("%")) {
-    const num = Number(s.slice(0, -1));
-    return { type: "percent", value: Number.isFinite(num) ? num : 0 };
-  }
-  const num = Number(s);
-  return { type: "number", value: Number.isFinite(num) ? num : 0 };
-}
-
-// Net amount before tax (qty * purchasePrice - discount)
-function calcRowAmount(row) {
-  const qty = asNum(row.qty);
-  const unit = asNum(row.purchasePrice);
-  const base = qty * unit;
-
-  const hasDisc = Boolean(String(row.discount || "").trim());
-  if (!hasDisc) return base;
-
-  const d = parsePercentOrNumber(row.discount);
-  let discValue = 0;
-  if (d.type === "percent") discValue = (base * d.value) / 100;
-  else discValue = d.value;
-
-  if (discValue > base) discValue = base;
-  return base - discValue;
-}
 
 export default function AddPurchase() {
-  // -------------------- Item Master as state (editable) --------------------
-  const [itemMaster, setItemMaster] = useState(INITIAL_ITEM_MASTER);
-  // -------------------- Payments --------------------
-  const [searchParams] = useSearchParams();
-  const purchaseId = searchParams.get("purchaseId"); // string or null
+  const [sp] = useSearchParams();
+  const purchaseId = sp.get("purchaseId");
   const isEdit = Boolean(purchaseId);
-  useEffect(() => {
-    if (!purchaseId) return;
 
-    const loadPurchase = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/get_purchase.php?id=${purchaseId}`);
-        const json = await res.json();
+  /* item master — loaded from DB */
+  const [itemMaster, setItemMaster] = useState([]);
+  const [masterLoaded, setMasterLoaded] = useState(false);
 
-        if (!res.ok || json.status !== "success") {
-          throw new Error(json.message || "Failed to load purchase");
-        }
-
-        const h = json.header;
-        const items = json.items;
-        const payments = json.payments || [];
-
-        // ---------- header ----------
-        setSelectedDistributor({
-          id: h.distributor_id,
-          name: h.distributor_name,
-          gstin: h.distributor_gstin,
-        });
-        setDistQuery(`${h.distributor_name}${h.distributor_gstin ? ` (${h.distributor_gstin})` : ""}`);
-        setGstin(h.distributor_gstin || "");
-
-        setBillNo(h.bill_no);
-        setBillDate(h.bill_date);
-        setDueDate(h.due_date);
-
-        // ---------- items ----------
-        setRows(
-          items.map((r) => ({
-            itemName: r.item_name,
-            code: r.item_code,
-            hsn: r.hsn,
-            batchNo: r.batch_no,
-            expDate: r.exp_date,
-            mrp: r.mrp,
-            qty: r.qty,
-            purchasePrice: r.purchase_price,
-            salePrice: r.sale_price,
-            discount: r.discount,
-            tax: r.tax,
-            amount: r.amount,
-          })),
-        );
-
-        // ---------- round off ----------
-        setRoundOffEnabled(Boolean(h.round_off_enabled));
-        setRoundOffDiff(Number(h.round_off_diff));
-        setRoundedGrandTotal(Number(h.rounded_grand_total));
-
-        // ---------- payments ----------
-        setPayments(
-          payments.map((p) => ({
-            id: p.id,
-            date: p.pay_date,
-            mode: p.mode,
-            amount: p.amount,
-            reference: p.reference_no,
-            note: p.note,
-          })),
-        );
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-
-    loadPurchase();
-  }, [purchaseId]);
-
-  const itemSuggestions = (text) => {
-    const q = String(text || "")
-      .trim()
-      .toLowerCase();
-    if (!q) return [];
-    return itemMaster
-      .filter((it) => {
-        const name = (it.name || "").toLowerCase();
-        const code = (it.code || "").toLowerCase();
-        const hsn = String(it.hsn || "").toLowerCase();
-        return name.includes(q) || code.includes(q) || hsn.includes(q);
-      })
-      .slice(0, 8);
-  };
-
-  const findItemByExactCode = (text) => {
-    const q = String(text || "")
-      .trim()
-      .toLowerCase();
-    if (!q) return null;
-    return (
-      itemMaster.find(
-        (it) =>
-          String(it.code || "")
-            .trim()
-            .toLowerCase() === q,
-      ) || null
-    );
-  };
-
-  // -------------------- Distributor / Bill info --------------------
-  const [distributorName, setDistributorName] = useState("");
+  /* distributor */
+  const [selDist, setSelDist] = useState(null);
+  const [distQ, setDistQ] = useState("");
+  const [distSug, setDistSug] = useState([]);
+  const [showDistSug, setShowDistSug] = useState(false);
   const [gstin, setGstin] = useState("");
+  const distRef = useRef(null);
+
+  /* bill info */
   const [billNo, setBillNo] = useState("");
   const [billDate, setBillDate] = useState(todayISO());
   const [dueDate, setDueDate] = useState(todayISO());
+  const [billType, setBillType] = useState("GST"); // GST | NON-GST
+  const isGST = billType === "GST";
 
-  // -------------------- Items table --------------------
+  /* rows */
   const [rows, setRows] = useState([blankRow(), blankRow()]);
-  const itemNameRefs = useRef({});
-  const batchRefs = useRef({}); // ✅ focus to batch on select
-  const [activeItemRow, setActiveItemRow] = useState(null);
+  const itemRefs = useRef({});
+  const batchRefs = useRef({});
+  const [activeSug, setActiveSug] = useState(null);
+  const [itemSearch, setItemSearch] = useState({}); // per-row search text
 
-  useEffect(() => {
-    const close = () => setActiveItemRow(null);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, []);
+  /* payment */
+  const [multiPay, setMultiPay] = useState(false);
+  const [payMode, setPayMode] = useState("Cash");
+  const [received, setReceived] = useState("0");
+  const [recTouched, setRecTouched] = useState(false);
+  const [payments, setPayments] = useState([{ type: "Cash", amount: "" }]);
 
-  const updateRow = (index, patch) => {
-    setRows((prev) => {
-      const next = [...prev];
-      const updated = { ...next[index], ...patch };
-      updated.amount = calcRowAmount(updated).toFixed(2);
-      next[index] = updated;
-      return next;
-    });
-  };
+  /* round off */
+  const [roundOff, setRoundOff] = useState(true);
 
-  // ✅ Item pick -> focus batch field same row (no jump to next row)
-  const onPickItem = (rowIndex, item) => {
-    setActiveItemRow(null);
+  /* upload / import */
+  const [showMapping, setShowMapping] = useState(false);
+  const [uploadHeaders, setUploadHeaders] = useState([]);
+  const [uploadRows, setUploadRows] = useState([]);
+  const [colMap, setColMap] = useState({});
+  const [uploadFile, setUploadFile] = useState(null);
+  const fileInputRef = useRef(null);
 
-    const filled = {
-      itemName: item.name,
-      code: item.code,
-      hsn: item.hsn || "",
-      mrp: item.mrp ?? "",
-      salePrice: item.salePrice ?? "",
-      purchasePrice: item.purchasePrice ?? "",
-      tax: item.tax ?? "",
-      qty: 1,
-      discount: "",
-      // Keep existing batch/exp if already typed, else blank
-      batchNo: rows[rowIndex]?.batchNo || "",
-      expDate: rows[rowIndex]?.expDate || "",
-    };
-
-    setRows((prev) => {
-      const next = [...prev];
-      next[rowIndex] = { ...next[rowIndex], ...filled };
-      next[rowIndex].amount = calcRowAmount(next[rowIndex]).toFixed(2);
-
-      // ensure one extra blank row exists
-      if (rowIndex === next.length - 1) next.push(blankRow());
-      return next;
-    });
-
-    // focus batch field
-    setTimeout(() => {
-      batchRefs.current[rowIndex]?.focus();
-    }, 0);
-  };
-
-  // -------------------- Totals --------------------
-  const subTotal = useMemo(() => rows.reduce((acc, r) => acc + asNum(r.amount), 0), [rows]);
-
-  const taxTotal = useMemo(() => {
-    return rows.reduce((acc, r) => {
-      const amt = asNum(r.amount);
-      const taxPct = asNum(r.tax);
-      return acc + (amt * taxPct) / 100;
-    }, 0);
-  }, [rows]);
-
-  const grandTotal = useMemo(() => subTotal + taxTotal, [subTotal, taxTotal]);
-  // -------------------- Round Off --------------------
-  const [roundOffEnabled, setRoundOffEnabled] = useState(true);
-  const [roundOffDiff, setRoundOffDiff] = useState(0);
-  const [roundedGrandTotal, setRoundedGrandTotal] = useState(grandTotal);
-
-  useEffect(() => {
-    if (!roundOffEnabled) return;
-    setRoundedGrandTotal(Math.ceil(grandTotal));
-  }, [grandTotal, roundOffEnabled]);
-
-  useEffect(() => {
-    // return roundedGrandTotal - grandTotal;
-    setRoundOffDiff(roundedGrandTotal - grandTotal);
-  }, [roundedGrandTotal, grandTotal]);
-  const [multiPayment, setMultiPayment] = useState(false);
-
-  const [paymentType, setPaymentType] = useState("Cash"); // single payment mode
-  const [received, setReceived] = useState("0"); // single received amount (string)
-
-  const blankPayment = () => ({ type: "Cash", amount: "" });
-  const [payments, setPayments] = useState([blankPayment()]); // multi payments
-  const [receivedTouched, setReceivedTouched] = useState(false);
-
-  useEffect(() => {
-    if (!multiPayment && !receivedTouched) {
-      setReceived(roundedGrandTotal.toFixed(2));
-    }
-  }, [roundedGrandTotal, multiPayment, receivedTouched]);
-
-  const sumPayments = useMemo(() => {
-    return payments.reduce((acc, p) => acc + asNum(p.amount), 0);
-  }, [payments]);
-
-  const totalPaid = useMemo(() => {
-    return multiPayment ? sumPayments : asNum(received);
-  }, [multiPayment, sumPayments, received]);
-  const balance = useMemo(() => {
-    return asNum(roundedGrandTotal) - asNum(totalPaid);
-  }, [roundedGrandTotal, totalPaid]);
-
-  const updatePaymentRow = (idx, patch) => {
-    setPayments((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], ...patch };
-      return next;
-    });
-  };
-
-  const addMorePayment = () => setPayments((prev) => [...prev, blankPayment()]);
-  const removePayment = (idx) => setPayments((prev) => prev.filter((_, i) => i !== idx));
-
-  // -------------------- Add Item Modal --------------------
+  /* ui */
+  const [saving, setSaving] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
-  const [newItem, setNewItem] = useState({
-    itemName: "",
-    itemCode: "",
-    batchNo: "",
-    expDate: "",
-    hsn: "",
-    mrp: "",
-    salePrice: "",
-    purchasePrice: "",
-    qty: 1,
-    tax: "",
-    is_primary: true, // ✅ NEW
-  });
-
-  const resetNewItem = () =>
-    setNewItem({
-      itemName: "",
-      itemCode: "",
-      batchNo: "",
-      expDate: "",
-      hsn: "",
-      mrp: "",
-      salePrice: "",
-      purchasePrice: "",
-      qty: 1,
-      tax: "",
-      is_primary: true, // ✅ NEW
-    });
-
-  const openAddItem = () => {
-    resetNewItem();
-    setShowAddItem(true);
-  };
-
-  const closeAddItem = () => {
-    console.log("Closing Add Item Modal");
-    setShowAddItem(false);
-  };
-  const [selectedDistributor, setSelectedDistributor] = useState(null); // {id,name,gstin,phone}
-  const onSelectDistributor = (d) => {
-    setSelectedDistributor(d);
-    setDistributorName(d.name);
-    setGstin(d.gstin || "");
-    setDistQuery(`${d.name}${d.gstin ? ` (${d.gstin})` : ""}`);
-    setShowDistSug(false);
-  };
-  const enforceDistributorSelection = () => {
-    if (!selectedDistributor) {
-      setDistQuery("");
-      setDistributorName("");
-      setGstin("");
-    }
-  };
   const [showAddDist, setShowAddDist] = useState(false);
   const [newDist, setNewDist] = useState({ name: "", gstin: "", phone: "" });
-  const openAddDistributor = () => {
-    setNewDist({ name: "", gstin: "", phone: "" });
-    setShowAddDist(true);
-  };
+  const [newItem, setNewItem] = useState(blankNewItem());
 
-  const saveNewDistributor = async () => {
-    const name = newDist.name.trim();
-    if (!name) return alert("Distributor name required");
-
-    const res = await fetch(`${API_BASE}/add_distributor.php`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        gstin: newDist.gstin.trim(),
-        phone: newDist.phone.trim(),
-      }),
-    });
-
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || json.status !== "success") {
-      alert(json.message || "Failed to add distributor");
-      return;
-    }
-
-    // Auto-select newly created distributor
-    const created = json.data;
-    onSelectDistributor(created);
-
-    setShowAddDist(false);
-  };
-
-  const addItemToMasterAndInsert = async () => {
-    const name = String(newItem.itemName || "").trim();
-    const code = String(newItem.itemCode || "").trim();
-
-    if (!name) return alert("Item Name is required");
-    if (!code) return alert("Item Code is required");
-
-    const codeLower = code.toLowerCase();
-    const exists = itemMaster.some((it) => String(it.code || "").toLowerCase() === codeLower);
-    if (exists) return alert("Item Code already exists. Use a unique code.");
-    try {
-      const res = await fetch(`${API_BASE}/add_item.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          code,
-          hsn: String(newItem.hsn || "").trim(),
-          mrp: asNum(newItem.mrp),
-          salePrice: asNum(newItem.salePrice),
-          purchasePrice: asNum(newItem.purchasePrice),
-          tax: asNum(newItem.tax),
-          is_primary: !!newItem.is_primary,
-        }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.status !== "success") {
-        throw new Error(json.message || "Failed to add item");
-      }
-
-      const created = json.data;
-
-      // Add to local master
-      setItemMaster((prev) => [created, ...prev]);
-
-      // Insert into current row
-      setRows((prev) => {
-        const next = [...prev];
-        const idx = typeof activeItemRow === "number" && activeItemRow >= 0 && activeItemRow < next.length ? activeItemRow : next.findIndex((r) => !String(r.itemName || "").trim());
-
-        const target = idx >= 0 ? idx : next.length - 1;
-
-        next[target] = {
-          ...next[target],
-          itemName: created.name,
-          code: created.code,
-          hsn: created.hsn || "",
-          mrp: created.mrp ?? "",
-          salePrice: created.salePrice ?? "",
-          purchasePrice: created.purchasePrice ?? "",
-          tax: created.tax,
-          qty: 1,
-          discount: "",
-        };
-
-        next[target].amount = calcRowAmount(next[target]).toFixed(2);
-        if (target === next.length - 1) next.push(blankRow());
-
-        setTimeout(() => batchRefs.current[target]?.focus(), 0);
-        return next;
-      });
-
-      setShowAddItem(false);
-    } catch (e) {
-      alert(e.message || "Failed");
-    }
-  };
-
-  // -------------------- Save Purchase (JSON) --------------------
-  const [saving, setSaving] = useState(false);
-  const [distQuery, setDistQuery] = useState("");
-  const [distSug, setDistSug] = useState([]);
-  const [showDistSug, setShowDistSug] = useState(false);
-  const distBoxRef = useRef(null);
-
+  /* ── Load item master from DB ── */
   useEffect(() => {
-    const onDocClick = (e) => {
-      if (!distBoxRef.current) return;
-      if (!distBoxRef.current.contains(e.target)) setShowDistSug(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    (async () => {
+      try {
+        const r = await fetch(`${API}/get_items_all.php?limit=500`);
+        const j = await r.json();
+        if (j.status === "success") { setItemMaster(j.data || []); setMasterLoaded(true); }
+      } catch { setMasterLoaded(true); }
+    })();
   }, []);
 
+  /* ── Load for edit ── */
   useEffect(() => {
-    const q = distQuery.trim();
-    if (!q) {
-      setDistSug([]);
-      return;
-    }
-
-    const t = setTimeout(async () => {
+    if (!purchaseId || !masterLoaded) return;
+    (async () => {
       try {
-        const res = await fetch(`${API_BASE}/get_distributors.php?q=${encodeURIComponent(q)}&limit=8`);
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json.status === "success") setDistSug(json.data || []);
-        else setDistSug([]);
-      } catch {
-        setDistSug([]);
-      }
+        const r = await fetch(`${API}/get_purchase.php?id=${purchaseId}`);
+        const j = await r.json();
+        if (!r.ok || j.status !== "success") throw new Error(j.message);
+        const h = j.header;
+        setSelDist({ id: h.distributor_id, name: h.distributor_name, gstin: h.distributor_gstin });
+        setDistQ(`${h.distributor_name}${h.distributor_gstin ? ` (${h.distributor_gstin})` : ""}`);
+        setGstin(h.distributor_gstin || "");
+        setBillNo(h.bill_no); setBillDate(h.bill_date); setDueDate(h.due_date || "");
+        setBillType(h.bill_type || "GST");
+        setRows(j.items.map((r) => ({
+          itemId: asNum(r.item_id), itemName: r.item_name, code: r.item_code,
+          hsn: r.hsn, batchNo: r.batch_no, expDate: r.exp_date || "",
+          mrp: r.mrp, qty: r.qty, purchasePrice: r.purchase_price,
+          salePrice: r.sale_price, discount: r.discount, tax: r.tax, amount: r.amount,
+        })));
+        setRoundOff(Boolean(h.round_off_enabled));
+        if (j.payments?.length) setPayments(j.payments.map((p) => ({ type: p.mode, amount: String(p.amount) })));
+      } catch (e) { alert(e.message || "Failed to load"); }
+    })();
+  }, [purchaseId, masterLoaded]);
+
+  /* ── Item search filtering ── */
+  const getSug = (text) => {
+    const q = String(text || "").trim().toLowerCase();
+    if (!q) return [];
+    return itemMaster.filter((it) => it.name.toLowerCase().includes(q) || it.code.toLowerCase().includes(q) || (it.hsn || "").includes(q)).slice(0, 10);
+  };
+
+  const updRow = (i, patch) => setRows((prev) => {
+    const n = [...prev];
+    const u = { ...n[i], ...patch };
+    u.amount = calcRowAmt(u).toFixed(2);
+    n[i] = u;
+    return n;
+  });
+
+  /* Recalculate amounts when billType changes */
+  useEffect(() => {
+    setRows((prev) => prev.map((r) => ({ ...r, amount: calcRowAmt(r).toFixed(2) })));
+  }, [isGST]);
+
+  const pickItem = (ri, item) => {
+    setActiveSug(null);
+    setItemSearch((p) => ({ ...p, [ri]: "" }));
+    const fill = {
+      itemId: item.id, itemName: item.name, code: item.code,
+      hsn: item.hsn || "", mrp: item.mrp ?? "", salePrice: item.salePrice ?? "",
+      purchasePrice: item.purchasePrice ?? "", tax: item.tax ?? "", qty: 1, discount: "",
+    };
+    setRows((prev) => {
+      const n = [...prev];
+      n[ri] = { ...n[ri], ...fill };
+      n[ri].amount = calcRowAmt(n[ri]).toFixed(2);
+      if (ri === n.length - 1) n.push(blankRow());
+      return n;
+    });
+    setTimeout(() => batchRefs.current[ri]?.focus(), 0);
+  };
+
+  /* close sug on outside click */
+  useEffect(() => { const c = () => setActiveSug(null); document.addEventListener("click", c); return () => document.removeEventListener("click", c); }, []);
+
+  /* ── Distributor search ── */
+  useEffect(() => { const c = (e) => { if (!distRef.current?.contains(e.target)) setShowDistSug(false); }; document.addEventListener("mousedown", c); return () => document.removeEventListener("mousedown", c); }, []);
+  useEffect(() => {
+    const q = distQ.trim(); if (!q) { setDistSug([]); return; }
+    const t = setTimeout(async () => {
+      try { const r = await fetch(`${API}/get_distributors.php?q=${encodeURIComponent(q)}&limit=8`); const j = await r.json().catch(() => ({})); setDistSug(r.ok && j.status === "success" ? (j.data || []) : []); } catch { setDistSug([]); }
     }, 250);
-
     return () => clearTimeout(t);
-  }, [distQuery]);
+  }, [distQ]);
 
-  const onSavePurchase = async () => {
-    if (isEdit) {
-      await updatePurchase();
+  const pickDist = (d) => { setSelDist(d); setGstin(d.gstin || ""); setDistQ(`${d.name}${d.gstin ? ` (${d.gstin})` : ""}`); setShowDistSug(false); };
+
+  /* ── Totals ── */
+  const subTotal = useMemo(() => rows.reduce((a, r) => a + asNum(r.amount), 0), [rows]);
+  const taxTotal = useMemo(() => isGST ? rows.reduce((a, r) => a + (asNum(r.amount) * asNum(r.tax)) / 100, 0) : 0, [rows, isGST]);
+  const grandTotal = useMemo(() => subTotal + taxTotal, [subTotal, taxTotal]);
+  const roundedTotal = useMemo(() => roundOff ? Math.ceil(grandTotal) : grandTotal, [grandTotal, roundOff]);
+  const roundDiff = useMemo(() => roundedTotal - grandTotal, [roundedTotal, grandTotal]);
+  const sumPay = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
+  const totalPaid = useMemo(() => multiPay ? sumPay : asNum(received), [multiPay, sumPay, received]);
+  const balance = useMemo(() => roundedTotal - totalPaid, [roundedTotal, totalPaid]);
+  useEffect(() => { if (!multiPay && !recTouched) setReceived(roundedTotal.toFixed(2)); }, [roundedTotal, multiPay, recTouched]);
+
+  /* ── Save distributor ── */
+  const saveDist = async () => {
+    const name = newDist.name.trim(); if (!name) return alert("Name required");
+    const r = await fetch(`${API}/add_distributor.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, gstin: newDist.gstin.trim(), phone: newDist.phone.trim() }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.status !== "success") return alert(j.message || "Failed");
+    pickDist(j.data); setShowAddDist(false);
+  };
+
+  /* ── Save item to master ── */
+  const saveNewItem = async () => {
+    const name = newItem.itemName.trim(), code = newItem.itemCode.trim();
+    if (!name) return alert("Item name required");
+    if (!code) return alert("Item code required");
+    try {
+      const r = await fetch(`${API}/add_item.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, code, hsn: newItem.hsn.trim(), mrp: asNum(newItem.mrp), salePrice: asNum(newItem.salePrice), purchasePrice: asNum(newItem.purchasePrice), tax: asNum(newItem.tax), is_primary: !!newItem.is_primary }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      const created = j.data;
+      setItemMaster((p) => [created, ...p]);
+      setShowAddItem(false);
+      setNewItem(blankNewItem());
+    } catch (e) { alert(e.message || "Failed"); }
+  };
+
+  /* ── Upload bill file ── */
+  const OUR_COLS = [
+    { key: "itemName", label: "Item Name", required: true },
+    { key: "code", label: "Item Code" },
+    { key: "hsn", label: "HSN" },
+    { key: "batchNo", label: "Batch No" },
+    { key: "expDate", label: "Expiry Date" },
+    { key: "mrp", label: "MRP" },
+    { key: "qty", label: "Qty", required: true },
+    { key: "purchasePrice", label: "Purchase Price", required: true },
+    { key: "salePrice", label: "Sale Price" },
+    { key: "tax", label: "Tax %" },
+  ];
+
+  const DIST_DETECT_KEYS = ["distributor", "supplier", "vendor", "party", "company", "firm"];
+  const GSTIN_PATTERN = /\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}/;
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadFile(file);
+    const ext = file.name.split(".").pop().toLowerCase();
+
+    if (["xlsx", "xls", "csv"].includes(ext)) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+          if (json.length < 2) return alert("File appears empty or has no data rows.");
+
+          const headers = json[0].map((h) => String(h).trim());
+          const dataRows = json.slice(1).filter((r) => r.some((c) => String(c).trim()));
+          setUploadHeaders(headers);
+          setUploadRows(dataRows);
+
+          // Auto-detect column mapping
+          const autoMap = {};
+          const lowerHeaders = headers.map((h) => h.toLowerCase());
+          const matchers = [
+            { key: "itemName", patterns: ["item", "product", "name", "description", "particular", "medicine"] },
+            { key: "code", patterns: ["code", "sku", "item code", "product code"] },
+            { key: "hsn", patterns: ["hsn", "sac", "hsn/sac"] },
+            { key: "batchNo", patterns: ["batch", "lot", "batch no"] },
+            { key: "expDate", patterns: ["exp", "expiry", "expiry date", "exp date", "best before"] },
+            { key: "mrp", patterns: ["mrp", "m.r.p", "max retail"] },
+            { key: "qty", patterns: ["qty", "quantity", "pcs", "nos", "units"] },
+            { key: "purchasePrice", patterns: ["rate", "price", "purchase", "cost", "buy", "purchase price", "unit price"] },
+            { key: "salePrice", patterns: ["sale", "sell", "selling", "sale price", "selling price", "sp"] },
+            { key: "tax", patterns: ["tax", "gst", "gst%", "tax%", "tax rate", "gst rate"] },
+          ];
+          for (const m of matchers) {
+            const idx = lowerHeaders.findIndex((h) => m.patterns.some((p) => h === p || h.includes(p)));
+            if (idx >= 0) autoMap[m.key] = idx;
+          }
+          setColMap(autoMap);
+
+          // Try to detect distributor from file metadata or first rows
+          tryDetectDistributor(json, headers);
+
+          setShowMapping(true);
+        } catch (err) {
+          alert("Failed to parse file: " + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
     } else {
-      await createPurchase();
+      // Image/PDF — just upload for reference, show alert
+      uploadFileToServer(file);
+    }
+    e.target.value = "";
+  };
+
+  const tryDetectDistributor = (json, headers) => {
+    // Look for GSTIN pattern or distributor name in the first few rows
+    const searchArea = json.slice(0, 5).flat().map((c) => String(c));
+    for (const cell of searchArea) {
+      const gstMatch = cell.match(GSTIN_PATTERN);
+      if (gstMatch) {
+        // Try to find distributor by GSTIN
+        (async () => {
+          try {
+            const r = await fetch(`${API}/get_distributors.php?q=${encodeURIComponent(gstMatch[0])}&limit=1`);
+            const j = await r.json().catch(() => ({}));
+            if (j.status === "success" && j.data?.length) pickDist(j.data[0]);
+          } catch {}
+        })();
+        return;
+      }
     }
   };
 
-  const createPurchase = async () => {
+  const uploadFileToServer = async (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await fetch(`${API}/upload_bill.php`, { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (j.status !== "success") alert(j.message || "Upload failed");
+    } catch { alert("Upload failed"); }
+  };
+
+  const applyMapping = () => {
+    // Validate required columns are mapped
+    const missing = OUR_COLS.filter((c) => c.required && colMap[c.key] === undefined);
+    if (missing.length) return alert(`Please map: ${missing.map((c) => c.label).join(", ")}`);
+
+    const newRows = uploadRows.map((row) => {
+      const r = blankRow();
+      for (const col of OUR_COLS) {
+        if (colMap[col.key] !== undefined) {
+          let val = row[colMap[col.key]];
+          if (val instanceof Date) val = val.toISOString().slice(0, 10);
+          else val = String(val ?? "").trim();
+          r[col.key] = val;
+        }
+      }
+      // Try to match item from master by name or code
+      const nameL = (r.itemName || "").toLowerCase();
+      const codeL = (r.code || "").toLowerCase();
+      const match = itemMaster.find((it) =>
+        it.code.toLowerCase() === codeL ||
+        it.name.toLowerCase() === nameL ||
+        it.name.toLowerCase().includes(nameL) ||
+        nameL.includes(it.name.toLowerCase())
+      );
+      if (match) {
+        r.itemId = match.id;
+        r.itemName = match.name;
+        r.code = match.code;
+        r.hsn = r.hsn || match.hsn || "";
+        r.mrp = r.mrp || String(match.mrp || "");
+        r.salePrice = r.salePrice || String(match.salePrice || "");
+        r.purchasePrice = r.purchasePrice || String(match.purchasePrice || "");
+        r.tax = r.tax || String(match.tax || "");
+      }
+      r.amount = calcRowAmt(r).toFixed(2);
+      return r;
+    }).filter((r) => r.itemName);
+
+    if (!newRows.length) return alert("No valid rows found after mapping.");
+    setRows([...newRows, blankRow()]);
+    setShowMapping(false);
+    // Upload file for reference
+    if (uploadFile) uploadFileToServer(uploadFile);
+  };
+
+  /* ── Main save ── */
+  const onSave = async () => {
+    if (!selDist) return alert("Please select a distributor");
+    if (!billNo.trim()) return alert("Bill number is required");
+    const cleanRows = rows.map((r) => ({
+      itemName: String(r.itemName || "").trim(), code: String(r.code || "").trim(),
+      hsn: String(r.hsn || "").trim(), batchNo: String(r.batchNo || "").trim(),
+      expDate: r.expDate || "", mrp: asNum(r.mrp), qty: asNum(r.qty),
+      purchasePrice: asNum(r.purchasePrice), salePrice: asNum(r.salePrice),
+      discount: String(r.discount || "").trim(), tax: isGST ? asNum(r.tax) : 0,
+      amount: asNum(r.amount),
+    })).filter((r) => r.itemName && r.qty > 0);
+    if (!cleanRows.length) return alert("Add at least one item");
+    // Validate all items are from master
+    for (const r of cleanRows) {
+      if (!itemMaster.some((it) => it.code === r.code)) return alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`);
+    }
+    const payList = multiPay ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0) : [{ type: payMode, amount: asNum(received) }];
+    const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+    const totals = { subTotal: asNum(subTotal), taxTotal: asNum(taxTotal), grandTotal: asNum(grandTotal), roundOffEnabled: roundOff, roundOffDiff: asNum(roundDiff), roundedGrandTotal: asNum(roundedTotal) };
+    const base = { distributorId: selDist.id, distributorName: selDist.name, gstin: gstin.trim(), billNo: billNo.trim(), billDate, dueDate, billType, rows: cleanRows, totals, payments: payList };
     try {
       setSaving(true);
-
-      if (!selectedDistributor) return alert("Please select a Distributor from suggestions.");
-
-      if (!billNo.trim()) return alert("Bill No required");
-
-      const cleanRows = rows
-        .map((r) => ({
-          itemName: String(r.itemName || "").trim(),
-          code: String(r.code || "").trim(),
-          hsn: String(r.hsn || "").trim(),
-          batchNo: String(r.batchNo || "").trim(),
-          expDate: r.expDate || "",
-          mrp: asNum(r.mrp),
-          qty: asNum(r.qty),
-          purchasePrice: asNum(r.purchasePrice),
-          salePrice: asNum(r.salePrice),
-          discount: String(r.discount || "").trim(),
-          tax: asNum(r.tax),
-          amount: asNum(r.amount),
-        }))
-        .filter((r) => r.itemName && r.qty > 0);
-
-      if (!cleanRows.length) return alert("Add at least 1 item.");
-
-      const paymentList = multiPayment ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0) : [{ type: paymentType, amount: asNum(received) }];
-      if (paymentList.length === 0) return alert("Enter payment amount.");
-      if (paymentList.some((p) => p.amount < 0)) return alert("Payment cannot be negative.");
-      const user = await localStorage.getItem("user");
-      const userObj = user ? JSON.parse(user) : null;
-
-      const payload = {
-        distributorId: selectedDistributor.id,
-        distributorName: selectedDistributor.name,
-        gstin: gstin.trim(),
-        billNo: billNo.trim(),
-        billDate,
-        dueDate,
-        rows: cleanRows,
-        totals: {
-          subTotal: asNum(subTotal),
-          taxTotal: asNum(taxTotal),
-          grandTotal: asNum(grandTotal),
-          roundOffEnabled,
-          roundOffDiff: asNum(roundOffDiff),
-          roundedGrandTotal: asNum(roundedGrandTotal),
-        },
-        payments: paymentList,
-        createdBy: userObj?.id, // TODO: replace with actual logged in user ID
-      };
-
-      const res = await fetch(`${API_BASE}/save_purchase.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.status !== "success") throw new Error(json.message || "Save failed");
-      const purchaseId = json.purchaseId;
-
-      // save payments (if any amount > 0)
-      for (const p of paymentList) {
-        if (!p.amount || p.amount <= 0) continue;
-
-        await fetch(`${API_BASE}/add_purchase_payment.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            distributorId: selectedDistributor.id,
-            purchaseId,
-            payDate: billDate, // default
-            mode: p.type,
-            amount: p.amount,
-            referenceNo: "",
-            note: "",
-          }),
-        });
+      if (isEdit) {
+        const r = await fetch(`${API}/update_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, purchaseId: Number(purchaseId), updatedBy: user?.id || 1 }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
+        alert("Purchase Updated!"); window.location.href = "/purchase";
+      } else {
+        const r = await fetch(`${API}/save_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, createdBy: user?.id || 1 }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.status !== "success") throw new Error(j.message || "Save failed");
+        const newId = j.purchaseId;
+        for (const p of payList) {
+          if (!p.amount || p.amount <= 0) continue;
+          await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "" }) });
+        }
+        alert("Purchase Saved!"); window.location.href = "/purchase";
       }
-
-      alert(`Purchase Saved! ID: ${json.purchaseId}`);
-      setRows([blankRow(), blankRow()]);
-      window.location.href = `/`; // redirect to view page
-    } catch (e) {
-      alert(e.message || "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-  const updatePurchase = async () => {
-    try {
-      setSaving(true);
-
-      if (!selectedDistributor) return alert("Please select a Distributor from suggestions.");
-
-      if (!billNo.trim()) return alert("Bill No required");
-
-      const cleanRows = rows
-        .map((r) => ({
-          itemName: String(r.itemName || "").trim(),
-          code: String(r.code || "").trim(),
-          hsn: String(r.hsn || "").trim(),
-          batchNo: String(r.batchNo || "").trim(),
-          expDate: r.expDate || "",
-          mrp: asNum(r.mrp),
-          qty: asNum(r.qty),
-          purchasePrice: asNum(r.purchasePrice),
-          salePrice: asNum(r.salePrice),
-          discount: String(r.discount || "").trim(),
-          tax: asNum(r.tax),
-          amount: asNum(r.amount),
-        }))
-        .filter((r) => r.itemName && r.qty > 0);
-
-      if (!cleanRows.length) return alert("Add at least 1 item.");
-
-      const paymentList = multiPayment ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0) : [{ type: paymentType, amount: asNum(received) }];
-      if (paymentList.length === 0) return alert("Enter payment amount.");
-      if (paymentList.some((p) => p.amount < 0)) return alert("Payment cannot be negative.");
-      const user = await localStorage.getItem("user");
-      const userObj = user ? JSON.parse(user) : null;
-
-      const payload = {
-        purchaseId: Number(purchaseId), // from URL ?purchaseId=10
-        distributorId: selectedDistributor.id,
-        distributorName: selectedDistributor.name,
-        gstin: gstin.trim(),
-        billNo: billNo.trim(),
-        billDate,
-        dueDate,
-        rows: cleanRows,
-        totals: {
-          subTotal: asNum(subTotal),
-          taxTotal: asNum(taxTotal),
-          grandTotal: asNum(grandTotal),
-          roundOffEnabled,
-          roundOffDiff: asNum(roundOffDiff),
-          roundedGrandTotal: asNum(roundedGrandTotal),
-        },
-        payments: paymentList,
-        updatedBy: userObj?.id, // TODO: replace with actual logged in user ID
-      };
-
-      const res = await fetch(`${API_BASE}/update_purchase.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.status !== "success") {
-        throw new Error(json.message || "Update failed");
-      }
-
-      alert(`Purchase Updated! ID: ${json.purchaseId}`);
-
-      window.location.href = `/purchase`;
-    } catch (e) {
-      alert(e.message || "Update failed");
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { alert(e.message || "Failed"); } finally { setSaving(false); }
   };
 
+  // Ctrl+S shortcut
+  useEffect(() => {
+    const fn = () => { if (!saving) onSave(); };
+    window.addEventListener("shortcut-save", fn);
+    return () => window.removeEventListener("shortcut-save", fn);
+  }, [saving, onSave]);
+
+  const filledCount = rows.filter((r) => String(r.itemName || "").trim()).length;
+
+  /* ══════════════════════════════ RENDER ══════════════════════════════ */
   return (
-    <div style={{ padding: 20, background: "#fff", textAlign: "left" }}>
-      <h3>Purchase Entry</h3>
+    <div id="g-root" style={{ padding: "18px 24px", background: C.bg, minHeight: "100vh" }}>
+      <style>{GLOBAL_CSS}</style>
 
-      {/* -------------------- Header details -------------------- */}
-      <Card style={{ borderRadius: 10, border: "1px solid #00000025", marginTop: 12 }}>
-        <Card.Body>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
-            <div ref={distBoxRef} style={{ position: "relative", flex: 1 }}>
-              <Form.Label>Distributor (Select)</Form.Label>
-              <Form.Control
-                value={distQuery}
-                onChange={(e) => {
-                  // typing allowed only to search, but MUST select from dropdown
-                  setSelectedDistributor(null);
-                  setDistQuery(e.target.value);
-                  setShowDistSug(true);
-                }}
-                onFocus={() => setShowDistSug(true)}
-                onBlur={() => {
-                  // enforce selection after leaving the field
-                  setTimeout(enforceDistributorSelection, 150);
-                }}
-                placeholder="Type name or GSTIN to search..."
-                autoComplete="off"
-              />
-
-              {showDistSug && distSug.length > 0 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    left: 0,
-                    right: 0,
-                    zIndex: 50,
-                    background: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: 8,
-                    marginTop: 6,
-                    maxHeight: 220,
-                    overflow: "auto",
-                  }}
-                >
-                  {distSug.map((d) => (
-                    <div key={d.id} onMouseDown={() => onSelectDistributor(d)} style={{ padding: "10px 12px", cursor: "pointer" }}>
-                      <div style={{ fontWeight: 700 }}>{d.name}</div>
-                      <div style={{ fontSize: 12, opacity: 0.8 }}>
-                        GSTIN: {d.gstin || "-"} {d.phone ? ` • ${d.phone}` : ""}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Button variant="outline-primary" onClick={openAddDistributor}>
-              + Add Distributor
-            </Button>
+      {/* PAGE HEADER */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: C.brand, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: `0 3px 10px rgba(3,76,157,0.3)` }}>
+            <FiTruck size={20} />
           </div>
-
-          {/* GSTIN is auto-filled (readonly) */}
-          <div style={{ width: 300, marginTop: 10 }}>
-            <Form.Label>GSTIN</Form.Label>
-            <Form.Control value={gstin} disabled />
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.text }}>{isEdit ? "Edit Purchase Bill" : "New Purchase Entry"}</h2>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: C.textSub }}>{isEdit ? `Bill #${purchaseId}` : "Fill all steps and save"}</p>
           </div>
-
-          <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-            <div style={{ width: 220 }}>
-              <Form.Label>Bill No</Form.Label>
-              <Form.Control value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="BILL123" />
-            </div>
-            <div style={{ width: 220 }}>
-              <Form.Label>Bill Date</Form.Label>
-              <Form.Control type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
-            </div>
-            <div style={{ width: 220 }}>
-              <Form.Label>Due Date</Form.Label>
-              <Form.Control type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
-          </div>
-        </Card.Body>
-      </Card>
-
-      {/* -------------------- Items table -------------------- */}
-      <Table bordered className="text-start" style={{ marginTop: 18 }}>
-        <thead>
-          <tr className="align-middle">
-            <th style={{ width: 280 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <span>Item Name / Code</span>
-                <IoMdAddCircle size={22} style={{ cursor: "pointer", color: "#034C9D" }} title="Add new item" onClick={openAddItem} />
-              </div>
-            </th>
-            <th style={{ width: 90 }}>Code</th>
-            <th style={{ width: 110 }}>HSN</th>
-            <th style={{ width: 110 }}>Batch</th>
-            <th style={{ width: 140 }}>Exp</th>
-            <th style={{ width: 80 }}>MRP</th>
-            <th style={{ width: 70 }}>QTY</th>
-            <th style={{ width: 120 }}>Purchase Price</th>
-            <th style={{ width: 120 }}>Sale Price</th>
-            <th style={{ width: 110 }}>Discount</th>
-            <th style={{ width: 70 }}>Tax %</th>
-            <th style={{ width: 120 }}>Amount</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {rows.map((r, idx) => {
-            const sug = itemSuggestions(r.itemName);
-
-            return (
-              <tr key={idx} className="align-middle">
-                <td style={{ position: "relative" }}>
-                  <Form.Control
-                    ref={(el) => (itemNameRefs.current[idx] = el)}
-                    value={r.itemName}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateRow(idx, { itemName: val });
-                      setActiveItemRow(idx);
-
-                      // exact code match -> pick
-                      const matched = findItemByExactCode(val);
-                      if (matched) onPickItem(idx, matched);
-                    }}
-                    onFocus={() => {
-                      setActiveItemRow(idx);
-                    }}
-                    placeholder="Type item name / code..."
-                    autoComplete="off"
-                    style={{ border: 0, boxShadow: "none" }}
-                  />
-
-                  {activeItemRow === idx && sug.length > 0 && String(r.itemName || "").trim() && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        right: 0,
-                        zIndex: 10,
-                        background: "#fff",
-                        border: "1px solid #ddd",
-                        borderRadius: 8,
-                        marginTop: 6,
-                        maxHeight: 220,
-                        overflow: "auto",
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      {sug.map((it) => (
-                        <div key={it.id} onMouseDown={() => onPickItem(idx, it)} style={{ padding: "10px 12px", cursor: "pointer" }}>
-                          <div style={{ fontWeight: 600 }}>
-                            {it.name} <span style={{ fontSize: 12, opacity: 0.7 }}>({it.code})</span>
-                          </div>
-                          <div style={{ fontSize: 12, opacity: 0.75 }}>
-                            HSN: {it.hsn || "-"} • MRP: ₹{it.mrp} • Purchase: ₹{it.purchasePrice} • Sale: ₹{it.salePrice}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </td>
-
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.code} onChange={(e) => updateRow(idx, { code: e.target.value })} />
-                </td>
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.hsn} onChange={(e) => updateRow(idx, { hsn: e.target.value })} />
-                </td>
-
-                <td>
-                  <Form.Control
-                    ref={(el) => (batchRefs.current[idx] = el)} // ✅ focus here after item pick
-                    style={{ border: 0, boxShadow: "none" }}
-                    value={r.batchNo}
-                    onChange={(e) => updateRow(idx, { batchNo: e.target.value })}
-                  />
-                </td>
-
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} type="date" value={r.expDate} onChange={(e) => updateRow(idx, { expDate: e.target.value })} />
-                </td>
-
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.mrp} onChange={(e) => updateRow(idx, { mrp: e.target.value })} inputMode="decimal" />
-                </td>
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.qty} onChange={(e) => updateRow(idx, { qty: e.target.value })} inputMode="decimal" />
-                </td>
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.purchasePrice} onChange={(e) => updateRow(idx, { purchasePrice: e.target.value })} inputMode="decimal" />
-                </td>
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.salePrice} onChange={(e) => updateRow(idx, { salePrice: e.target.value })} inputMode="decimal" />
-                </td>
-
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.discount} onChange={(e) => updateRow(idx, { discount: e.target.value })} placeholder="10 or 10%" />
-                </td>
-
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.tax} onChange={(e) => updateRow(idx, { tax: e.target.value })} inputMode="decimal" />
-                </td>
-                <td>
-                  <Form.Control style={{ border: 0, boxShadow: "none" }} value={r.amount} disabled />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </Table>
-
-      {/* -------------------- Totals + Save -------------------- */}
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
-        <div style={{ fontSize: 13, opacity: 0.8 }}>
-          Amount = Qty × Purchase Price (minus Discount). Tax is calculated separately.
-          <Card style={{ borderRadius: 10, border: "1px solid #00000025", marginTop: 16 }}>
-            <Card.Body>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h5 style={{ margin: 0 }}>Payment</h5>
-
-                <Form.Check
-                  type="switch"
-                  id="multiPaySwitch"
-                  label={multiPayment ? "Multiple payments" : "Single payment"}
-                  checked={multiPayment}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setMultiPayment(on);
-                    if (!on) {
-                      // switch to single mode
-                      setReceivedTouched(false);
-                      setPayments([blankPayment()]);
-                    } else {
-                      // switch to multi mode
-                      setReceivedTouched(true);
-                      if (payments.length === 0) setPayments([blankPayment()]);
-                    }
-                  }}
-                />
-              </div>
-
-              {!multiPayment ? (
-                <div style={{ display: "flex", gap: 12, marginTop: 12, alignItems: "flex-end" }}>
-                  <div style={{ width: 220 }}>
-                    <Form.Label>Payment Mode</Form.Label>
-                    <Form.Select value={paymentType} onChange={(e) => setPaymentType(e.target.value)}>
-                      <option value="Cash">Cash</option>
-                      <option value="UPI">UPI</option>
-                      <option value="Card">Card</option>
-                      <option value="Bank">Bank</option>
-                      <option value="Cheque">Cheque</option>
-                      <option value="Other">Other</option>
-                    </Form.Select>
-                  </div>
-
-                  <div style={{ width: 220 }}>
-                    <Form.Label>Received</Form.Label>
-                    <Form.Control
-                      value={received}
-                      onChange={(e) => {
-                        setReceivedTouched(true);
-                        setReceived(e.target.value);
-                      }}
-                      inputMode="decimal"
-                      placeholder="0.00"
-                    />
-                  </div>
-
-                  <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>Balance</div>
-                    <div style={{ fontWeight: 800, color: balance <= 0 ? "green" : "#b00020" }}>₹ {balance.toFixed(2)}</div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ marginTop: 12 }}>
-                    {payments.map((p, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: "flex",
-                          gap: 12,
-                          alignItems: "flex-end",
-                          marginBottom: 10,
-                        }}
-                      >
-                        <div style={{ width: 220 }}>
-                          <Form.Label>{i === 0 ? "Payment Mode" : " "}</Form.Label>
-                          <Form.Select value={p.type} onChange={(e) => updatePaymentRow(i, { type: e.target.value })}>
-                            <option value="Cash">Cash</option>
-                            <option value="UPI">UPI</option>
-                            <option value="Card">Card</option>
-                            <option value="Bank">Bank</option>
-                            <option value="Cheque">Cheque</option>
-                            <option value="Other">Other</option>
-                          </Form.Select>
-                        </div>
-
-                        <div style={{ width: 220 }}>
-                          <Form.Label>{i === 0 ? "Amount" : " "}</Form.Label>
-                          <Form.Control value={p.amount} onChange={(e) => updatePaymentRow(i, { amount: e.target.value })} inputMode="decimal" placeholder="0.00" />
-                        </div>
-
-                        <div style={{ display: "flex", gap: 8 }}>
-                          {payments.length > 1 && (
-                            <Button variant="outline-danger" size="sm" onClick={() => removePayment(i)} style={{ height: 38 }}>
-                              Remove
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Button variant="outline-primary" size="sm" onClick={addMorePayment}>
-                    Add More Payment
-                  </Button>
-
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, marginTop: 12 }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>Total Paid</div>
-                      <div style={{ fontWeight: 800 }}>₹ {totalPaid.toFixed(2)}</div>
-                    </div>
-
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>Balance</div>
-                      <div style={{ fontWeight: 800, color: balance <= 0 ? "green" : "#b00020" }}>₹ {balance.toFixed(2)}</div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </Card.Body>
-          </Card>
         </div>
-
-        <div style={{ width: 420 }}>
-          <div style={{ marginTop: 10 }}>
-            <Form.Check
-              type="checkbox"
-              label="Round off to next rupee"
-              checked={roundOffEnabled}
-              onChange={(e) => {
-                setRoundOffEnabled(e.target.checked);
-              }}
-            />
-
-            {roundOffEnabled && <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>Round off: +₹ {roundOffDiff.toFixed(2)}</div>}
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {/* GST / NON-GST toggle — prominent */}
+          <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 9, padding: 3, gap: 3 }}>
+            {["GST", "NON-GST"].map((t) => (
+              <button key={t} onClick={() => setBillType(t)} style={{ padding: "6px 18px", borderRadius: 7, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.15s", background: billType === t ? (t === "GST" ? C.brand : "#374151") : "transparent", color: billType === t ? "#fff" : C.textSub }}>
+                {t}
+              </button>
+            ))}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <div>Subtotal</div>
-            <div>₹ {subTotal.toFixed(2)}</div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <div>Tax Total</div>
-            <div>₹ {taxTotal.toFixed(2)}</div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
-            <div>Grand Total</div>
-            <div>₹ {roundedGrandTotal.toFixed(2)}</div>
-          </div>
-
-          <Button style={{ marginTop: 12, width: "100%" }} variant="success" onClick={() => (purchaseId ? updatePurchase() : createPurchase())} disabled={saving}>
-            {saving ? "Saving..." : purchaseId ? "Update Purchase" : "Save Purchase"}
-          </Button>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
+          <button className="g-btn ghost" onClick={() => fileInputRef.current?.click()} title="Upload Excel/PDF/Image of purchase bill">
+            <FiUpload size={14} /> Upload Bill
+          </button>
+          <button className="g-btn ghost" onClick={() => window.history.back()}>← Back</button>
+          <button className="g-btn success" onClick={onSave} disabled={saving} style={{ minWidth: 130 }}>
+            <FiCheck size={14} />{saving ? "Saving…" : isEdit ? "Update" : "Save Purchase"}
+          </button>
         </div>
       </div>
 
-      <SimpleModal
-        show={showAddItem}
-        title="Add New Item"
-        onClose={closeAddItem}
-        footer={
-          <>
-            <Button variant="secondary" onClick={closeAddItem}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={addItemToMasterAndInsert}>
-              Save Item
-            </Button>
-          </>
-        }
-      >
-        {/* --- Your form fields --- */}
-        <div style={{ display: "flex", gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <Form.Label>Item Name</Form.Label>
-            <Form.Control value={newItem.itemName} onChange={(e) => setNewItem((p) => ({ ...p, itemName: e.target.value }))} />
+      {/* ── STEP 1: SUPPLIER ── */}
+      <div className="g-card" style={{ marginBottom: 18 }}>
+        <SectionHead num="1" icon={<FiTruck size={15} />} title="Supplier Details" />
+        <div style={{ padding: 18 }}>
+          <div className="g-grid-2">
+            {/* Distributor search */}
+            <div className="g-span-2">
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                <Field label="Distributor / Supplier" required style={{ flex: 1 }}>
+                  <div ref={distRef} style={{ position: "relative" }}>
+                    <FiSearch size={15} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
+                    <input className="g-inp" style={{ paddingLeft: 36 }} value={distQ}
+                      onChange={(e) => { setSelDist(null); setDistQ(e.target.value); setShowDistSug(true); }}
+                      onFocus={() => setShowDistSug(true)}
+                      onBlur={() => setTimeout(() => { if (!selDist) { setDistQ(""); setGstin(""); } }, 160)}
+                      placeholder="Search by name or GSTIN…" />
+                    {showDistSug && distSug.length > 0 && (
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.1)", maxHeight: 240, overflow: "auto" }}>
+                        {distSug.map((d) => (
+                          <div key={d.id} className="g-sug" onMouseDown={() => pickDist(d)} style={{ padding: "10px 14px", borderBottom: "1px solid #f3f4f6" }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{d.name}</div>
+                            <div style={{ fontSize: 12, color: C.textSub, marginTop: 1 }}>GSTIN: {d.gstin || "—"}{d.phone ? ` · ${d.phone}` : ""}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Field>
+                <button className="g-btn ghost" style={{ height: 40, marginBottom: 0 }} onClick={() => { setNewDist({ name: "", gstin: "", phone: "" }); setShowAddDist(true); }}>
+                  <FiPlus size={14} /> New Distributor
+                </button>
+              </div>
+              {selDist && (
+                <div style={{ marginTop: 10, background: C.brandLighter, border: `1.5px solid #bfdbfe`, borderRadius: 9, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 8, background: C.brand, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}><FiTruck size={16} /></div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: C.brand }}>{selDist.name}</div>
+                    {gstin && <div style={{ fontSize: 12, color: "#1e40af", marginTop: 1 }}>GSTIN: {gstin}</div>}
+                  </div>
+                  <div style={{ marginLeft: "auto", fontSize: 12, color: C.green, fontWeight: 700 }}>✓ Selected</div>
+                </div>
+              )}
+            </div>
+
+            <Field label="GSTIN (auto-filled)">
+              <input className="g-inp" value={gstin} disabled placeholder="Auto-filled" />
+            </Field>
+            <Field label="Bill / Invoice No" required>
+              <input className="g-inp" value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="e.g. INV-2025-001" />
+            </Field>
+            <Field label="Bill Date" required>
+              <input className="g-inp" type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
+            </Field>
+            <Field label="Due Date">
+              <input className="g-inp" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </Field>
           </div>
-          <div style={{ width: 180 }}>
-            <Form.Label>Item Code</Form.Label>
-            <Form.Control value={newItem.itemCode} onChange={(e) => setNewItem((p) => ({ ...p, itemCode: e.target.value }))} />
+        </div>
+      </div>
+
+      {/* ── STEP 2: ITEMS ── */}
+      <div className="g-card" style={{ marginBottom: 18 }}>
+        <SectionHead
+          num="2"
+          icon={<FiPackage size={15} />}
+          title={`Items / Medicines${filledCount > 0 ? ` — ${filledCount} added` : ""}${!isGST ? "  [NON-GST — Tax not applied]" : ""}`}
+          actions={
+            <button className="g-btn ghost sm" onClick={() => { setNewItem(blankNewItem()); setShowAddItem(true); }}>
+              <FiPlus size={13} /> Add to Master
+            </button>
+          }
+        />
+        {!masterLoaded && <div style={{ padding: "12px 18px", fontSize: 13, color: C.textSub }}>Loading item master…</div>}
+        <div style={{ overflowX: "auto" }}>
+          <table className="g-table" style={{ minWidth: 980 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 36, paddingLeft: 14 }}>#</th>
+                <th style={{ minWidth: 210 }}>Item Name</th>
+                <th style={{ minWidth: 95 }}>Batch No</th>
+                <th style={{ minWidth: 128 }}>Expiry Date</th>
+                <th style={{ minWidth: 72 }}>MRP ₹</th>
+                <th style={{ minWidth: 55 }}>Qty</th>
+                <th style={{ minWidth: 98 }}>Buy Price ₹</th>
+                <th style={{ minWidth: 90 }}>Sale Price ₹</th>
+                {isGST && <th style={{ minWidth: 62 }}>Tax %</th>}
+                <th style={{ minWidth: 98, textAlign: "right", paddingRight: 14 }}>Amount ₹</th>
+                <th style={{ width: 40 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, idx) => {
+                const searchText = itemSearch[idx] !== undefined ? itemSearch[idx] : r.itemName;
+                const sug = getSug(searchText);
+                const filled = r.itemName.trim();
+                return (
+                  <tr key={idx}>
+                    <td style={{ paddingLeft: 12 }}>
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: filled ? C.brandLighter : "#f3f4f6", color: filled ? C.brand : C.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{idx + 1}</div>
+                    </td>
+
+                    {/* Item name — search + pick only */}
+                    <td style={{ position: "relative" }}>
+                      {filled ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{r.itemName}</div>
+                            <div style={{ fontSize: 11, color: C.textSub }}>{r.code}</div>
+                          </div>
+                          <button onClick={() => { updRow(idx, { ...blankRow() }); setItemSearch((p) => ({ ...p, [idx]: "" })); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, padding: 3, borderRadius: 4, display: "flex" }}>
+                            <FiX size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ position: "relative" }}>
+                            <FiSearch size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
+                            <input
+                              ref={(el) => (itemRefs.current[idx] = el)}
+                              className="g-td-inp"
+                              style={{ paddingLeft: 26 }}
+                              value={searchText}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setItemSearch((p) => ({ ...p, [idx]: val }));
+                                setActiveSug(idx);
+                                // Auto-select if exactly one item matches the typed code
+                                const q = val.trim().toLowerCase();
+                                if (q) {
+                                  const exact = itemMaster.filter((it) =>
+                                    it.code.toLowerCase() === q || it.name.toLowerCase() === q
+                                  );
+                                  if (exact.length === 1) pickItem(idx, exact[0]);
+                                }
+                              }}
+                              onFocus={() => setActiveSug(idx)}
+                              placeholder={idx === 0 ? "Search item…" : ""}
+                              autoComplete="off"
+                            />
+                          </div>
+                          {activeSug === idx && sug.length > 0 && (
+                            <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: "100%", left: 0, width: 340, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", maxHeight: 220, overflow: "auto" }}>
+                              {sug.map((it) => (
+                                <div key={it.id} className="g-sug" onMouseDown={() => pickItem(idx, it)} style={{ padding: "9px 14px", borderBottom: "1px solid #f3f4f6" }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{it.name} <span style={{ color: C.textSub, fontWeight: 500 }}>({it.code})</span></div>
+                                  <div style={{ fontSize: 11, color: C.textSub, marginTop: 1 }}>MRP: ₹{it.mrp} · Buy: ₹{it.purchasePrice} · Tax: {it.tax}%</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {activeSug === idx && String(searchText || "").trim().length > 0 && sug.length === 0 && (
+                            <div style={{ position: "absolute", top: "100%", left: 0, width: 280, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", padding: "10px 14px" }}>
+                              <div style={{ fontSize: 12, color: C.textSub }}>No item found.</div>
+                              <button className="g-btn ghost sm" style={{ marginTop: 8 }} onClick={() => { setNewItem(blankNewItem()); setShowAddItem(true); }}><FiPlus size={12} /> Add to Master</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    <td><input className="g-td-inp" ref={(el) => (batchRefs.current[idx] = el)} value={r.batchNo} onChange={(e) => updRow(idx, { batchNo: e.target.value })} placeholder="Batch" /></td>
+                    <td><input className="g-td-inp" type="date" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })} style={{ fontSize: 13 }} /></td>
+                    <td><input className="g-td-inp" value={r.mrp} onChange={(e) => updRow(idx, { mrp: e.target.value })} inputMode="decimal" placeholder="0" /></td>
+                    <td><input className="g-td-inp" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} /></td>
+                    <td><input className="g-td-inp" value={r.purchasePrice} onChange={(e) => updRow(idx, { purchasePrice: e.target.value })} inputMode="decimal" placeholder="0" /></td>
+                    <td><input className="g-td-inp" value={r.salePrice} onChange={(e) => updRow(idx, { salePrice: e.target.value })} inputMode="decimal" placeholder="0" /></td>
+                    {isGST && <td><input className="g-td-inp" value={r.tax} onChange={(e) => updRow(idx, { tax: e.target.value })} inputMode="decimal" placeholder="0" /></td>}
+                    <td style={{ textAlign: "right", paddingRight: 12 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: filled ? C.text : "#d1d5db" }}>
+                        {filled ? `₹${fmt2(r.amount)}` : "—"}
+                      </span>
+                    </td>
+                    <td style={{ paddingRight: 8 }}>
+                      <button onClick={() => { if (rows.length > 1) setRows((p) => p.filter((_, i) => i !== idx)); }} disabled={rows.length <= 1}
+                        style={{ background: "none", border: "none", cursor: rows.length <= 1 ? "not-allowed" : "pointer", color: "#d1d5db", padding: 6, borderRadius: 6, display: "flex", transition: "color 0.15s" }}
+                        onMouseEnter={(e) => { if (rows.length > 1) e.currentTarget.style.color = C.red; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "#d1d5db"; }}>
+                        <FiTrash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ padding: "10px 18px" }}>
+          <button className="g-btn ghost sm" onClick={() => setRows((p) => [...p, blankRow()])}>
+            <FiPlus size={13} /> Add Row
+          </button>
+        </div>
+      </div>
+
+      {/* ── STEP 3: PAYMENT + SUMMARY ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 18, alignItems: "start" }}>
+
+        {/* Payment */}
+        <div className="g-card" style={{ marginBottom: 0 }}>
+          <SectionHead num="3" icon={<FiCreditCard size={15} />} title="Payment"
+            actions={
+              <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 8, padding: 3, gap: 3 }}>
+                {["Single", "Multiple"].map((m) => {
+                  const active = (m === "Multiple") === multiPay;
+                  return (
+                    <button key={m} onClick={() => { setMultiPay(m === "Multiple"); if (m === "Single") { setRecTouched(false); setPayments([{ type: "Cash", amount: "" }]); } }}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.15s", background: active ? C.brand : "transparent", color: active ? "#fff" : C.textSub }}>
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+            }
+          />
+          <div style={{ padding: 18 }}>
+            {!multiPay ? (
+              <div style={{ display: "grid", gridTemplateColumns: "200px 1fr auto", gap: 14, alignItems: "end" }}>
+                <Field label="Mode">
+                  <select className="g-sel" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+                    {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
+                  </select>
+                </Field>
+                <Field label="Amount Paid (₹)">
+                  <input className="g-inp" value={received} onChange={(e) => { setRecTouched(true); setReceived(e.target.value); }} inputMode="decimal" placeholder="0.00" />
+                </Field>
+                <div style={{ paddingBottom: 2, textAlign: "right" }}>
+                  <div style={{ fontSize: 12, color: C.textSub, fontWeight: 700, marginBottom: 4 }}>Balance</div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: balance <= 0 ? C.green : C.orange }}>₹{fmt2(balance)}</div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {payments.map((p, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "180px 1fr 38px", gap: 12, alignItems: "end", marginBottom: 12 }}>
+                    <Field label={i === 0 ? "Mode" : ""}>
+                      <select className="g-sel" value={p.type} onChange={(e) => setPayments((prev) => { const n = [...prev]; n[i] = { ...n[i], type: e.target.value }; return n; })}>
+                        {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                    </Field>
+                    <Field label={i === 0 ? "Amount (₹)" : ""}>
+                      <input className="g-inp" value={p.amount} onChange={(e) => setPayments((prev) => { const n = [...prev]; n[i] = { ...n[i], amount: e.target.value }; return n; })} inputMode="decimal" placeholder="0.00" />
+                    </Field>
+                    <div style={{ paddingBottom: 2 }}>
+                      {payments.length > 1 && <button className="g-btn danger sm" onClick={() => setPayments((p) => p.filter((_, j) => j !== i))}><FiX size={13} /></button>}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1.5px solid #f3f4f6", marginTop: 4 }}>
+                  <button className="g-btn ghost sm" onClick={() => setPayments((p) => [...p, { type: "Cash", amount: "" }])}><FiPlus size={13} /> Add Line</button>
+                  <div style={{ display: "flex", gap: 24 }}>
+                    {[{ l: "Paid", v: fmt2(sumPay), c: C.text }, { l: "Balance", v: fmt2(balance), c: balance <= 0 ? C.green : C.orange }].map(({ l, v, c }) => (
+                      <div key={l} style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 12, color: C.textSub, fontWeight: 700 }}>{l}</div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: c }}>₹{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
-          <div style={{ flex: 1 }}>
-            <Form.Label>Batch No</Form.Label>
-            <Form.Control value={newItem.batchNo} onChange={(e) => setNewItem((p) => ({ ...p, batchNo: e.target.value }))} />
-          </div>
-          <div style={{ width: 200 }}>
-            <Form.Label>Expiry</Form.Label>
-            <Form.Control type="date" value={newItem.expDate} onChange={(e) => setNewItem((p) => ({ ...p, expDate: e.target.value }))} />
+        {/* Summary */}
+        <div className="g-card" style={{ marginBottom: 0 }}>
+          <div className="g-card-head"><div className="g-card-title">Summary</div></div>
+          <div className="g-card-body">
+            {[
+              { l: "Subtotal", v: `₹${fmt2(subTotal)}` },
+              ...(isGST ? [{ l: "Tax Total", v: `₹${fmt2(taxTotal)}` }] : []),
+            ].map(({ l, v }) => (
+              <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.textSub, marginBottom: 10 }}>
+                <span>{l}</span><span style={{ fontWeight: 600 }}>{v}</span>
+              </div>
+            ))}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, padding: "10px 12px", background: "#f8fafc", borderRadius: 8, border: "1.5px solid #e5e7eb" }}>
+              <label htmlFor="roundchk" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.text }}>
+                <input type="checkbox" id="roundchk" checked={roundOff} onChange={(e) => setRoundOff(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.brand }} />
+                Round off
+              </label>
+              <span style={{ fontSize: 13, fontWeight: 700, color: roundOff ? C.green : C.textSub }}>{roundOff ? `+₹${fmt2(roundDiff)}` : "Off"}</span>
+            </div>
+
+            <div style={{ background: C.brand, borderRadius: 10, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, boxShadow: `0 3px 10px rgba(3,76,157,0.25)` }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>Grand Total</span>
+              <span style={{ fontWeight: 900, fontSize: 22, color: "#fff" }}>₹{fmt2(roundedTotal)}</span>
+            </div>
+
+            <button className="g-btn success lg" onClick={onSave} disabled={saving}>
+              <FiCheck size={16} />{saving ? "Saving…" : isEdit ? "Update Purchase" : "Save Purchase"}
+            </button>
+
+            {/* Bill type indicator */}
+            <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: isGST ? C.brandLighter : "#f3f4f6", border: `1.5px solid ${isGST ? "#bfdbfe" : "#e5e7eb"}`, fontSize: 13, fontWeight: 700, color: isGST ? C.brand : "#374151", textAlign: "center" }}>
+              {isGST ? "📋 GST Bill" : "📄 NON-GST Bill"}
+            </div>
           </div>
         </div>
+      </div>
 
-        <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
-          <div style={{ width: 160 }}>
-            <Form.Label>HSN</Form.Label>
-            <Form.Control value={newItem.hsn} onChange={(e) => setNewItem((p) => ({ ...p, hsn: e.target.value }))} />
+      {/* ── MODAL: ADD DISTRIBUTOR ── */}
+      <Modal show={showAddDist} title="Add New Distributor" onClose={() => setShowAddDist(false)}
+        footer={<><button className="g-btn ghost" onClick={() => setShowAddDist(false)}>Cancel</button><button className="g-btn primary" onClick={saveDist}>Save</button></>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Field label="Distributor Name" required hint="Full name of the company or person">
+            <input className="g-inp lg" value={newDist.name} onChange={(e) => setNewDist((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. ABC Pharma" />
+          </Field>
+          <Field label="GSTIN" hint="Optional"><input className="g-inp lg" value={newDist.gstin} onChange={(e) => setNewDist((p) => ({ ...p, gstin: e.target.value }))} placeholder="Optional" /></Field>
+          <Field label="Phone" hint="Optional"><input className="g-inp lg" value={newDist.phone} onChange={(e) => setNewDist((p) => ({ ...p, phone: e.target.value }))} placeholder="Optional" type="tel" /></Field>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: ADD ITEM TO MASTER ── */}
+      <Modal show={showAddItem} title="Add Item to Master" onClose={() => setShowAddItem(false)} width={580}
+        footer={<><button className="g-btn ghost" onClick={() => setShowAddItem(false)}>Cancel</button><button className="g-btn primary" onClick={saveNewItem}>Save Item</button></>}>
+        <div className="g-grid-2">
+          <div className="g-span-2">
+            <Field label="Item / Medicine Name" required>
+              <input className="g-inp lg" value={newItem.itemName} onChange={(e) => setNewItem((p) => ({ ...p, itemName: e.target.value }))} placeholder="e.g. Paracetamol 500mg" />
+            </Field>
           </div>
-          <div style={{ width: 120 }}>
-            <Form.Label>Tax %</Form.Label>
-            <Form.Control value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" />
+          <Field label="Item Code" required hint="Short unique code">
+            <input className="g-inp lg" value={newItem.itemCode} onChange={(e) => setNewItem((p) => ({ ...p, itemCode: e.target.value }))} placeholder="e.g. PCM500" />
+          </Field>
+          <Field label="HSN Code" hint="For GST">
+            <input className="g-inp lg" value={newItem.hsn} onChange={(e) => setNewItem((p) => ({ ...p, hsn: e.target.value }))} placeholder="Optional" />
+          </Field>
+          <Field label="MRP (₹)"><input className="g-inp lg" value={newItem.mrp} onChange={(e) => setNewItem((p) => ({ ...p, mrp: e.target.value }))} inputMode="decimal" placeholder="0.00" /></Field>
+          <Field label="Sale Price (₹)"><input className="g-inp lg" value={newItem.salePrice} onChange={(e) => setNewItem((p) => ({ ...p, salePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" /></Field>
+          <Field label="Purchase Price (₹)"><input className="g-inp lg" value={newItem.purchasePrice} onChange={(e) => setNewItem((p) => ({ ...p, purchasePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" /></Field>
+          <Field label="Tax %"><input className="g-inp lg" value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" /></Field>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: COLUMN MAPPING ── */}
+      <Modal show={showMapping} title="Map Columns from Uploaded Bill" onClose={() => setShowMapping(false)} width={720}
+        footer={<>
+          <button className="g-btn ghost" onClick={() => setShowMapping(false)}>Cancel</button>
+          <button className="g-btn primary" onClick={applyMapping}><FiCheck size={14} /> Apply & Import</button>
+        </>}>
+        <div>
+          <p style={{ fontSize: 13, color: C.textSub, marginTop: 0, marginBottom: 14 }}>
+            Map your file columns to our fields. Required fields are marked with *.
+          </p>
+
+          {/* Mapping selects */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+            {OUR_COLS.map((col) => (
+              <div key={col.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text, minWidth: 120 }}>
+                  {col.label}{col.required ? <span style={{ color: C.red }}> *</span> : ""}
+                </span>
+                <select className="g-sel sm" style={{ flex: 1 }} value={colMap[col.key] ?? ""} onChange={(e) => {
+                  const v = e.target.value;
+                  setColMap((p) => {
+                    const n = { ...p };
+                    if (v === "") delete n[col.key];
+                    else n[col.key] = Number(v);
+                    return n;
+                  });
+                }}>
+                  <option value="">— Skip —</option>
+                  {uploadHeaders.map((h, i) => (
+                    <option key={i} value={i}>{h || `Column ${i + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
           </div>
-          <div style={{ width: 120 }}>
-            <Form.Label>Quantity</Form.Label>
-            <Form.Control value={newItem.qty} onChange={(e) => setNewItem((p) => ({ ...p, qty: e.target.value }))} inputMode="decimal" />
+
+          {/* Preview */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, marginBottom: 6, textTransform: "uppercase" }}>
+            Preview ({Math.min(uploadRows.length, 5)} of {uploadRows.length} rows)
+          </div>
+          <div style={{ overflowX: "auto", border: "1.5px solid #e5e7eb", borderRadius: 8, maxHeight: 220 }}>
+            <table className="g-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {OUR_COLS.filter((c) => colMap[c.key] !== undefined).map((c) => (
+                    <th key={c.key} style={{ whiteSpace: "nowrap", fontSize: 11 }}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {uploadRows.slice(0, 5).map((row, i) => (
+                  <tr key={i}>
+                    {OUR_COLS.filter((c) => colMap[c.key] !== undefined).map((c) => {
+                      let val = row[colMap[c.key]];
+                      if (val instanceof Date) val = val.toISOString().slice(0, 10);
+                      return <td key={c.key} style={{ whiteSpace: "nowrap" }}>{String(val ?? "")}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: C.brandLighter, border: "1.5px solid #bfdbfe", fontSize: 12, color: C.brand }}>
+            Items will be auto-matched with your item master by name/code. Unmatched items will show as-is for manual selection.
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
-          <div style={{ width: 140 }}>
-            <Form.Label>MRP</Form.Label>
-            <Form.Control value={newItem.mrp} onChange={(e) => setNewItem((p) => ({ ...p, mrp: e.target.value }))} inputMode="decimal" />
-          </div>
-          <div style={{ width: 160 }}>
-            <Form.Label>Sale Price</Form.Label>
-            <Form.Control value={newItem.salePrice} onChange={(e) => setNewItem((p) => ({ ...p, salePrice: e.target.value }))} inputMode="decimal" />
-          </div>
-          <div style={{ width: 160 }}>
-            <Form.Label>Purchase Price</Form.Label>
-            <Form.Control value={newItem.purchasePrice} onChange={(e) => setNewItem((p) => ({ ...p, purchasePrice: e.target.value }))} inputMode="decimal" />
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 10, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Button variant={newItem.is_primary ? "primary" : "outline-primary"} size="sm" onClick={() => setNewItem((p) => ({ ...p, is_primary: true }))}>
-              Primary
-            </Button>
-
-            <Button variant={!newItem.is_primary ? "primary" : "outline-primary"} size="sm" onClick={() => setNewItem((p) => ({ ...p, is_primary: false }))}>
-              Non-primary
-            </Button>
-          </div>
-        </div>
-        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
-          Press <b>Esc</b> to close. Click outside to close.
-        </div>
-      </SimpleModal>
-
-      <SimpleModal
-        show={showAddDist}
-        title="Add Distributor"
-        onClose={() => setShowAddDist(false)}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowAddDist(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={saveNewDistributor}>
-              Save
-            </Button>
-          </>
-        }
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div>
-            <Form.Label>Distributor Name</Form.Label>
-            <Form.Control value={newDist.name} onChange={(e) => setNewDist((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. ABC Distributors" />
-          </div>
-
-          <div>
-            <Form.Label>GST Number (GSTIN)</Form.Label>
-            <Form.Control value={newDist.gstin} onChange={(e) => setNewDist((p) => ({ ...p, gstin: e.target.value }))} placeholder="Optional" />
-          </div>
-
-          <div>
-            <Form.Label>Phone Number</Form.Label>
-            <Form.Control value={newDist.phone} onChange={(e) => setNewDist((p) => ({ ...p, phone: e.target.value }))} placeholder="Optional" />
-          </div>
-        </div>
-      </SimpleModal>
+      </Modal>
     </div>
   );
 }
