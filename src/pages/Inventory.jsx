@@ -75,37 +75,29 @@ export default function Inventory() {
   const taxRates = useMemo(() => [...new Set(items.map((i) => String(asNum(i.tax))))].sort((a, b) => Number(a) - Number(b)), [items]);
 
   return (
-    <div id="g-root" style={{ padding: "20px 26px", background: C.bg, minHeight: "100vh" }}>
+    <div id="g-root" style={{ padding: "24px 28px", background: C.bg, minHeight: "100vh" }}>
       <style>{GLOBAL_CSS}</style>
 
-      {/* KPI Summary */}
-      <div className="g-grid-4" style={{ marginBottom: 14 }}>
-        {[
-          { label: "Total Items",   value: stats.totalItems,         color: C.text },
-          { label: "In Stock",      value: stats.inStock,            color: C.green },
-          { label: "Out of Stock",  value: stats.outOfStock,         color: C.textSub },
-          { label: "Stock Value",   value: fmtINR(stats.totalValue), color: C.brand },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: "#fff", borderRadius: 10, border: "1.5px solid #e5e7eb", padding: "12px 16px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
-          </div>
-        ))}
+      {/* Page Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>Inventory</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.textSub }}>
+            {stats.totalItems} items &middot; {stats.inStock} in stock &middot; {fmtINR(stats.totalValue)} value
+            {stats.expired > 0 && <span style={{ color: C.red, fontWeight: 700, marginLeft: 8, cursor: "pointer" }} onClick={() => setFilterExp("expired")}>{stats.expired} expired</span>}
+            {stats.expiring > 0 && <span style={{ color: C.yellow, fontWeight: 700, marginLeft: 8, cursor: "pointer" }} onClick={() => setFilterExp("expiring")}>{stats.expiring} expiring</span>}
+          </p>
+        </div>
+        <button className="g-btn ghost" onClick={load} disabled={loading}>
+          <FiRefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} /> Refresh
+        </button>
       </div>
 
-      {/* Alert badges */}
-      {(stats.expiring > 0 || stats.expired > 0) && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          {stats.expired > 0 && <span onClick={() => setFilterExp("expired")} style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.red, background: C.redLight, padding: "4px 12px", borderRadius: 6 }}>{stats.expired} expired</span>}
-          {stats.expiring > 0 && <span onClick={() => setFilterExp("expiring")} style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.yellow, background: C.yellowLight, padding: "4px 12px", borderRadius: 6 }}>{stats.expiring} expiring soon</span>}
-        </div>
-      )}
-
       {/* Filters */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 160 }}>
-          <FiSearch size={13} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
-          <input className="g-inp sm" style={{ paddingLeft: 28, width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name / code / HSN…" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", alignItems: "center", marginBottom: 18 }}>
+        <div style={{ position: "relative", flex: 2, minWidth: 220 }}>
+          <FiSearch size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
+          <input className="g-inp sm" style={{ paddingLeft: 30, width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name / code / HSN…" />
         </div>
         <select className="g-sel sm" style={{ width: 140 }} value={filterExp} onChange={(e) => setFilterExp(e.target.value)}>
           <option value="all">All Items</option>

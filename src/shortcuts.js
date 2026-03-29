@@ -8,6 +8,7 @@ export const SHORTCUTS = [
   { key: "ctrl+shift+l", display: "Ctrl + Shift + L", label: "Sales List",              action: "navigate", path: "/sales" },
   { key: "ctrl+i",       display: "Ctrl + I",   label: "Inventory",                     action: "navigate", path: "/inventory" },
   { key: "ctrl+d",       display: "Ctrl + D",   label: "Dashboard",                     action: "navigate", path: "/" },
+  { key: "ctrl+r",       display: "Ctrl + R",   label: "Reports",                       action: "navigate", path: "/reports" },
   { key: "ctrl+/",       display: "Ctrl + /",   label: "Show Shortcuts",                action: "shortcuts" },
 ];
 

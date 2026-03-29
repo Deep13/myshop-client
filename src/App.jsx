@@ -11,15 +11,21 @@ const asN = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
 /* ── tiny stat card ── */
 function StatCard({ label, value, sub, color, icon, bg }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 10, border: "1.5px solid #e5e7eb", padding: "14px 16px", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+    <div style={{
+      background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0",
+      padding: "18px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)",
+      transition: "box-shadow 0.15s, transform 0.15s",
+    }}
+    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.06)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)"; e.currentTarget.style.transform = "none"; }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{label}</div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: color || C.text }}>{value}</div>
-          {sub && <div style={{ fontSize: 12, color: C.textLight, marginTop: 3 }}>{sub}</div>}
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{label}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: color || C.text, letterSpacing: "-0.02em" }}>{value}</div>
+          {sub && <div style={{ fontSize: 12, color: C.textLight, marginTop: 4 }}>{sub}</div>}
         </div>
         {icon && (
-          <div style={{ width: 36, height: 36, borderRadius: 9, background: bg || C.brandLighter, display: "flex", alignItems: "center", justifyContent: "center", color: color || C.brand }}>
+          <div style={{ width: 40, height: 40, borderRadius: 11, background: bg || C.brandLighter, display: "flex", alignItems: "center", justifyContent: "center", color: color || C.brand }}>
             {icon}
           </div>
         )}
@@ -72,14 +78,14 @@ export default function App() {
   const today = todayISO();
 
   return (
-    <div id="g-root" style={{ padding: "20px 26px", background: C.bg, minHeight: "100vh" }}>
+    <div id="g-root" style={{ padding: "24px 28px", background: C.bg, minHeight: "100vh" }}>
       <style>{GLOBAL_CSS}</style>
 
       {/* ── TOP BAR ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: C.text }}>Dashboard</h2>
-          <p style={{ margin: "2px 0 0", fontSize: 13, color: C.textSub }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>Dashboard</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 14, color: C.textSub }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
         </div>
         <button className="g-btn ghost" onClick={load} disabled={loading}>
           <FiRefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} /> Refresh
@@ -93,7 +99,7 @@ export default function App() {
           {/* ══════════════════════════════════
               SECTION 1 — SALES & PURCHASE
           ══════════════════════════════════ */}
-          <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 20, overflow: "hidden" }}>
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: 20, overflow: "hidden" }}>
             <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: C.brandLighter, display: "flex", alignItems: "center", justifyContent: "center", color: C.brand }}><FiTrendingUp size={15} /></div>
@@ -119,7 +125,7 @@ export default function App() {
           {/* ══════════════════════════════════
               SECTION 2 — INVENTORY
           ══════════════════════════════════ */}
-          <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 20, overflow: "hidden" }}>
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: 20, overflow: "hidden" }}>
             <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.green }}><FiPackage size={15} /></div>
@@ -142,7 +148,7 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 20 }}>
 
             {/* Expiring Items */}
-            <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", overflow: "hidden" }}>
               <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#fffbeb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: C.yellowLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.yellow }}><FiClock size={14} /></div>
@@ -188,7 +194,7 @@ export default function App() {
             </div>
 
             {/* Expired Items */}
-            <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", overflow: "hidden" }}>
               <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#fff5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: C.redLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}><FiAlertTriangle size={14} /></div>
@@ -234,7 +240,7 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
 
             {/* Need to Pay */}
-            <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", overflow: "hidden" }}>
               <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#fff7ed", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: C.orangeLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.orange }}><FiTruck size={14} /></div>
@@ -281,7 +287,7 @@ export default function App() {
             </div>
 
             {/* Need to Collect */}
-            <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", overflow: "hidden" }}>
               <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f0fdf4", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 7, background: C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.green }}><FiDollarSign size={14} /></div>

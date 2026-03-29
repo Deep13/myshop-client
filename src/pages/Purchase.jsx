@@ -113,32 +113,26 @@ export default function Purchase() {
   const fc = (k, v) => setFilters((p) => ({ ...p, [k]: v }));
 
   return (
-    <div id="g-root" style={{ padding: "20px 26px", background: C.bg, minHeight: "100vh" }}>
+    <div id="g-root" style={{ padding: "24px 28px", background: C.bg, minHeight: "100vh" }}>
       <style>{GLOBAL_CSS}</style>
 
-      {/* KPI Summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 }}>
-        {[
-          { label: "Bills", value: totBills, color: C.brand },
-          { label: "Grand Total", value: `₹${fmt2(totGrand)}`, color: C.text },
-          { label: "Paid", value: `₹${fmt2(totPaid)}`, color: C.green },
-          { label: "Balance", value: `₹${fmt2(totBal)}`, color: totBal > 0 ? C.orange : C.green },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: C.white, borderRadius: 10, border: `1.5px solid ${C.borderLight}`, padding: "12px 16px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
-          </div>
-        ))}
+      {/* Page Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>Purchase</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.textSub }}>{totBills} bills &middot; {`₹${fmt2(totGrand)}`} total &middot; Balance {`₹${fmt2(totBal)}`}</p>
+        </div>
+        <button className="g-btn primary" onClick={() => navigate("/addpurchase")}><FiPlus size={14} /> New Purchase</button>
       </div>
 
       {/* Filters */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", alignItems: "center", marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", alignItems: "center", marginBottom: 18 }}>
+        <input className="g-inp sm" style={{ flex: 2, minWidth: 220 }} value={filters.q} onChange={(e) => fc("q", e.target.value)} placeholder="Search by distributor, bill no or GSTIN…" />
         <select className="g-sel sm" style={{ width: 130 }} value={filters.dateRange} onChange={(e) => fc("dateRange", e.target.value)}>
           {DATE_RANGES.map((r) => <option key={r}>{r}</option>)}
         </select>
         <input className="g-inp sm" type="date" style={{ width: 130 }} value={filters.from} onChange={(e) => fc("from", e.target.value)} />
         <input className="g-inp sm" type="date" style={{ width: 130 }} value={filters.to} onChange={(e) => fc("to", e.target.value)} />
-        <input className="g-inp sm" style={{ flex: 1, minWidth: 140 }} value={filters.q} onChange={(e) => fc("q", e.target.value)} placeholder="Search distributor / GSTIN…" />
         <select className="g-sel sm" style={{ width: 120 }} value={filters.status} onChange={(e) => fc("status", e.target.value)}>
           <option value="">All Status</option>
           <option value="Unpaid">Unpaid</option>
@@ -151,7 +145,6 @@ export default function Purchase() {
           <option value="NON-GST">NON-GST</option>
         </select>
         <button className="g-btn ghost sm" onClick={fetch_} disabled={loading}><FiRefreshCw size={14} /></button>
-        <button className="g-btn primary sm" onClick={() => navigate("/addpurchase")}><FiPlus size={14} /> New</button>
       </div>
 
       {/* Table */}

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown, FiArrowUp, FiDownload, FiFileText, FiDollarSign } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, fmt2, DATE_RANGES, applyDateRange } from "../ui.jsx";
-import { downloadExcel } from "../excelExport.js";
+import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown, FiArrowUp, FiDownload, FiFileText, FiDollarSign, FiSend } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Modal, fmt2, DATE_RANGES, applyDateRange } from "../ui.jsx";
+import { downloadExcel, generateExcelBlob } from "../excelExport.js";
+import { getShopSettings } from "../thermalPrint.js";
 
 /* ── Tiny bar chart ── */
 function BarChart({ data, labelKey, valueKey, color = C.brand, height = 200 }) {
@@ -55,6 +56,7 @@ const TABS = [
   { key: "gstr2a",   label: "GSTR-2A",          icon: <FiFileText size={14} /> },
   { key: "gstr3b",   label: "GSTR-3B",          icon: <FiFileText size={14} /> },
   { key: "hsn",      label: "HSN wise GST",     icon: <FiPackage size={14} /> },
+  { key: "accounts", label: "Accounts",         icon: <FiDollarSign size={14} /> },
 ];
 
 export default function Reports() {
@@ -63,7 +65,11 @@ export default function Reports() {
   const [gstData, setGstData] = useState(null);
   const [profitData, setProfitData] = useState(null);
   const [purchaseData, setPurchaseData] = useState(null);
+  const [accountsData, setAccountsData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeStats, setUpgradeStats] = useState(null);
+  const [upgrading, setUpgrading] = useState(false);
   const [dateRange, setDateRange] = useState("This Month");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -105,10 +111,18 @@ export default function Reports() {
     } catch (e) { console.error(e); }
   };
 
+  const loadAccounts = async () => {
+    try {
+      const res = await fetch(`${API}/get_accounts_report.php?from=${from}&to=${to}`);
+      const j = await res.json().catch(() => ({}));
+      if (j.status === "success") setAccountsData(j.data);
+    } catch (e) { console.error(e); }
+  };
+
   const load = async () => {
     if (!from || !to) return;
     setLoading(true);
-    await Promise.all([loadSales(), loadGst(), loadProfit(), loadPurchase()]);
+    await Promise.all([loadSales(), loadGst(), loadProfit(), loadPurchase(), loadAccounts()]);
     setLoading(false);
   };
 
@@ -217,6 +231,180 @@ export default function Reports() {
     ], hsnSales, `HSN_Sales_${from}_to_${to}`);
   };
 
+  /* ── Send to CA — generate zip with all reports ── */
+  const [sendingCA, setSendingCA] = useState(false);
+  const [showCAMenu, setShowCAMenu] = useState(false);
+
+  useEffect(() => {
+    if (!showCAMenu) return;
+    const close = () => setShowCAMenu(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showCAMenu]);
+
+  const buildCAZip = async () => {
+    // Dynamically import JSZip
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    const range = `${from}_to_${to}`;
+
+    // GSTR-1
+    if (gstr1.length) {
+      zip.file(`GSTR1_${range}.xls`, generateExcelBlob([
+        { key: "invoice_no", label: "Invoice No" }, { key: "invoice_date", label: "Date" },
+        { key: "customer_name", label: "Customer" }, { key: "item_name", label: "Item" },
+        { key: "item_code", label: "Code" }, { key: "hsn", label: "HSN" },
+        { key: "qty", label: "Qty", type: "int" }, { key: "rate", label: "Rate", type: "number" },
+        { key: "taxable_value", label: "Taxable Value", type: "number" },
+        { key: "tax_pct", label: "GST %", type: "number" },
+        { key: "cgst", label: "CGST", type: "number" }, { key: "sgst", label: "SGST", type: "number" },
+        { key: "total_tax", label: "Total Tax", type: "number" }, { key: "total", label: "Total", type: "number" },
+      ], gstr1));
+    }
+
+    // GSTR-2A
+    if (gstr2a.length) {
+      zip.file(`GSTR2A_${range}.xls`, generateExcelBlob([
+        { key: "bill_no", label: "Bill No" }, { key: "bill_date", label: "Date" },
+        { key: "distributor_name", label: "Distributor" }, { key: "gstin", label: "GSTIN" },
+        { key: "item_name", label: "Item" }, { key: "item_code", label: "Code" },
+        { key: "hsn", label: "HSN" }, { key: "qty", label: "Qty", type: "int" },
+        { key: "rate", label: "Rate", type: "number" },
+        { key: "taxable_value", label: "Taxable Value", type: "number" },
+        { key: "tax_pct", label: "GST %", type: "number" },
+        { key: "cgst", label: "CGST", type: "number" }, { key: "sgst", label: "SGST", type: "number" },
+        { key: "total_tax", label: "Total Tax", type: "number" }, { key: "total", label: "Total", type: "number" },
+      ], gstr2a));
+    }
+
+    // GSTR-3B
+    if (gstr3b.outward) {
+      const g3bRows = [
+        { particular: "Outward Supplies (Sales)", taxable: gstr3b.outward?.taxable_value, cgst: gstr3b.outward?.cgst, sgst: gstr3b.outward?.sgst, igst: 0, total: gstr3b.outward?.total_tax },
+        { particular: "Inward Supplies (Purchases)", taxable: gstr3b.inward?.taxable_value, cgst: gstr3b.inward?.cgst, sgst: gstr3b.inward?.sgst, igst: 0, total: gstr3b.inward?.total_tax },
+        { particular: "Input Tax Credit (ITC)", taxable: "", cgst: gstr3b.itc?.cgst, sgst: gstr3b.itc?.sgst, igst: 0, total: gstr3b.itc?.total },
+        { particular: "Tax Payable", taxable: "", cgst: gstr3b.payable?.cgst, sgst: gstr3b.payable?.sgst, igst: 0, total: gstr3b.payable?.total },
+      ];
+      zip.file(`GSTR3B_${range}.xls`, generateExcelBlob([
+        { key: "particular", label: "Particular" }, { key: "taxable", label: "Taxable Value", type: "number" },
+        { key: "cgst", label: "CGST", type: "number" }, { key: "sgst", label: "SGST", type: "number" },
+        { key: "igst", label: "IGST", type: "number" }, { key: "total", label: "Total Tax", type: "number" },
+      ], g3bRows));
+    }
+
+    // HSN wise GST
+    if (hsnSales.length) {
+      zip.file(`HSN_Sales_${range}.xls`, generateExcelBlob([
+        { key: "hsn", label: "HSN Code" }, { key: "tax_pct", label: "GST %", type: "number" },
+        { key: "total_qty", label: "Qty", type: "int" },
+        { key: "taxable_value", label: "Taxable Value", type: "number" },
+        { key: "cgst", label: "CGST", type: "number" }, { key: "sgst", label: "SGST", type: "number" },
+        { key: "total_value", label: "Total Value", type: "number" },
+        { key: "invoice_count", label: "Invoices", type: "int" },
+      ], hsnSales));
+    }
+
+    // Sales data with item details
+    try {
+      const qs = new URLSearchParams({ type: "items", from, to });
+      const res = await fetch(`${API}/get_sales_download.php?${qs}`);
+      const j = await res.json().catch(() => ({}));
+      if (j.status === "success" && j.data?.length) {
+        zip.file(`Sales_Items_${range}.xls`, generateExcelBlob([
+          { key: "date", label: "Date" }, { key: "invoice_no", label: "Invoice No" },
+          { key: "customer_name", label: "Customer" }, { key: "item_name", label: "Item Name" },
+          { key: "item_code", label: "Item Code" }, { key: "hsn", label: "HSN" },
+          { key: "batch_no", label: "Batch" }, { key: "qty", label: "Qty", type: "int" },
+          { key: "mrp", label: "MRP", type: "number" }, { key: "sale_price", label: "Sale Price", type: "number" },
+          { key: "tax_pct", label: "Tax %", type: "number" },
+          { key: "taxable_amount", label: "Taxable Amt", type: "number" },
+          { key: "tax_amount", label: "Tax Amt", type: "number" },
+          { key: "amount", label: "Amount", type: "number" },
+        ], j.data));
+      }
+    } catch { /* ignore */ }
+
+    return zip.generateAsync({ type: "blob" });
+  };
+
+  const sendToCA = async (method) => {
+    const shop = getShopSettings();
+    if (method === "email" && !shop.caEmail) return alert("Please set your CA's email in Settings first.");
+    if (method === "whatsapp" && !shop.caPhone) return alert("Please set your CA's WhatsApp number in Settings first.");
+
+    try {
+      setSendingCA(true);
+      setShowCAMenu(false);
+      const zipBlob = await buildCAZip();
+      const range = `${from} to ${to}`;
+      const filename = `GST_Reports_${shop.name.replace(/\s+/g, "_")}_${from}_to_${to}.zip`;
+
+      if (method === "download") {
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (method === "email") {
+        const subject = encodeURIComponent(`GST Reports - ${shop.name} (${range})`);
+        const body = encodeURIComponent(`Dear ${shop.caName || "Sir/Madam"},\n\nPlease find attached the GST reports for ${shop.name} for the period ${range}.\n\nReports included:\n- GSTR-1 (Outward Supplies)\n- GSTR-2A (Inward Supplies)\n- GSTR-3B (Tax Summary)\n- HSN wise GST\n- Sales Item-wise Data\n\nRegards,\n${shop.name}\n${shop.phone}`);
+        // Create a File from the blob and try to share via mailto
+        const file = new File([zipBlob], filename, { type: "application/zip" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: `GST Reports - ${shop.name}`, text: `GST Reports for ${range}` });
+        } else {
+          window.location.href = `mailto:${shop.caEmail}?subject=${subject}&body=${body}`;
+        }
+      } else if (method === "whatsapp") {
+        const file = new File([zipBlob], filename, { type: "application/zip" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: `GST Reports - ${shop.name}`, text: `GST Reports for ${range}` });
+        } else {
+          const phone = shop.caPhone.replace(/\D/g, "");
+          const waPhone = phone.startsWith("91") ? phone : `91${phone}`;
+          const text = encodeURIComponent(`GST Reports - ${shop.name} (${range})\n\nReports: GSTR-1, GSTR-2A, GSTR-3B, HSN wise GST, Sales Data`);
+          window.open(`https://wa.me/${waPhone}?text=${text}`, "_blank");
+        }
+      }
+    } catch (e) {
+      alert("Failed to generate reports: " + (e.message || "Unknown error"));
+    } finally {
+      setSendingCA(false);
+    }
+  };
+
+  /* ── Upgrade: remove non-GST items from sales ── */
+  const onUpgradeClick = async () => {
+    if (!from || !to) return alert("Please select a date range first.");
+    try {
+      const res = await fetch(`${API}/upgrade_remove_nongst.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: true, from, to }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Failed");
+      setUpgradeStats(j.data);
+      setShowUpgrade(true);
+    } catch (e) { alert(e.message || "Failed to check"); }
+  };
+
+  const confirmUpgrade = async () => {
+    try {
+      setUpgrading(true);
+      const res = await fetch(`${API}/upgrade_remove_nongst.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: false, from, to }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Failed");
+      setShowUpgrade(false);
+      alert("Upgrade complete! Non-GST items removed from sales.");
+      load(); // Reload reports
+    } catch (e) { alert(e.message || "Upgrade failed"); }
+    finally { setUpgrading(false); }
+  };
+
   /* ── GST table renderer ── */
   const GSTTable = ({ columns, rows, emptyMsg = "No data" }) => (
     <div style={{ overflowX: "auto" }}>
@@ -257,6 +445,32 @@ export default function Reports() {
         <input className="g-inp sm" type="date" style={{ width: 130 }} value={from} onChange={(e) => { setFrom(e.target.value); setDateRange("Custom"); }} />
         <input className="g-inp sm" type="date" style={{ width: 130 }} value={to} onChange={(e) => { setTo(e.target.value); setDateRange("Custom"); }} />
         <div style={{ flex: 1 }} />
+        <button className="g-btn ghost sm" onClick={onUpgradeClick} style={{ color: C.red, borderColor: "#fca5a5" }}>
+          <FiArrowUp size={13} /> Upgrade
+        </button>
+        {/* Send to CA dropdown */}
+        <div style={{ position: "relative" }}>
+          <button className="g-btn primary sm" disabled={sendingCA || loading} onClick={(e) => { e.stopPropagation(); setShowCAMenu((p) => !p); }}>
+            <FiSend size={13} /> {sendingCA ? "Preparing…" : "Send to CA"}
+          </button>
+          {showCAMenu && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 50, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,0.12)", minWidth: 220, padding: "6px 0" }}>
+              {[
+                { method: "download", label: "Download ZIP", desc: "All reports in one zip file" },
+                { method: "email", label: "Send via Email", desc: "Open email with reports" },
+                { method: "whatsapp", label: "Send via WhatsApp", desc: "Open WhatsApp with message" },
+              ].map(({ method, label, desc }) => (
+                <button key={method} onClick={(e) => { e.stopPropagation(); sendToCA(method); }}
+                  style={{ display: "block", width: "100%", padding: "10px 16px", border: "none", background: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{label}</div>
+                  <div style={{ fontSize: 11, color: C.textSub, marginTop: 1 }}>{desc}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button className="g-btn ghost sm" onClick={load} disabled={loading}><FiRefreshCw size={14} /></button>
       </div>
 
@@ -820,8 +1034,246 @@ export default function Reports() {
               </div>
             </>
           )}
+
+          {/* ═══════ ACCOUNTS ═══════ */}
+          {tab === "accounts" && (() => {
+            const ac = accountsData || {};
+            const salesModes = ac.sales_by_mode || [];
+            const purchaseModes = ac.purchase_by_mode || [];
+            const daily = ac.daily_cash_flow || [];
+            const netFlow = ac.net_cash_flow || 0;
+            const allModes = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
+            const modeColors = { Cash: "#16a34a", UPI: "#7c3aed", Card: "#0369a1", Bank: "#0891b2", Cheque: "#ca8a04", Other: "#64748b" };
+
+            return (
+              <>
+                {/* Summary cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, marginBottom: 18 }}>
+                  {[
+                    { label: "Total Received (Sales)", value: `₹${fmt2(ac.sales_total_received || 0)}`, color: C.green },
+                    { label: "Total Paid (Purchase)", value: `₹${fmt2(ac.purchase_total_paid || 0)}`, color: C.orange },
+                    { label: "Net Cash Flow", value: `₹${fmt2(netFlow)}`, color: netFlow >= 0 ? C.green : C.red },
+                    { label: "Outstanding", value: `₹${fmt2((ac.sales_outstanding || 0) + (ac.purchase_outstanding || 0))}`, color: C.red },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color, letterSpacing: "-0.02em" }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 18 }}>
+                  {/* Sales by mode */}
+                  <div className="g-card">
+                    <div className="g-card-head">
+                      <div className="g-card-title"><FiArrowDown size={14} style={{ color: C.green }} /> Sales Received by Mode</div>
+                      <button className="g-btn ghost sm" onClick={() => downloadExcel([
+                        { key: "mode", label: "Payment Mode" },
+                        { key: "total", label: "Amount", type: "number" },
+                        { key: "txn_count", label: "Transactions", type: "int" },
+                      ], salesModes, `Sales_By_Mode_${from}_to_${to}`)}><FiDownload size={12} /></button>
+                    </div>
+                    <div className="g-card-body">
+                      {salesModes.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: 20, color: C.textSub, fontSize: 13 }}>No data</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {salesModes.map((m) => (
+                            <div key={m.mode} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <div style={{ width: 70, fontSize: 13, fontWeight: 600, color: C.text }}>{m.mode}</div>
+                              <div style={{ flex: 1 }}>
+                                <HBar value={m.total} max={ac.sales_total_received || 1} color={modeColors[m.mode] || C.brand} />
+                              </div>
+                              <div style={{ width: 100, textAlign: "right", fontSize: 14, fontWeight: 700, color: C.text }}>₹{fmt2(m.total)}</div>
+                              <div style={{ width: 40, textAlign: "right", fontSize: 11, color: C.textSub }}>{m.txn_count}</div>
+                            </div>
+                          ))}
+                          <div style={{ borderTop: "1.5px solid #f1f5f9", paddingTop: 10, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800 }}>
+                            <span>Total</span>
+                            <span style={{ color: C.green }}>₹{fmt2(ac.sales_total_received)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Purchase by mode */}
+                  <div className="g-card">
+                    <div className="g-card-head">
+                      <div className="g-card-title"><FiArrowUp size={14} style={{ color: C.orange }} /> Purchase Paid by Mode</div>
+                      <button className="g-btn ghost sm" onClick={() => downloadExcel([
+                        { key: "mode", label: "Payment Mode" },
+                        { key: "total", label: "Amount", type: "number" },
+                        { key: "txn_count", label: "Transactions", type: "int" },
+                      ], purchaseModes, `Purchase_By_Mode_${from}_to_${to}`)}><FiDownload size={12} /></button>
+                    </div>
+                    <div className="g-card-body">
+                      {purchaseModes.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: 20, color: C.textSub, fontSize: 13 }}>No data</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {purchaseModes.map((m) => (
+                            <div key={m.mode} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <div style={{ width: 70, fontSize: 13, fontWeight: 600, color: C.text }}>{m.mode}</div>
+                              <div style={{ flex: 1 }}>
+                                <HBar value={m.total} max={ac.purchase_total_paid || 1} color={modeColors[m.mode] || C.brand} />
+                              </div>
+                              <div style={{ width: 100, textAlign: "right", fontSize: 14, fontWeight: 700, color: C.text }}>₹{fmt2(m.total)}</div>
+                              <div style={{ width: 40, textAlign: "right", fontSize: 11, color: C.textSub }}>{m.txn_count}</div>
+                            </div>
+                          ))}
+                          <div style={{ borderTop: "1.5px solid #f1f5f9", paddingTop: 10, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800 }}>
+                            <span>Total</span>
+                            <span style={{ color: C.orange }}>₹{fmt2(ac.purchase_total_paid)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Outstanding */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 18 }}>
+                  <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 6 }}>Sales Outstanding (to collect)</div>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: ac.sales_outstanding > 0 ? C.orange : C.green }}>₹{fmt2(ac.sales_outstanding)}</div>
+                  </div>
+                  <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 6 }}>Purchase Outstanding (to pay)</div>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: ac.purchase_outstanding > 0 ? C.red : C.green }}>₹{fmt2(ac.purchase_outstanding)}</div>
+                  </div>
+                </div>
+
+                {/* Daily cash flow chart */}
+                {daily.length > 0 && (
+                  <div className="g-card">
+                    <div className="g-card-head">
+                      <div className="g-card-title"><FiBarChart2 size={14} style={{ color: C.brand }} /> Daily Cash Flow</div>
+                      <button className="g-btn ghost sm" onClick={() => downloadExcel([
+                        { key: "date", label: "Date" },
+                        { key: "sales_received", label: "Sales Received", type: "number" },
+                        { key: "purchase_paid", label: "Purchase Paid", type: "number" },
+                        { key: "net", label: "Net Flow", type: "number" },
+                      ], daily, `Daily_CashFlow_${from}_to_${to}`)}><FiDownload size={12} /></button>
+                    </div>
+                    <div className="g-card-body" style={{ overflowX: "auto" }}>
+                      <table className="g-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th style={{ textAlign: "right" }}>Sales Received</th>
+                            <th style={{ textAlign: "right" }}>Purchase Paid</th>
+                            <th style={{ textAlign: "right" }}>Net Flow</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {daily.map((d) => (
+                            <tr key={d.date}>
+                              <td>{d.date}</td>
+                              <td style={{ textAlign: "right", fontWeight: 600, color: C.green }}>₹{fmt2(d.sales_received)}</td>
+                              <td style={{ textAlign: "right", fontWeight: 600, color: C.orange }}>₹{fmt2(d.purchase_paid)}</td>
+                              <td style={{ textAlign: "right", fontWeight: 700, color: d.net >= 0 ? C.green : C.red }}>₹{fmt2(d.net)}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ background: "#f1f5f9", fontWeight: 800 }}>
+                            <td>TOTAL</td>
+                            <td style={{ textAlign: "right", color: C.green }}>₹{fmt2(daily.reduce((s, d) => s + d.sales_received, 0))}</td>
+                            <td style={{ textAlign: "right", color: C.orange }}>₹{fmt2(daily.reduce((s, d) => s + d.purchase_paid, 0))}</td>
+                            <td style={{ textAlign: "right", color: netFlow >= 0 ? C.green : C.red }}>₹{fmt2(netFlow)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </>
       )}
+
+      {/* ── MODAL: Upgrade — Remove non-GST items ── */}
+      <Modal show={showUpgrade} title="Upgrade — Remove Non-GST Items from Sales" onClose={() => setShowUpgrade(false)} width={560}
+        footer={<>
+          <button className="g-btn ghost" onClick={() => setShowUpgrade(false)} disabled={upgrading}>Cancel</button>
+          <button className="g-btn" style={{ background: C.red, color: "#fff", height: 38, padding: "0 18px", border: "none", borderRadius: 9, fontWeight: 700, cursor: "pointer" }}
+            onClick={confirmUpgrade} disabled={upgrading || (!upgradeStats?.sales_items_to_remove && !upgradeStats?.purchase_items_to_reduce && !upgradeStats?.purchase_items_to_delete)}>
+            {upgrading ? "Processing…" : "Confirm Upgrade"}
+          </button>
+        </>}>
+        {upgradeStats && (
+          <div>
+            {upgradeStats.sales_items_to_remove === 0 && upgradeStats.purchase_items_to_reduce === 0 && upgradeStats.purchase_items_to_delete === 0 ? (
+              <div style={{ padding: "24px 0", textAlign: "center", color: C.textSub, fontSize: 15 }}>
+                No non-GST items found. Nothing to upgrade.
+              </div>
+            ) : (
+              <>
+                <div style={{ background: "#fef2f2", border: "1.5px solid #fecaca", borderRadius: 9, padding: "12px 16px", marginBottom: 18, fontSize: 13, color: "#991b1b" }}>
+                  This will permanently remove all non-GST items from sales invoices and purchase bills <strong>between {upgradeStats.from} and {upgradeStats.to}</strong>, adjust totals, and clean up inventory. This action <strong>cannot be undone</strong>.
+                </div>
+
+                {/* Sales stats */}
+                {upgradeStats.sales_items_to_remove > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Sales Invoices</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+                      {[
+                        { label: "Items", value: upgradeStats.sales_items_to_remove, color: C.red },
+                        { label: "Amount", value: `₹${fmt2(upgradeStats.sales_total_amount)}`, color: C.red },
+                        { label: "Adjust", value: upgradeStats.sales_invoices_to_adjust, color: C.orange },
+                        { label: "Delete", value: upgradeStats.sales_invoices_to_delete, color: C.red },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} style={{ background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", padding: "10px 12px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
+                          <div style={{ fontSize: 17, fontWeight: 800, color }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Purchase stats */}
+                {(upgradeStats.purchase_items_to_reduce > 0 || upgradeStats.purchase_items_to_delete > 0) && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Purchase Bills</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+                      {[
+                        { label: "Qty Reduced", value: upgradeStats.purchase_items_to_reduce, color: C.orange },
+                        { label: "Items Removed", value: upgradeStats.purchase_items_to_delete, color: C.red },
+                        { label: "Amount", value: `₹${fmt2(upgradeStats.purchase_amount_reduced)}`, color: C.red },
+                        { label: "Bills Affected", value: upgradeStats.purchase_affected_bills, color: C.orange },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} style={{ background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", padding: "10px 12px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
+                          <div style={{ fontSize: 17, fontWeight: 800, color }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6 }}>
+                  <strong>What will happen:</strong>
+                  <ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>
+                    {upgradeStats.sales_items_to_remove > 0 && <>
+                      <li>{upgradeStats.sales_items_to_remove} non-GST item(s) removed from {upgradeStats.sales_affected_invoices} sale invoice(s)</li>
+                      {upgradeStats.sales_invoices_to_adjust > 0 && <li>{upgradeStats.sales_invoices_to_adjust} invoice(s) recalculated</li>}
+                      {upgradeStats.sales_invoices_to_delete > 0 && <li>{upgradeStats.sales_invoices_to_delete} invoice(s) deleted (had only non-GST items)</li>}
+                    </>}
+                    {(upgradeStats.purchase_items_to_reduce > 0 || upgradeStats.purchase_items_to_delete > 0) && <>
+                      {upgradeStats.purchase_items_to_reduce > 0 && <li>{upgradeStats.purchase_items_to_reduce} purchase item(s) will have qty reduced (only sold qty deducted)</li>}
+                      {upgradeStats.purchase_items_to_delete > 0 && <li>{upgradeStats.purchase_items_to_delete} purchase item(s) fully consumed — will be removed from bills</li>}
+                      <li>{upgradeStats.purchase_affected_bills} purchase bill(s) will be recalculated (empty bills deleted)</li>
+                    </>}
+                    <li>Inventory adjusted to match</li>
+                  </ul>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -1,26 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color: #111827;
+  background-color: #f0f4f8;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -28,112 +20,19 @@ body {
   min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
+a { text-decoration: none; color: inherit; }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
+/* Selection */
+::selection { background: #dbeafe; color: #034C9D; }
 
-/* Custom */
-.heading {
-  font-size: 24px;
-  color: #044c9d;
-  line-height: 29px;
-  color: #044b9b;
-  margin-top: 60px;
-  text-align: left;
-}
-.input-ele {
-  font-size: 18px;
-  border: 0;
-  height: 34px;
-  font-weight: 600;
-  width: 100%;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  -o-appearance: none;
-  -ms-appearance: none;
-  appearance: none;
-  outline: none;
-  border-radius: 0;
-  background: transparent;
-}
+/* Smooth scroll */
+html { scroll-behavior: smooth; }
 
-.login-box {
-  border-bottom: 1px solid #e7e7e7;
-  padding: 0;
-  margin-bottom: 30px;
-}
-
-.label-ele {
-  font-size: 14px;
-  color: rgba(4, 76, 157, 1);
-  font-weight: 500;
-}
-
-.submit-btn {
-  font-size: 16px;
-  color: #fff;
-  padding: 13px 25px;
-  text-align: center;
-  border-radius: 2px;
-  background-color: #044c9d;
-  -webkit-box-shadow: 0 4px 8px rgba(4, 76, 157, 0.4);
-  box-shadow: 0 4px 8px rgba(4, 76, 157, 0.4);
-  -webkit-transition: all 0.3s ease;
-  transition: all 0.3s ease;
-  display: inline-block;
-  font-size: 18px;
-  font-weight: 500;
-  outline: none;
-  border: none;
-  width: 100%;
-}
-
-.show-pass {
-  position: absolute;
-  top: 32px;
-  right: 26px;
-  cursor: pointer;
-  color: rgba(17, 17, 17, 0.6);
-}
-
-.header-row th {
-  color: #034c9d;
-  border: 0px;
-}
-
-.header-row {
-  border: 0px;
-}
+/* Remove default button styles leaking into the app */
+button { font-family: inherit; }

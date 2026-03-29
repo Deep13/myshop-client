@@ -55,3 +55,28 @@ export function downloadExcel(columns, rows, filename = "export") {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/** Returns a Blob (xls) without triggering download — for use in zip packaging */
+export function generateExcelBlob(columns, rows) {
+  const esc = (v) => {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  };
+  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Sheet1</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<style>td,th{mso-number-format:"\\@";font-family:Calibri;font-size:11pt}th{background:#034C9D;color:#fff;font-weight:bold;padding:6px 10px}td{padding:4px 10px;border-bottom:1px solid #e5e7eb}.num{mso-number-format:"#\\,##0\\.00";text-align:right}.int{mso-number-format:"#\\,##0";text-align:right}</style>
+</head><body><table><thead><tr>`;
+  columns.forEach((c) => { html += `<th>${esc(c.label)}</th>`; });
+  html += "</tr></thead><tbody>";
+  rows.forEach((row) => {
+    html += "<tr>";
+    columns.forEach((c) => {
+      const cls = c.type === "number" ? "num" : c.type === "int" ? "int" : "";
+      html += `<td class="${cls}">${esc(row[c.key])}</td>`;
+    });
+    html += "</tr>";
+  });
+  html += "</tbody></table></body></html>";
+  return new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+}

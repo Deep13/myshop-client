@@ -9,7 +9,8 @@
       "Bash(\"c:/xampp/php/php.exe\" \"c:/xampp/htdocs/myshop-backend/seed_dummy_data.php\")",
       "Bash(npm install:*)",
       "Bash(npm run:*)",
-      "Bash(curl -s \"http://localhost/myshop-backend/get_purchase_report.php?from=2026-01-01&to=2026-03-20\")"
+      "Bash(curl -s \"http://localhost/myshop-backend/get_purchase_report.php?from=2026-01-01&to=2026-03-20\")",
+      "Bash(\"c:/xampp/php/php.exe\" -r \":*)"
     ]
   }
 }

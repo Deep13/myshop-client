@@ -51,6 +51,7 @@ export default function AddPurchase() {
   const [dueDate, setDueDate] = useState(todayISO());
   const [billType, setBillType] = useState("GST"); // GST | NON-GST
   const isGST = billType === "GST";
+  const [gstMode, setGstMode] = useState("exclusive"); // "inclusive" | "exclusive"
 
   /* rows */
   const [rows, setRows] = useState([blankRow(), blankRow()]);
@@ -80,9 +81,13 @@ export default function AddPurchase() {
   /* ui */
   const [saving, setSaving] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
+  const [addItemForRow, setAddItemForRow] = useState(null); // track which row triggered "Add to Master"
   const [showAddDist, setShowAddDist] = useState(false);
   const [newDist, setNewDist] = useState({ name: "", gstin: "", phone: "" });
   const [newItem, setNewItem] = useState(blankNewItem());
+  const [showPriceWarning, setShowPriceWarning] = useState(false);
+  const [priceWarnings, setPriceWarnings] = useState([]);
+  const [pendingSaveData, setPendingSaveData] = useState(null);
 
   /* ── Load item master from DB ── */
   useEffect(() => {
@@ -109,6 +114,7 @@ export default function AddPurchase() {
         setGstin(h.distributor_gstin || "");
         setBillNo(h.bill_no); setBillDate(h.bill_date); setDueDate(h.due_date || "");
         setBillType(h.bill_type || "GST");
+        setGstMode(h.gst_mode || "exclusive");
         setRows(j.items.map((r) => ({
           itemId: asNum(r.item_id), itemName: r.item_name, code: r.item_code,
           hsn: r.hsn, batchNo: r.batch_no, expDate: r.exp_date || "",
@@ -144,12 +150,26 @@ export default function AddPurchase() {
   const pickItem = (ri, item) => {
     setActiveSug(null);
     setItemSearch((p) => ({ ...p, [ri]: "" }));
-    const fill = {
-      itemId: item.id, itemName: item.name, code: item.code,
-      hsn: item.hsn || "", mrp: item.mrp ?? "", salePrice: item.salePrice ?? "",
-      purchasePrice: item.purchasePrice ?? "", tax: item.tax ?? "", qty: 1, discount: "",
-    };
     setRows((prev) => {
+      // Check if this item already exists in another filled row
+      const existingIdx = prev.findIndex((r, i) => i !== ri && r.itemId === item.id && String(r.itemName || "").trim());
+      if (existingIdx >= 0) {
+        // Increment qty of existing row instead of filling a new one
+        const n = [...prev];
+        const existing = { ...n[existingIdx] };
+        existing.qty = String(asNum(existing.qty) + 1);
+        existing.amount = calcRowAmt(existing).toFixed(2);
+        n[existingIdx] = existing;
+        // Clear the current row search
+        n[ri] = blankRow();
+        return n;
+      }
+      // No duplicate — fill the current row
+      const fill = {
+        itemId: item.id, itemName: item.name, code: item.code,
+        hsn: item.hsn || "", mrp: item.mrp ?? "", salePrice: item.salePrice ?? "",
+        purchasePrice: item.purchasePrice ?? "", tax: item.tax ?? "", qty: 1, discount: "",
+      };
       const n = [...prev];
       n[ri] = { ...n[ri], ...fill };
       n[ri].amount = calcRowAmt(n[ri]).toFixed(2);
@@ -176,8 +196,20 @@ export default function AddPurchase() {
 
   /* ── Totals ── */
   const subTotal = useMemo(() => rows.reduce((a, r) => a + asNum(r.amount), 0), [rows]);
-  const taxTotal = useMemo(() => isGST ? rows.reduce((a, r) => a + (asNum(r.amount) * asNum(r.tax)) / 100, 0) : 0, [rows, isGST]);
-  const grandTotal = useMemo(() => subTotal + taxTotal, [subTotal, taxTotal]);
+  const taxTotal = useMemo(() => {
+    if (!isGST) return 0;
+    if (gstMode === "inclusive") {
+      // Tax is already inside the purchase price, extract it: tax = amount * rate / (100 + rate)
+      return rows.reduce((a, r) => {
+        const rate = asNum(r.tax);
+        return a + (rate > 0 ? asNum(r.amount) * rate / (100 + rate) : 0);
+      }, 0);
+    }
+    // Exclusive: tax is added on top
+    return rows.reduce((a, r) => a + (asNum(r.amount) * asNum(r.tax)) / 100, 0);
+  }, [rows, isGST, gstMode]);
+  // For inclusive: grand total = subTotal (tax is already inside), for exclusive: grand total = subTotal + tax on top
+  const grandTotal = useMemo(() => gstMode === "inclusive" ? subTotal : subTotal + taxTotal, [subTotal, taxTotal, gstMode]);
   const roundedTotal = useMemo(() => roundOff ? Math.ceil(grandTotal) : grandTotal, [grandTotal, roundOff]);
   const roundDiff = useMemo(() => roundedTotal - grandTotal, [roundedTotal, grandTotal]);
   const sumPay = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
@@ -205,6 +237,11 @@ export default function AddPurchase() {
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
       const created = j.data;
       setItemMaster((p) => [created, ...p]);
+      // Auto-select the newly created item in the row that triggered "Add to Master"
+      if (addItemForRow !== null) {
+        pickItem(addItemForRow, created);
+        setAddItemForRow(null);
+      }
       setShowAddItem(false);
       setNewItem(blankNewItem());
     } catch (e) { alert(e.message || "Failed"); }
@@ -358,10 +395,10 @@ export default function AddPurchase() {
     if (uploadFile) uploadFileToServer(uploadFile);
   };
 
-  /* ── Main save ── */
-  const onSave = async () => {
-    if (!selDist) return alert("Please select a distributor");
-    if (!billNo.trim()) return alert("Bill number is required");
+  /* ── Build save payload ── */
+  const buildSavePayload = () => {
+    if (!selDist) { alert("Please select a distributor"); return null; }
+    if (!billNo.trim()) { alert("Bill number is required"); return null; }
     const cleanRows = rows.map((r) => ({
       itemName: String(r.itemName || "").trim(), code: String(r.code || "").trim(),
       hsn: String(r.hsn || "").trim(), batchNo: String(r.batchNo || "").trim(),
@@ -370,15 +407,20 @@ export default function AddPurchase() {
       discount: String(r.discount || "").trim(), tax: isGST ? asNum(r.tax) : 0,
       amount: asNum(r.amount),
     })).filter((r) => r.itemName && r.qty > 0);
-    if (!cleanRows.length) return alert("Add at least one item");
-    // Validate all items are from master
+    if (!cleanRows.length) { alert("Add at least one item"); return null; }
     for (const r of cleanRows) {
-      if (!itemMaster.some((it) => it.code === r.code)) return alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`);
+      if (!itemMaster.some((it) => it.code === r.code)) { alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`); return null; }
     }
     const payList = multiPay ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0) : [{ type: payMode, amount: asNum(received) }];
     const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
     const totals = { subTotal: asNum(subTotal), taxTotal: asNum(taxTotal), grandTotal: asNum(grandTotal), roundOffEnabled: roundOff, roundOffDiff: asNum(roundDiff), roundedGrandTotal: asNum(roundedTotal) };
-    const base = { distributorId: selDist.id, distributorName: selDist.name, gstin: gstin.trim(), billNo: billNo.trim(), billDate, dueDate, billType, rows: cleanRows, totals, payments: payList };
+    const base = { distributorId: selDist.id, distributorName: selDist.name, gstin: gstin.trim(), billNo: billNo.trim(), billDate, dueDate, billType, gstMode: isGST ? gstMode : "exclusive", rows: cleanRows, totals, payments: payList, user };
+    return base;
+  };
+
+  /* ── Actually persist the purchase ── */
+  const doSave = async (payload) => {
+    const { user, ...base } = payload;
     try {
       setSaving(true);
       if (isEdit) {
@@ -391,13 +433,38 @@ export default function AddPurchase() {
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.status !== "success") throw new Error(j.message || "Save failed");
         const newId = j.purchaseId;
-        for (const p of payList) {
+        for (const p of base.payments) {
           if (!p.amount || p.amount <= 0) continue;
           await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "" }) });
         }
         alert("Purchase Saved!"); window.location.href = "/purchase";
       }
     } catch (e) { alert(e.message || "Failed"); } finally { setSaving(false); }
+  };
+
+  /* ── Main save — check for cheaper past purchases first ── */
+  const onSave = async () => {
+    const payload = buildSavePayload();
+    if (!payload) return;
+
+    // For new purchases, check if any items were bought cheaper before
+    if (!isEdit) {
+      try {
+        const res = await fetch(`${API}/check_purchase_prices.php`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: payload.rows }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (j.status === "success" && j.data?.length > 0) {
+          setPriceWarnings(j.data);
+          setPendingSaveData(payload);
+          setShowPriceWarning(true);
+          return; // Don't save yet — show warning first
+        }
+      } catch { /* proceed with save if check fails */ }
+    }
+
+    await doSave(payload);
   };
 
   // Ctrl+S shortcut
@@ -434,6 +501,16 @@ export default function AddPurchase() {
               </button>
             ))}
           </div>
+          {/* Inclusive / Exclusive toggle — only when GST */}
+          {isGST && (
+            <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 9, padding: 3, gap: 3 }}>
+              {[{ k: "exclusive", l: "Exclusive" }, { k: "inclusive", l: "Inclusive" }].map(({ k, l }) => (
+                <button key={k} onClick={() => setGstMode(k)} style={{ padding: "6px 14px", borderRadius: 7, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.15s", background: gstMode === k ? "#059669" : "transparent", color: gstMode === k ? "#fff" : C.textSub }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
           <button className="g-btn ghost" onClick={() => fileInputRef.current?.click()} title="Upload Excel/PDF/Image of purchase bill">
             <FiUpload size={14} /> Upload Bill
@@ -512,14 +589,14 @@ export default function AddPurchase() {
           icon={<FiPackage size={15} />}
           title={`Items / Medicines${filledCount > 0 ? ` — ${filledCount} added` : ""}${!isGST ? "  [NON-GST — Tax not applied]" : ""}`}
           actions={
-            <button className="g-btn ghost sm" onClick={() => { setNewItem(blankNewItem()); setShowAddItem(true); }}>
+            <button className="g-btn ghost sm" onClick={() => { setNewItem(blankNewItem()); setAddItemForRow(null); setShowAddItem(true); }}>
               <FiPlus size={13} /> Add to Master
             </button>
           }
         />
         {!masterLoaded && <div style={{ padding: "12px 18px", fontSize: 13, color: C.textSub }}>Loading item master…</div>}
-        <div style={{ overflowX: "auto" }}>
-          <table className="g-table" style={{ minWidth: 980 }}>
+        <div>
+          <table className="g-table" style={{ width: "100%" }}>
             <thead>
               <tr>
                 <th style={{ width: 36, paddingLeft: 14 }}>#</th>
@@ -598,7 +675,7 @@ export default function AddPurchase() {
                           {activeSug === idx && String(searchText || "").trim().length > 0 && sug.length === 0 && (
                             <div style={{ position: "absolute", top: "100%", left: 0, width: 280, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", padding: "10px 14px" }}>
                               <div style={{ fontSize: 12, color: C.textSub }}>No item found.</div>
-                              <button className="g-btn ghost sm" style={{ marginTop: 8 }} onClick={() => { setNewItem(blankNewItem()); setShowAddItem(true); }}><FiPlus size={12} /> Add to Master</button>
+                              <button className="g-btn ghost sm" style={{ marginTop: 8 }} onClick={() => { const code = String(itemSearch[idx] || "").trim(); setNewItem({ ...blankNewItem(), itemCode: code }); setAddItemForRow(idx); setShowAddItem(true); }}><FiPlus size={12} /> Add to Master</button>
                             </div>
                           )}
                         </div>
@@ -712,8 +789,10 @@ export default function AddPurchase() {
           <div className="g-card-head"><div className="g-card-title">Summary</div></div>
           <div className="g-card-body">
             {[
-              { l: "Subtotal", v: `₹${fmt2(subTotal)}` },
-              ...(isGST ? [{ l: "Tax Total", v: `₹${fmt2(taxTotal)}` }] : []),
+              ...(isGST && gstMode === "inclusive"
+                ? [{ l: "Total (Tax Inclusive)", v: `₹${fmt2(subTotal)}` }, { l: "Tax (included)", v: `₹${fmt2(taxTotal)}` }]
+                : [{ l: "Subtotal", v: `₹${fmt2(subTotal)}` }, ...(isGST ? [{ l: "Tax Total", v: `₹${fmt2(taxTotal)}` }] : [])]
+              ),
             ].map(({ l, v }) => (
               <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.textSub, marginBottom: 10 }}>
                 <span>{l}</span><span style={{ fontWeight: 600 }}>{v}</span>
@@ -739,7 +818,7 @@ export default function AddPurchase() {
 
             {/* Bill type indicator */}
             <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: isGST ? C.brandLighter : "#f3f4f6", border: `1.5px solid ${isGST ? "#bfdbfe" : "#e5e7eb"}`, fontSize: 13, fontWeight: 700, color: isGST ? C.brand : "#374151", textAlign: "center" }}>
-              {isGST ? "📋 GST Bill" : "📄 NON-GST Bill"}
+              {isGST ? `GST Bill (${gstMode === "inclusive" ? "Tax Inclusive" : "Tax Exclusive"})` : "NON-GST Bill"}
             </div>
           </div>
         </div>
@@ -845,6 +924,93 @@ export default function AddPurchase() {
           <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: C.brandLighter, border: "1.5px solid #bfdbfe", fontSize: 12, color: C.brand }}>
             Items will be auto-matched with your item master by name/code. Unmatched items will show as-is for manual selection.
           </div>
+        </div>
+      </Modal>
+
+      {/* ── MODAL: PRICE WARNING ── */}
+      <Modal show={showPriceWarning} title="Price & MRP Alert" onClose={() => setShowPriceWarning(false)} width={720}
+        footer={<>
+          <button className="g-btn ghost" onClick={() => setShowPriceWarning(false)}>Go Back & Edit</button>
+          <button className="g-btn success" onClick={async () => { setShowPriceWarning(false); if (pendingSaveData) await doSave(pendingSaveData); }}>
+            <FiCheck size={14} /> Save Anyway
+          </button>
+        </>}>
+        <div>
+          <div style={{ background: "#fff7ed", border: "1.5px solid #fed7aa", borderRadius: 9, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#9a3412" }}>
+            Review the following price/MRP changes before saving.
+          </div>
+          {priceWarnings.map((w, i) => (
+            <div key={i} style={{ marginBottom: 16, border: `1.5px solid ${C.borderLight}`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "10px 16px", background: "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${C.borderLight}` }}>
+                <div>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{w.item_name}</span>
+                  <span style={{ fontSize: 12, color: C.textSub, marginLeft: 8 }}>({w.item_code})</span>
+                </div>
+                <div style={{ display: "flex", gap: 14, fontSize: 13, fontWeight: 700 }}>
+                  {w.current_price > 0 && <span>Price: <span style={{ color: C.red }}>₹{w.current_price.toFixed(2)}</span></span>}
+                  {w.current_mrp > 0 && <span>MRP: <span style={{ color: C.brand }}>₹{w.current_mrp.toFixed(2)}</span></span>}
+                </div>
+              </div>
+
+              {/* Cheaper purchase history */}
+              {w.cheaper_purchases?.length > 0 && (
+                <div>
+                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.orange, background: "#fff7ed" }}>
+                    Bought cheaper before
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#fafbfc" }}>
+                        {["Past Price", "Qty", "Distributor", "Bill No", "Date"].map((h) => (
+                          <th key={h} style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {w.cheaper_purchases.map((p, j) => (
+                        <tr key={j} style={{ borderBottom: "1px solid #f9fafb" }}>
+                          <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color: C.green }}>₹{p.purchase_price.toFixed(2)}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.qty}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.distributor_name}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{p.bill_no}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{p.bill_date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* MRP change history */}
+              {w.mrp_changes?.length > 0 && (
+                <div>
+                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.brand, background: "#eff6ff" }}>
+                    MRP was different before
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#fafbfc" }}>
+                        {["Past MRP", "Price", "Distributor", "Bill No", "Date"].map((h) => (
+                          <th key={h} style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {w.mrp_changes.map((m, j) => (
+                        <tr key={j} style={{ borderBottom: "1px solid #f9fafb" }}>
+                          <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color: m.mrp < w.current_mrp ? C.green : C.red }}>₹{m.mrp.toFixed(2)}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13 }}>₹{m.purchase_price.toFixed(2)}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 13 }}>{m.distributor_name}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{m.bill_no}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{m.bill_date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </Modal>
     </div>

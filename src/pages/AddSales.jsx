@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmt2 } from "../ui.jsx";
+import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
+import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 
 /* ═══════════════════════════════════════════════════════
    PRICING MODEL
@@ -73,6 +74,7 @@ export default function AddSales() {
   const [activeSug, setActiveSug] = useState(null);
   const [searchText, setSearchText] = useState({});
   const qtyRefs = useRef({});
+  const searchRefs = useRef({});
 
   const [inventory, setInventory] = useState([]);
 
@@ -86,6 +88,10 @@ export default function AddSales() {
   const [payments, setPayments]   = useState([{ type: "Cash", amount: "" }]);
 
   const [saving, setSaving]       = useState(false);
+
+  /* ── Shop / Printer settings ── */
+  const [showShopSettings, setShowShopSettings] = useState(false);
+  const [shopForm, setShopForm] = useState(getShopSettings);
 
   /* ── Load inventory with include_zero=1 so all batches show ── */
   useEffect(() => {
@@ -229,19 +235,38 @@ export default function AddSales() {
   const pickBatch = (ri, inv) => {
     setActiveSug(null);
     setSearchText((p) => ({ ...p, [ri]: "" }));
-    const mrp  = asNum(inv.mrp);
-    const sp   = asNum(inv.sale_price);
-    const disc = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
-    const fill = {
-      invId: asNum(inv.id), itemId: asNum(inv.item_id),
-      itemName: inv.item_name, code: inv.item_code,
-      hsn: inv.hsn || "", batchNo: inv.batch_no || "",
-      expDate: inv.exp_date || "", mrp: String(mrp),
-      salePrice: fmt2(sp), discount: disc,
-      tax: String(inv.tax_pct || ""), qty: "1",
-    };
-    fill.amount = fmt2(calcRowAmount(fill));
+    const invId = asNum(inv.id);
     setRows((prev) => {
+      // Check if this batch already exists in another filled row
+      const existingIdx = prev.findIndex((r, i) => i !== ri && r.invId === invId && String(r.itemName || "").trim());
+      if (existingIdx >= 0) {
+        // Increment qty of existing row instead of filling a new one
+        const n = [...prev];
+        const existing = { ...n[existingIdx] };
+        // Cap at available stock
+        const invRec = inventory.find((it) => it.id === invId);
+        const stock = invRec ? asNum(invRec.current_qty) : Infinity;
+        const newQty = Math.min(asNum(existing.qty) + 1, stock);
+        existing.qty = String(newQty);
+        existing.amount = fmt2(calcRowAmount(existing));
+        n[existingIdx] = existing;
+        // Clear the current row search
+        n[ri] = blankRow();
+        return n;
+      }
+      // No duplicate — fill the current row
+      const mrp  = asNum(inv.mrp);
+      const sp   = asNum(inv.sale_price);
+      const disc = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
+      const fill = {
+        invId: invId, itemId: asNum(inv.item_id),
+        itemName: inv.item_name, code: inv.item_code,
+        hsn: inv.hsn || "", batchNo: inv.batch_no || "",
+        expDate: inv.exp_date || "", mrp: String(mrp),
+        salePrice: fmt2(sp), discount: disc,
+        tax: String(inv.tax_pct || ""), qty: "1",
+      };
+      fill.amount = fmt2(calcRowAmount(fill));
       const n = [...prev];
       n[ri] = { ...n[ri], ...fill };
       if (ri === n.length - 1) n.push(blankRow());
@@ -337,8 +362,32 @@ export default function AddSales() {
   const balance      = useMemo(() => roundedTotal - totalPaid, [roundedTotal, totalPaid]);
   useEffect(() => { if (!multiPay && !recTouched) setReceived(roundedTotal.toFixed(2)); }, [roundedTotal, multiPay, recTouched]);
 
+  /* ── Build print data from current form ── */
+  const buildPrintData = () => {
+    const printItems = rows.filter((r) => String(r.itemName || "").trim() && asNum(r.qty) > 0).map((r) => ({
+      name: r.itemName, mrp: asNum(r.mrp), qty: asNum(r.qty),
+      price: asNum(r.salePrice), amount: asNum(r.amount), tax: asNum(r.tax),
+    }));
+    return {
+      invoiceNo, invoiceDate,
+      customerType: custType === "Retail" ? "Cash Sale" : custType,
+      customerName: custName || "Cash", phone,
+      items: printItems,
+      totalQty: printItems.reduce((s, i) => s + i.qty, 0),
+      subTotal: rowTotal, discount: billDiscValue,
+      total: roundedTotal, received: totalPaid, balance,
+    };
+  };
+
+  /* ── Print current invoice (without saving) ── */
+  const onPrint = () => {
+    const data = buildPrintData();
+    if (!data.items.length) return alert("Add at least one item to print");
+    printReceipt(data);
+  };
+
   /* ── Save ── */
-  const onSave = async () => {
+  const onSave = async (andPrint = false) => {
     if (!invoiceNo.trim()) return alert("Invoice number required");
     const cleanRows = rows.map((r) => ({
       invId: asNum(r.invId),               // inventory record PK — used to resolve gst_flag
@@ -384,6 +433,8 @@ export default function AddSales() {
       const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      const shouldPrint = andPrint || (!isEdit && getShopSettings().autoPrint);
+      if (shouldPrint) printReceipt(buildPrintData());
       alert(isEdit ? "Invoice Updated!" : "Invoice Saved!");
       window.location.href = "/sales";
     } catch (e) { alert(e.message || "Failed"); } finally { setSaving(false); }
@@ -391,7 +442,7 @@ export default function AddSales() {
 
   // Ctrl+S shortcut
   useEffect(() => {
-    const fn = () => { if (!saving) onSave(); };
+    const fn = () => { if (!saving) onSave(false); };
     window.addEventListener("shortcut-save", fn);
     return () => window.removeEventListener("shortcut-save", fn);
   }, [saving, onSave]);
@@ -417,10 +468,19 @@ export default function AddSales() {
             <p style={{ margin: "2px 0 0", fontSize: 13, color: C.textSub }}>{isEdit ? `Invoice #${invoiceId}` : "Add items and save"}</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button className="g-btn ghost sm" title="Printer Settings" onClick={() => { setShopForm(getShopSettings()); setShowShopSettings(true); }}>
+            <FiSettings size={14} />
+          </button>
+          <button className="g-btn ghost" onClick={onPrint} title="Print Preview">
+            <FiPrinter size={14} /> Print
+          </button>
           <button className="g-btn ghost" onClick={() => window.history.back()}>← Back</button>
-          <button className="g-btn success" onClick={onSave} disabled={saving} style={{ minWidth: 130 }}>
+          <button className="g-btn success" onClick={() => onSave(false)} disabled={saving} style={{ minWidth: 130 }}>
             <FiCheck size={14} />{saving ? "Saving…" : isEdit ? "Update" : "Save Invoice"}
+          </button>
+          <button className="g-btn primary" onClick={() => onSave(true)} disabled={saving} title="Save and Print">
+            <FiPrinter size={14} /> Save & Print
           </button>
         </div>
       </div>
@@ -457,8 +517,8 @@ export default function AddSales() {
           title={`Items${filledCount > 0 ? ` — ${filledCount} added` : ""}`}
         />
 
-        <div style={{ overflowX: "auto" }}>
-          <table className="g-table" style={{ minWidth: 820 }}>
+        <div>
+          <table className="g-table" style={{ width: "100%" }}>
             <thead>
               <tr>
                 <th style={{ width: 36, paddingLeft: 14 }}>#</th>
@@ -535,9 +595,10 @@ export default function AddSales() {
                         <div>
                           <div style={{ position: "relative" }}>
                             <FiSearch size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
-                            <input className="g-td-inp" style={{ paddingLeft: 26 }} value={st}
+                            <input ref={(el) => (searchRefs.current[idx] = el)} className="g-td-inp" style={{ paddingLeft: 26 }} value={st}
                               onChange={(e) => handleSearchChange(idx, e.target.value)}
                               onFocus={() => setActiveSug(idx)}
+                              onBlur={() => { if (!r.itemName.trim()) setTimeout(() => setSearchText((p) => ({ ...p, [idx]: "" })), 150); }}
                               placeholder={idx === 0 ? "Search or scan code…" : ""}
                               autoComplete="off" />
                           </div>
@@ -665,6 +726,7 @@ export default function AddSales() {
                         className="g-td-inp"
                         value={r.qty}
                         onChange={(e) => onQtyChange(idx, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const next = idx + 1; setTimeout(() => searchRefs.current[next]?.focus(), 0); } }}
                         inputMode="numeric" placeholder="0"
                         style={{ textAlign: "center", fontWeight: 600 }}
                       />
@@ -867,12 +929,66 @@ export default function AddSales() {
               <span style={{ fontWeight: 900, fontSize: 22, color: "#fff" }}>₹{fmt2(roundedTotal)}</span>
             </div>
 
-            <button className="g-btn success lg" onClick={onSave} disabled={saving}>
+            <button className="g-btn success lg" onClick={() => onSave(false)} disabled={saving}>
               <FiCheck size={16} />{saving ? "Saving…" : isEdit ? "Update Invoice" : "Save Invoice"}
+            </button>
+            <button className="g-btn primary lg" onClick={() => onSave(true)} disabled={saving} style={{ marginTop: 8 }}>
+              <FiPrinter size={16} /> Save & Print
             </button>
           </div>
         </div>
       </div>
+
+      {/* ── MODAL: SHOP / PRINTER SETTINGS ── */}
+      <Modal show={showShopSettings} title="Shop & Printer Settings" onClose={() => setShowShopSettings(false)} width={480}
+        footer={<>
+          <button className="g-btn ghost" onClick={() => setShowShopSettings(false)}>Cancel</button>
+          <button className="g-btn primary" onClick={() => { saveShopSettings(shopForm); setShowShopSettings(false); alert("Settings saved!"); }}>Save Settings</button>
+        </>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Field label="Shop Name">
+            <input className="g-inp" value={shopForm.name} onChange={(e) => setShopForm((p) => ({ ...p, name: e.target.value }))} />
+          </Field>
+          <Field label="Address">
+            <input className="g-inp" value={shopForm.address} onChange={(e) => setShopForm((p) => ({ ...p, address: e.target.value }))} />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="State">
+              <input className="g-inp" value={shopForm.state} onChange={(e) => setShopForm((p) => ({ ...p, state: e.target.value }))} />
+            </Field>
+            <Field label="Phone">
+              <input className="g-inp" value={shopForm.phone} onChange={(e) => setShopForm((p) => ({ ...p, phone: e.target.value }))} />
+            </Field>
+          </div>
+          <Field label="GSTIN">
+            <input className="g-inp" value={shopForm.gstin} onChange={(e) => setShopForm((p) => ({ ...p, gstin: e.target.value }))} />
+          </Field>
+          <Field label="Receipt Footer Text">
+            <input className="g-inp" value={shopForm.footer} onChange={(e) => setShopForm((p) => ({ ...p, footer: e.target.value }))} />
+          </Field>
+          <Field label="Paper Width">
+            <div style={{ display: "flex", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: 3 }}>
+              {["58mm", "80mm"].map((w) => (
+                <button key={w} onClick={() => setShopForm((p) => ({ ...p, paperWidth: w }))} style={{
+                  flex: 1, padding: "6px 0", border: "none", borderRadius: 6, cursor: "pointer",
+                  fontWeight: 700, fontSize: 13,
+                  background: shopForm.paperWidth === w ? C.brand : "transparent",
+                  color: shopForm.paperWidth === w ? "#fff" : C.textSub,
+                }}>{w}</button>
+              ))}
+            </div>
+          </Field>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#f8fafc", borderRadius: 8, border: "1.5px solid #e5e7eb" }}>
+            <input type="checkbox" id="autoPrintChk" checked={shopForm.autoPrint || false} onChange={(e) => setShopForm((p) => ({ ...p, autoPrint: e.target.checked }))} style={{ width: 18, height: 18, accentColor: C.brand }} />
+            <label htmlFor="autoPrintChk" style={{ fontSize: 13, fontWeight: 600, cursor: "pointer", color: C.text }}>
+              Auto-print receipt after saving invoice
+            </label>
+          </div>
+          <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.green }}>
+            Settings are saved in your browser. Set your thermal printer as the default printer in your OS for one-click printing.
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
