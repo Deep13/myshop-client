@@ -10,7 +10,17 @@
       "Bash(npm install:*)",
       "Bash(npm run:*)",
       "Bash(curl -s \"http://localhost/myshop-backend/get_purchase_report.php?from=2026-01-01&to=2026-03-20\")",
-      "Bash(\"c:/xampp/php/php.exe\" -r \":*)"
+      "Bash(\"c:/xampp/php/php.exe\" -r \":*)",
+      "Read(//c/xampp/htdocs/myshop-backend//**)",
+      "Read(//d/xampp/htdocs/**)",
+      "Read(//c/xampp/htdocs/myshop-backend/**)",
+      "Read(//c/xampp/mysql/bin/**)",
+      "Bash(./mysql.exe -u root myshop -e \"DESCRIBE users;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"DESCRIBE users;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"SELECT id, name, role FROM users;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"DESCRIBE invoices;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"SHOW TABLES LIKE ''%payment%'';\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"DESCRIBE invoice_payments;\")"
     ]
   }
 }

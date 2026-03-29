@@ -7,6 +7,7 @@ const C = {
   orange: "#ea580c", bg: "#f0f4f8", text: "#111827", sub: "#6b7280",
 };
 const PAY_MODES = ["Cash", "UPI", "Card"];
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function MobileSale() {
   const [inventory, setInventory] = useState([]);
@@ -195,6 +196,7 @@ export default function MobileSale() {
         rows,
         payments: [{ type: payMode, amount: roundedTotal }],
         totals,
+        createdBy: user?.id || 1,
       };
       const r = await fetch(`${API}/save_invoice.php`, {
         method: "POST",

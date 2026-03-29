@@ -5,6 +5,8 @@ import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, app
 import { printReceipt } from "../thermalPrint.js";
 import { downloadExcel } from "../excelExport.js";
 
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+
 export default function Sales() {
   const navigate = useNavigate();
   const [data, setData] = useState([]);
@@ -167,7 +169,7 @@ export default function Sales() {
     if (!delRow) return;
     try {
       setDeleting(true);
-      const res = await fetch(`${API}/delete_invoice.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: delRow.id }) });
+      const res = await fetch(`${API}/delete_invoice.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: delRow.id, updatedBy: user?.id || 1 }) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       setShowDel(false); fetch_();

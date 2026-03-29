@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { RiShutDownLine } from "react-icons/ri";
-import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings } from "react-icons/fi";
+import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield } from "react-icons/fi";
 import { C, Modal, GLOBAL_CSS } from "../ui.jsx";
 import { SHORTCUTS } from "../shortcuts.js";
 
@@ -18,6 +18,7 @@ const MORE_ITEMS = [
   { to: "/reports",      label: "Reports",       icon: <FiBarChart2 size={15} /> },
   { to: "/settings",     label: "Settings",       icon: <FiSettings size={15} /> },
   { key: "shortcuts",    label: "Shortcuts",     icon: <FiCommand size={15} /> },
+  { to: "/admin/users",  label: "Admin Users",   icon: <FiShield size={15} />, adminOnly: true },
 ];
 
 export default function Header() {
@@ -26,6 +27,8 @@ export default function Header() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const moreRef = useRef(null);
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -46,7 +49,7 @@ export default function Header() {
     window.location.href = "/login";
   };
 
-  const moreActive = ["/customers", "/distributors", "/reports", "/settings"].some((p) => pathname.startsWith(p));
+  const moreActive = ["/customers", "/distributors", "/reports", "/settings", "/admin"].some((p) => pathname.startsWith(p));
 
   return (
     <>
@@ -118,7 +121,7 @@ export default function Header() {
                 boxShadow: "0 12px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)",
                 minWidth: 220, padding: "6px 0", zIndex: 200,
               }}>
-                {MORE_ITEMS.map((item) => {
+                {MORE_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => {
                   const isLink = !!item.to;
                   const active = isLink && pathname.startsWith(item.to);
                   return (

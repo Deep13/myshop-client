@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { C, GLOBAL_CSS, API, fmtINR, todayISO } from "./ui.jsx";
 import {
   FiShoppingCart, FiTruck, FiPackage, FiAlertTriangle,
-  FiClock, FiDollarSign, FiRefreshCw, FiTrendingUp, FiTrendingDown
+  FiClock, FiDollarSign, FiRefreshCw, FiTrendingUp, FiTrendingDown,
+  FiCreditCard, FiSmartphone
 } from "react-icons/fi";
+import { BsCash } from "react-icons/bs";
 
 const asN = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
 
@@ -70,6 +72,10 @@ export default function App() {
   const periodKey = { "Today": "today", "Yesterday": "yesterday", "7 Days": "days7", "30 Days": "days30" }[period];
   const sales = data?.sales?.[periodKey] || { total: 0, count: 0 };
   const purchase = data?.purchase?.[periodKey] || { total: 0, count: 0 };
+  const modes = data?.sales_by_mode?.[periodKey] || {};
+  const cashTotal = asN(modes.cash);
+  const upiTotal = asN(modes.upi);
+  const cardTotal = asN(modes.card);
   const inv = data?.inventory || {};
   const expiring = data?.expiring_items || [];
   const expired = data?.expired_items || [];
@@ -118,6 +124,27 @@ export default function App() {
                 <StatCard label="Sales — Amount" value={fmtINR(sales.total)} color={C.brand} icon={<FiTrendingUp size={16} />} bg={C.brandLighter} />
                 <StatCard label="Purchase — Bills" value={purchase.count} color={C.orange} icon={<FiTruck size={16} />} bg={C.orangeLight} />
                 <StatCard label="Purchase — Amount" value={fmtINR(purchase.total)} color={C.orange} icon={<FiTrendingDown size={16} />} bg={C.orangeLight} />
+              </div>
+            </div>
+          </div>
+
+          {/* ══════════════════════════════════
+              SECTION — SALES BY PAYMENT MODE
+          ══════════════════════════════════ */}
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: 20, overflow: "hidden" }}>
+            <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.green }}><FiDollarSign size={15} /></div>
+                <span style={{ fontWeight: 800, fontSize: 15, color: C.text }}>Sales by Payment Mode</span>
+                <span style={{ fontSize: 12, color: C.textLight, fontWeight: 500, marginLeft: 4 }}>({period})</span>
+              </div>
+            </div>
+            <div style={{ padding: "18px 18px" }}>
+              <div className="g-grid-4">
+                <StatCard label="Total Sales" value={fmtINR(sales.total)} color={C.brand} icon={<FiShoppingCart size={16} />} bg={C.brandLighter} sub={`${sales.count} bills`} />
+                <StatCard label="Cash" value={fmtINR(cashTotal)} color={C.green} icon={<BsCash size={16} />} bg={C.greenLight} sub={sales.total ? `${((cashTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
+                <StatCard label="UPI" value={fmtINR(upiTotal)} color="#7c3aed" icon={<FiSmartphone size={16} />} bg="#f5f3ff" sub={sales.total ? `${((upiTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
+                <StatCard label="Card" value={fmtINR(cardTotal)} color="#0891b2" icon={<FiCreditCard size={16} />} bg="#ecfeff" sub={sales.total ? `${((cardTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
               </div>
             </div>
           </div>

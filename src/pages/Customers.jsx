@@ -4,6 +4,7 @@ import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO } from "../ui.
 import { downloadExcel } from "../excelExport.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function Customers() {
   const [rawSales, setRawSales] = useState([]);
@@ -162,6 +163,7 @@ export default function Customers() {
               invoiceId: alloc.invoiceId,
               payType: lines[li].type,
               amount: lineAmt,
+              createdBy: user?.id || 1,
             }),
           });
           const j = await res.json().catch(() => ({}));

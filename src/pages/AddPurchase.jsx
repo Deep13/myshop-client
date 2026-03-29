@@ -8,6 +8,7 @@ import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.j
 const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
 const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 function calcRowAmt(row) {
   return asNum(row.qty) * asNum(row.purchasePrice);
@@ -220,7 +221,7 @@ export default function AddPurchase() {
   /* ── Save distributor ── */
   const saveDist = async () => {
     const name = newDist.name.trim(); if (!name) return alert("Name required");
-    const r = await fetch(`${API}/add_distributor.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, gstin: newDist.gstin.trim(), phone: newDist.phone.trim() }) });
+    const r = await fetch(`${API}/add_distributor.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, gstin: newDist.gstin.trim(), phone: newDist.phone.trim(), createdBy: user?.id || 1 }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.status !== "success") return alert(j.message || "Failed");
     pickDist(j.data); setShowAddDist(false);
@@ -232,7 +233,7 @@ export default function AddPurchase() {
     if (!name) return alert("Item name required");
     if (!code) return alert("Item code required");
     try {
-      const r = await fetch(`${API}/add_item.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, code, hsn: newItem.hsn.trim(), mrp: asNum(newItem.mrp), salePrice: asNum(newItem.salePrice), purchasePrice: asNum(newItem.purchasePrice), tax: asNum(newItem.tax), is_primary: !!newItem.is_primary }) });
+      const r = await fetch(`${API}/add_item.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, code, hsn: newItem.hsn.trim(), mrp: asNum(newItem.mrp), salePrice: asNum(newItem.salePrice), purchasePrice: asNum(newItem.purchasePrice), tax: asNum(newItem.tax), is_primary: !!newItem.is_primary, createdBy: user?.id || 1 }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
       const created = j.data;
@@ -412,15 +413,14 @@ export default function AddPurchase() {
       if (!itemMaster.some((it) => it.code === r.code)) { alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`); return null; }
     }
     const payList = multiPay ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0) : [{ type: payMode, amount: asNum(received) }];
-    const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
     const totals = { subTotal: asNum(subTotal), taxTotal: asNum(taxTotal), grandTotal: asNum(grandTotal), roundOffEnabled: roundOff, roundOffDiff: asNum(roundDiff), roundedGrandTotal: asNum(roundedTotal) };
-    const base = { distributorId: selDist.id, distributorName: selDist.name, gstin: gstin.trim(), billNo: billNo.trim(), billDate, dueDate, billType, gstMode: isGST ? gstMode : "exclusive", rows: cleanRows, totals, payments: payList, user };
+    const base = { distributorId: selDist.id, distributorName: selDist.name, gstin: gstin.trim(), billNo: billNo.trim(), billDate, dueDate, billType, gstMode: isGST ? gstMode : "exclusive", rows: cleanRows, totals, payments: payList };
     return base;
   };
 
   /* ── Actually persist the purchase ── */
   const doSave = async (payload) => {
-    const { user, ...base } = payload;
+    const base = payload;
     try {
       setSaving(true);
       if (isEdit) {
@@ -435,7 +435,7 @@ export default function AddPurchase() {
         const newId = j.purchaseId;
         for (const p of base.payments) {
           if (!p.amount || p.amount <= 0) continue;
-          await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "" }) });
+          await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "", createdBy: user?.id || 1 }) });
         }
         alert("Purchase Saved!"); window.location.href = "/purchase";
       }

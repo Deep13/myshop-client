@@ -16,6 +16,7 @@ import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint
 ═══════════════════════════════════════════════════════ */
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 const blankRow = () => ({
   invId: 0, itemId: 0, itemName: "", code: "", hsn: "",
@@ -428,7 +429,7 @@ export default function AddSales() {
         customerType: custType,
         customerName: custName || "Cash",
         phone, rows: cleanRows, payments: payList, totals,
-        ...(isEdit ? { invoiceId: Number(invoiceId), updatedBy: 1 } : {}),
+        ...(isEdit ? { invoiceId: Number(invoiceId), updatedBy: user?.id || 1 } : { createdBy: user?.id || 1 }),
       };
       const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));

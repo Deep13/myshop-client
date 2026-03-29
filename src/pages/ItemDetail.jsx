@@ -4,6 +4,7 @@ import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdi
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmt2 } from "../ui.jsx";
 
 const today = todayISO();
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const in90  = new Date(new Date().getTime() + 90 * 86400000).toISOString().slice(0, 10);
 
 function InfoRow({ label, value, bold }) {
@@ -72,6 +73,7 @@ export default function ItemDetail() {
           purchasePrice: asNum(editForm.purchasePrice),
           tax: asNum(editForm.tax),
           is_primary: editForm.is_primary,
+          updatedBy: user?.id || 1,
         }),
       });
       const j = await r.json().catch(() => ({}));

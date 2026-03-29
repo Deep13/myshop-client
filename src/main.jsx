@@ -13,6 +13,7 @@ import Customers from "./pages/Customers.jsx";
 import Distributors from "./pages/Distributors.jsx";
 import Reports from "./pages/Reports.jsx";
 import Settings from "./pages/Settings.jsx";
+import AdminUsers from "./pages/AdminUsers.jsx";
 import MobileSale from "./pages/MobileSale.jsx";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./Layout";
@@ -61,6 +62,7 @@ createRoot(document.getElementById("root")).render(
         <Route path="/distributors"        element={<Distributors />} />
         <Route path="/reports"             element={<Reports />} />
         <Route path="/settings"            element={<Settings />} />
+        <Route path="/admin/users"         element={<AdminUsers />} />
       </Route>
     </Routes>
   </BrowserRouter>

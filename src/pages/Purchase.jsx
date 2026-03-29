@@ -4,6 +4,7 @@ import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX } from "react-icons/fi
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO } from "../ui.jsx";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function Purchase() {
   const navigate = useNavigate();
@@ -91,7 +92,7 @@ export default function Purchase() {
     try {
       setPaySaving(true);
       for (const p of lines) {
-        const res = await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: payRow.distributor_id, purchaseId: payRow.id, payDate, mode: p.type, amount: p.amount, referenceNo: p.referenceNo, note: p.note }) });
+        const res = await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: payRow.distributor_id, purchaseId: payRow.id, payDate, mode: p.type, amount: p.amount, referenceNo: p.referenceNo, note: p.note, createdBy: user?.id || 1 }) });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       }
@@ -103,7 +104,7 @@ export default function Purchase() {
     if (!delRow) return;
     try {
       setDeleting(true);
-      const res = await fetch(`${API}/delete_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ purchaseId: delRow.id }) });
+      const res = await fetch(`${API}/delete_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ purchaseId: delRow.id, updatedBy: user?.id || 1 }) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       setShowDel(false); fetch_();
