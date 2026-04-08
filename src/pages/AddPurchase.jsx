@@ -4,6 +4,7 @@ import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditC
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 /* ── helpers ── */
 const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
@@ -176,7 +177,7 @@ export default function AddPurchase() {
         setRoundOff(Boolean(h.round_off_enabled));
         if (j.payments?.length) setPayments(j.payments.map((p) => ({ type: p.mode, amount: String(p.amount) })));
       } catch (e) {
-        alert(e.message || "Failed to load");
+        toast(e.message || "Failed to load", "error");
       }
     })();
   }, [purchaseId, masterLoaded]);
@@ -298,14 +299,14 @@ export default function AddPurchase() {
   /* ── Save distributor ── */
   const saveDist = async () => {
     const name = newDist.name.trim();
-    if (!name) return alert("Name required");
+    if (!name) return toast("Name required", "warn");
     const r = await fetch(`${API}/add_distributor.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, gstin: newDist.gstin.trim(), phone: newDist.phone.trim(), createdBy: user?.id || 1 }),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.status !== "success") return alert(j.message || "Failed");
+    if (!r.ok || j.status !== "success") return toast(j.message || "Failed", "error");
     pickDist(j.data);
     setShowAddDist(false);
   };
@@ -314,8 +315,8 @@ export default function AddPurchase() {
   const saveNewItem = async () => {
     const name = newItem.itemName.trim(),
       code = newItem.itemCode.trim();
-    if (!name) return alert("Item name required");
-    if (!code) return alert("Item code required");
+    if (!name) return toast("Item name required", "warn");
+    if (!code) return toast("Item code required", "warn");
     try {
       const r = await fetch(`${API}/add_item.php`, {
         method: "POST",
@@ -344,7 +345,7 @@ export default function AddPurchase() {
       setShowAddItem(false);
       setNewItem(blankNewItem());
     } catch (e) {
-      alert(e.message || "Failed");
+      toast(e.message || "Failed", "error");
     }
   };
 
@@ -408,7 +409,7 @@ export default function AddPurchase() {
           const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-          if (json.length < 2) return alert("File appears empty or has no data rows.");
+          if (json.length < 2) return toast("File appears empty or has no data rows.", "warn");
 
           const headers = json[0].map((h) => String(h).trim());
           const dataRows = json.slice(1).filter((r) => r.some((c) => String(c).trim()));
@@ -418,7 +419,7 @@ export default function AddPurchase() {
           tryDetectDistributor(json, headers);
           setShowMapping(true);
         } catch (err) {
-          alert("Failed to parse file: " + err.message);
+          toast("Failed to parse file: " + err.message, "error");
         }
       };
       reader.readAsArrayBuffer(file);
@@ -430,7 +431,7 @@ export default function AddPurchase() {
         const r = await fetch(`${API}/parse_bill.php`, { method: "POST", body: fd });
         const j = await r.json().catch(() => ({}));
         if (j.status !== "success") {
-          alert(j.message || "Failed to extract data from PDF");
+          toast(j.message || "Failed to extract data from PDF", "error");
           return;
         }
         const headers = j.headers.map((h) => String(h).trim());
@@ -439,14 +440,14 @@ export default function AddPurchase() {
         setColMap(autoDetectMapping(headers));
         setShowMapping(true);
       } catch {
-        alert("Failed to parse PDF. Please try Excel or CSV format.");
+        toast("Failed to parse PDF. Please try Excel or CSV format.", "error");
       }
     } else if (["jpg", "jpeg", "png", "webp"].includes(ext)) {
       // Images — upload for reference, can't auto-parse
       uploadFileToServer(file);
-      alert("Image uploaded for reference. Please enter items manually, or re-upload as Excel/CSV/PDF for auto-import.");
+      toast("Image uploaded for reference. Please enter items manually, or re-upload as Excel/CSV/PDF for auto-import.", "info");
     } else {
-      alert("Unsupported file type. Please upload Excel (.xlsx), CSV, PDF, or image files.");
+      toast("Unsupported file type. Please upload Excel (.xlsx), CSV, PDF, or image files.", "warn");
     }
     e.target.value = "";
   };
@@ -479,9 +480,9 @@ export default function AddPurchase() {
     try {
       const r = await fetch(`${API}/upload_bill.php`, { method: "POST", body: fd });
       const j = await r.json().catch(() => ({}));
-      if (j.status !== "success") alert(j.message || "Upload failed");
+      if (j.status !== "success") toast(j.message || "Upload failed", "error");
     } catch {
-      alert("Upload failed");
+      toast("Upload failed", "error");
     }
   };
 
@@ -543,7 +544,7 @@ export default function AddPurchase() {
   const applyMapping = () => {
     // Validate required columns are mapped
     const missing = OUR_COLS.filter((c) => c.required && colMap[c.key] === undefined);
-    if (missing.length) return alert(`Please map: ${missing.map((c) => c.label).join(", ")}`);
+    if (missing.length) return toast(`Please map: ${missing.map((c) => c.label).join(", ")}`, "warn");
 
     const newRows = uploadRows
       .map((row) => {
@@ -663,7 +664,7 @@ export default function AddPurchase() {
       })
       .filter((r) => r.itemName);
 
-    if (!newRows.length) return alert("No valid rows found after mapping.");
+    if (!newRows.length) return toast("No valid rows found after mapping.", "warn");
     setRows([...newRows, blankRow()]);
     setShowMapping(false);
     // Upload file for reference
@@ -673,11 +674,11 @@ export default function AddPurchase() {
   /* ── Build save payload ── */
   const buildSavePayload = () => {
     if (!selDist) {
-      alert("Please select a distributor");
+      toast("Please select a distributor", "warn");
       return null;
     }
     if (!billNo.trim()) {
-      alert("Bill number is required");
+      toast("Bill number is required", "warn");
       return null;
     }
     const cleanRows = rows
@@ -697,12 +698,12 @@ export default function AddPurchase() {
       }))
       .filter((r) => r.itemName && r.qty > 0);
     if (!cleanRows.length) {
-      alert("Add at least one item");
+      toast("Add at least one item", "warn");
       return null;
     }
     for (const r of cleanRows) {
       if (!itemMaster.some((it) => it.code === r.code)) {
-        alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`);
+        toast(`Item "${r.itemName}" not in item master. Please select from suggestions.`, "warn");
         return null;
       }
     }
@@ -744,7 +745,7 @@ export default function AddPurchase() {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
-        alert("Purchase Updated!");
+        toast("Purchase Updated!", "success");
         window.location.href = "/purchase";
       } else {
         const r = await fetch(`${API}/save_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, createdBy: user?.id || 1 }) });
@@ -759,11 +760,11 @@ export default function AddPurchase() {
             body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "", createdBy: user?.id || 1 }),
           });
         }
-        alert("Purchase Saved!");
+        toast("Purchase Saved!", "success");
         window.location.href = "/purchase";
       }
     } catch (e) {
-      alert(e.message || "Failed");
+      toast(e.message || "Failed", "error");
     } finally {
       setSaving(false);
     }

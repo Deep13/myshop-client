@@ -3,6 +3,7 @@ import { FiSearch, FiRefreshCw, FiPhone, FiUser, FiDollarSign, FiX, FiDownload, 
 import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { downloadExcel } from "../excelExport.js";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
@@ -137,7 +138,7 @@ export default function Customers() {
   const savePay = async () => {
     if (!payCustomer) return;
     const lines = payLines.map((p) => ({ type: p.type, amount: Number(p.amount || 0) })).filter((p) => p.amount > 0);
-    if (!lines.length) return alert("Enter at least one amount");
+    if (!lines.length) return toast.warn("Enter at least one amount");
     const totalPaying = lines.reduce((s, l) => s + l.amount, 0);
 
     // Sort unpaid bills by date ascending (oldest first)
@@ -153,7 +154,7 @@ export default function Customers() {
       remaining -= forThisBill;
     }
 
-    if (!allocations.length) return alert("No unpaid bills to apply payment to");
+    if (!allocations.length) return toast.warn("No unpaid bills to apply payment to");
 
     try {
       setPaySaving(true);
@@ -179,9 +180,9 @@ export default function Customers() {
           lines[li].amount -= lineAmt;
         }
       }
-      alert("Payment recorded"); setShowPay(false);
+      toast.success("Payment recorded"); setShowPay(false);
       load(); loadBalances();
-    } catch (e) { alert(e.message); } finally { setPaySaving(false); }
+    } catch (e) { toast.error(e.message); } finally { setPaySaving(false); }
   };
 
   return (

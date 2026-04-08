@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { Html5Qrcode } from "html5-qrcode";
 import { API, asNum, fmt2, todayISO } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
+import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
 
 const C = {
@@ -106,7 +107,7 @@ export default function MobileSale() {
       if (navigator.vibrate) navigator.vibrate(100);
     } else {
       const cleaned = code.replace(/[\s\r\n\t\x00-\x1f]/g, "");
-      alert(`Item not found: ${cleaned}\n${inventory.length} items loaded.`);
+      toast(`Item not found: ${cleaned}\n${inventory.length} items loaded.`, "warn");
     }
   }, [findByCode, addToCart]);
 
@@ -126,7 +127,7 @@ export default function MobileSale() {
         () => {}
       );
     } catch (err) {
-      alert("Camera access denied or not available");
+      toast("Camera access denied or not available", "error");
       setScanning(false);
     }
   };
@@ -169,8 +170,8 @@ export default function MobileSale() {
 
   // Save invoice
   const onSave = async () => {
-    if (!cart.length) return alert("Cart is empty");
-    if (!invoiceNo) return alert("Invoice number missing");
+    if (!cart.length) return toast("Cart is empty", "warn");
+    if (!invoiceNo) return toast("Invoice number missing", "warn");
     setSaving(true);
     try {
       const rows = cart.map((c) => ({
@@ -201,7 +202,7 @@ export default function MobileSale() {
       const payList = multiPay
         ? payLines.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0)
         : [{ type: payMode, amount: roundedTotal }];
-      if (!payList.length) return alert("Add at least one payment");
+      if (!payList.length) return toast("Add at least one payment", "warn");
       const body = {
         invoiceNo,
         invoiceDate: todayISO(),
@@ -237,7 +238,7 @@ export default function MobileSale() {
         if (j2.status === "success") setInvoiceNo(j2.invoiceNo);
       } catch {}
     } catch (e) {
-      alert(e.message || "Save failed");
+      toast(e.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
@@ -422,7 +423,7 @@ export default function MobileSale() {
                   };
                   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
                 } catch {
-                  alert("Download failed. Please try again.");
+                  toast("Download failed. Please try again.", "error");
                 }
               }} style={{
                 width: "100%", padding: "14px", border: "none", borderRadius: 10,

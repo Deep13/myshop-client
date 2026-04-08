@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX, FiClock } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
@@ -109,13 +110,13 @@ export default function Purchase() {
       if (j.status !== "success") throw new Error(j.message || "Failed");
       openPay(payRow);
       fetch_();
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast.error(e.message); }
   };
 
   const savePay = async () => {
     if (!payRow) return;
     const lines = payLines.map((p) => ({ type: p.type, amount: Number(p.amount || 0), referenceNo: String(p.referenceNo || "").trim(), note: String(p.note || "").trim() })).filter((p) => p.amount > 0);
-    if (!lines.length) return alert("Enter at least one amount");
+    if (!lines.length) return toast.warn("Enter at least one amount");
     try {
       setPaySaving(true);
       for (const p of lines) {
@@ -123,8 +124,8 @@ export default function Purchase() {
         const j = await res.json().catch(() => ({}));
         if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       }
-      alert("Payment saved"); setShowPay(false); fetch_();
-    } catch (e) { alert(e.message); } finally { setPaySaving(false); }
+      toast.success("Payment saved"); setShowPay(false); fetch_();
+    } catch (e) { toast.error(e.message); } finally { setPaySaving(false); }
   };
 
   const deletePurchase = async () => {
@@ -135,7 +136,7 @@ export default function Purchase() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       setShowDel(false); fetch_();
-    } catch (e) { alert(e.message); } finally { setDeleting(false); }
+    } catch (e) { toast.error(e.message); } finally { setDeleting(false); }
   };
 
   const fc = (k, v) => setFilters((p) => ({ ...p, [k]: v }));

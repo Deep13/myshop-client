@@ -3,6 +3,7 @@ import { FiSettings, FiPrinter, FiImage, FiSave, FiUpload, FiTrash2, FiEye } fro
 import { C, GLOBAL_CSS, Field } from "../ui.jsx";
 import { getShopSettings, saveShopSettings, printReceipt } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 export default function Settings() {
   usePageMeta("Settings", "Shop details, printer, inventory and invoice settings");
@@ -22,8 +23,8 @@ export default function Settings() {
   const handleLogoUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) return alert("Please select an image file");
-    if (file.size > 200 * 1024) return alert("Logo must be under 200KB for thermal printing");
+    if (!file.type.startsWith("image/")) return toast.warn("Please select an image file");
+    if (file.size > 200 * 1024) return toast.warn("Logo must be under 200KB for thermal printing");
     const reader = new FileReader();
     reader.onload = (ev) => f("logo", ev.target.result);
     reader.readAsDataURL(file);

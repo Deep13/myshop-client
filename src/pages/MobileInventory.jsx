@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { API, asNum, fmt2, todayISO } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 const C = {
   brand: "#034C9D", green: "#16a34a", red: "#dc2626",
@@ -104,7 +105,7 @@ export default function MobileInventory() {
       stopScanner();
       if (navigator.vibrate) navigator.vibrate(100);
     } else {
-      alert(`Item not found: ${code.replace(/[\s\r\n\t\x00-\x1f]/g, "")}\n\n${items.length} items loaded. Please add this item to master first or check if item code matches.`);
+      toast.warn(`Item not found: ${code.replace(/[\s\r\n\t\x00-\x1f]/g, "")}\n\n${items.length} items loaded. Please add this item to master first or check if item code matches.`);
     }
   }, [findByCode, pickItem]);
 
@@ -121,7 +122,7 @@ export default function MobileInventory() {
         () => {}
       );
     } catch {
-      alert("Camera access denied or not available");
+      toast.error("Camera access denied or not available");
       setScanning(false);
     }
   };
@@ -179,14 +180,14 @@ export default function MobileInventory() {
       // Refresh batches
       loadBatches(asNum(incBatch.item_id));
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    } catch (e) { alert(e.message || "Failed"); }
+    } catch (e) { toast.error(e.message || "Failed"); }
     finally { setSaving(false); }
   };
 
   // Save new batch
   const onSaveNew = async () => {
     if (!selItem) return;
-    if (!asNum(qty)) return alert("Enter quantity");
+    if (!asNum(qty)) return toast.warn("Enter quantity");
     setSaving(true);
     try {
       const r = await fetch(`${API}/add_inventory.php`, {
@@ -215,7 +216,7 @@ export default function MobileInventory() {
       setShowNewForm(false); setBatchNo(""); setExpDate(""); setQty("1");
       loadBatches(selItem.id);
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    } catch (e) { alert(e.message || "Failed"); }
+    } catch (e) { toast.error(e.message || "Failed"); }
     finally { setSaving(false); }
   };
 

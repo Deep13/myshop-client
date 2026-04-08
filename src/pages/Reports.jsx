@@ -4,6 +4,7 @@ import { C, GLOBAL_CSS, API, Modal, fmt2, DATE_RANGES, applyDateRange } from "..
 import { downloadExcel, generateExcelBlob } from "../excelExport.js";
 import { getShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const isAdmin = user?.role === "admin";
@@ -334,8 +335,8 @@ export default function Reports() {
 
   const sendToCA = async (method) => {
     const shop = getShopSettings();
-    if (method === "email" && !shop.caEmail) return alert("Please set your CA's email in Settings first.");
-    if (method === "whatsapp" && !shop.caPhone) return alert("Please set your CA's WhatsApp number in Settings first.");
+    if (method === "email" && !shop.caEmail) return toast("Please set your CA's email in Settings first.", "warn");
+    if (method === "whatsapp" && !shop.caPhone) return toast("Please set your CA's WhatsApp number in Settings first.", "warn");
 
     try {
       setSendingCA(true);
@@ -373,7 +374,7 @@ export default function Reports() {
         }
       }
     } catch (e) {
-      alert("Failed to generate reports: " + (e.message || "Unknown error"));
+      toast("Failed to generate reports: " + (e.message || "Unknown error"), "error");
     } finally {
       setSendingCA(false);
     }
@@ -381,7 +382,7 @@ export default function Reports() {
 
   /* ── Upgrade: remove non-GST items from sales ── */
   const onUpgradeClick = async () => {
-    if (!from || !to) return alert("Please select a date range first.");
+    if (!from || !to) return toast("Please select a date range first.", "warn");
     try {
       const res = await fetch(`${API}/upgrade_remove_nongst.php`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -391,7 +392,7 @@ export default function Reports() {
       if (j.status !== "success") throw new Error(j.message || "Failed");
       setUpgradeStats(j.data);
       setShowUpgrade(true);
-    } catch (e) { alert(e.message || "Failed to check"); }
+    } catch (e) { toast(e.message || "Failed to check", "error"); }
   };
 
   const confirmUpgrade = async () => {
@@ -404,9 +405,9 @@ export default function Reports() {
       const j = await res.json().catch(() => ({}));
       if (j.status !== "success") throw new Error(j.message || "Failed");
       setShowUpgrade(false);
-      alert("Upgrade complete! Non-GST items removed from sales.");
+      toast("Upgrade complete! Non-GST items removed from sales.", "success");
       load(); // Reload reports
-    } catch (e) { alert(e.message || "Upgrade failed"); }
+    } catch (e) { toast(e.message || "Upgrade failed", "error"); }
     finally { setUpgrading(false); }
   };
 

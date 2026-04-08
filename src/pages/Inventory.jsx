@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, Pagination, PAGE_SIZE } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 const today = todayISO();
 const in90  = new Date(new Date().getTime() + 90 * 86400000).toISOString().slice(0, 10);
@@ -88,7 +89,7 @@ export default function Inventory() {
 
   const bulkUpdateGst = async () => {
     const target = bulkApplyTo === "filtered" ? filtered : itemRows;
-    if (!target.length) return alert("No items to update");
+    if (!target.length) return toast.warn("No items to update");
     const ids = target.map((r) => r.id);
     setBulkSaving(true);
     try {
@@ -98,10 +99,10 @@ export default function Inventory() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
-      alert(`GST updated to ${bulkGstRate}% for ${j.itemsUpdated} items`);
+      toast.success(`GST updated to ${bulkGstRate}% for ${j.itemsUpdated} items`);
       setShowBulkGst(false);
       load();
-    } catch (e) { alert(e.message || "Failed"); }
+    } catch (e) { toast.error(e.message || "Failed"); }
     finally { setBulkSaving(false); }
   };
 

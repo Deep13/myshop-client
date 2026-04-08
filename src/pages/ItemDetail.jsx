@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmt2 } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 const today = todayISO();
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
@@ -59,7 +60,7 @@ export default function ItemDetail() {
   const cancelEdit = () => setEditing(false);
 
   const saveEdit = async () => {
-    if (!editForm.name.trim() || !editForm.code.trim()) return alert("Name and Code are required");
+    if (!editForm.name.trim() || !editForm.code.trim()) return toast.warn("Name and Code are required");
     setSaving(true);
     try {
       const r = await fetch(`${API}/update_item.php`, {
@@ -100,7 +101,7 @@ export default function ItemDetail() {
       }));
       setEditing(false);
     } catch (e) {
-      alert(e.message || "Failed to update");
+      toast.error(e.message || "Failed to update");
     } finally {
       setSaving(false);
     }
@@ -114,8 +115,8 @@ export default function ItemDetail() {
         const r = await fetch(`${API}/get_item_detail.php?item_id=${itemId}`);
         const j = await r.json();
         if (j.status === "success") setData(j);
-        else alert(j.message);
-      } catch (e) { alert("Failed to load"); }
+        else toast.error(j.message);
+      } catch (e) { toast.error("Failed to load"); }
       finally { setLoading(false); }
     })();
   }, [itemId]);

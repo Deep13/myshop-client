@@ -4,6 +4,7 @@ import { FiPlus, FiTrash2, FiRefreshCw, FiPrinter, FiDownload, FiDollarSign, FiX
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { printReceipt } from "../thermalPrint.js";
 import { downloadExcel } from "../excelExport.js";
+import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
@@ -96,7 +97,7 @@ export default function Sales() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       const rows = j.data || [];
-      if (!rows.length) return alert("No data found for selected period.");
+      if (!rows.length) return toast("No data found for selected period.", "warn");
 
       const range = [filters.from, filters.to].filter(Boolean).join("_to_") || "all";
 
@@ -153,7 +154,7 @@ export default function Sales() {
           { key: "total_profit", label: "Profit", type: "number" },
         ], rows, `Sales_ItemMaster_${range}`);
       }
-    } catch (e) { alert(e.message || "Download failed"); }
+    } catch (e) { toast(e.message || "Download failed", "error"); }
     finally { setDownloading(""); }
   };
 
@@ -178,7 +179,7 @@ export default function Sales() {
         total: Number(inv.rounded_final_total || inv.final_total || 0),
         received: Number(inv.received || 0), balance: Number(inv.balance || 0),
       });
-    } catch (e) { alert(e.message || "Failed to print"); }
+    } catch (e) { toast(e.message || "Failed to print", "error"); }
   };
 
   const openPayHistory = async (row) => {
@@ -202,7 +203,7 @@ export default function Sales() {
       if (j.status !== "success") throw new Error(j.message || "Failed");
       openPayHistory(payHistRow);
       fetch_();
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast(e.message, "error"); }
   };
 
   const addPayment = async () => {
@@ -214,7 +215,7 @@ export default function Sales() {
       setNewPay({ type: "Cash", amount: "" });
       openPayHistory(payHistRow);
       fetch_();
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast(e.message, "error"); }
   };
 
   const asNum = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
@@ -227,7 +228,7 @@ export default function Sales() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       setShowDel(false); fetch_();
-    } catch (e) { alert(e.message); } finally { setDeleting(false); }
+    } catch (e) { toast(e.message, "error"); } finally { setDeleting(false); }
   };
 
   return (
