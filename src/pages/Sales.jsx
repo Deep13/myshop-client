@@ -1,23 +1,35 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPlus, FiTrash2, FiRefreshCw, FiPrinter, FiDownload } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO } from "../ui.jsx";
+import { FiPlus, FiTrash2, FiRefreshCw, FiPrinter, FiDownload, FiDollarSign, FiX } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { printReceipt } from "../thermalPrint.js";
 import { downloadExcel } from "../excelExport.js";
+import usePageMeta from "../usePageMeta.js";
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function Sales() {
+  usePageMeta("Sales", "View, filter and manage all sales invoices");
   const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ from: "", to: "", q: "", payType: "", dateRange: "This Month" });
   const [sort, setSort] = useState({ key: "date", direction: "desc" });
+  const [page, setPage] = useState(1);
 
   const [showDel, setShowDel] = useState(false);
   const [delRow, setDelRow] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
+  const [downloading, setDownloading] = useState("");
+
+  // Payment history
+  const [showPayHist, setShowPayHist] = useState(false);
+  const [payHistRow, setPayHistRow] = useState(null);
+  const [payHistData, setPayHistData] = useState([]);
+  const [payHistLoading, setPayHistLoading] = useState(false);
+  const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
+  const [newPay, setNewPay] = useState({ type: "Cash", amount: "" });
 
   // Close download dropdown on outside click
   useEffect(() => {
@@ -61,6 +73,9 @@ export default function Sales() {
     });
   }, [data, sort]);
 
+  const paged = useMemo(() => sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [sorted, page]);
+  useEffect(() => setPage(1), [filters, sort]);
+
   const totals = useMemo(() => ({
     count: sorted.length,
     amount: sorted.reduce((s, r) => s + Number(r.amount || 0), 0),
@@ -71,6 +86,7 @@ export default function Sales() {
 
   /* ── Download reports ── */
   const downloadReport = async (type) => {
+    setDownloading(type);
     try {
       const qs = new URLSearchParams();
       qs.set("type", type);
@@ -94,7 +110,6 @@ export default function Sales() {
           { key: "item_count", label: "Items", type: "int" },
           { key: "total_qty", label: "Qty", type: "int" },
           { key: "subtotal", label: "Subtotal", type: "number" },
-          { key: "tax_total", label: "Tax", type: "number" },
           { key: "discount", label: "Discount", type: "number" },
           { key: "rounded_final_total", label: "Total", type: "number" },
           { key: "received", label: "Received", type: "number" },
@@ -139,6 +154,7 @@ export default function Sales() {
         ], rows, `Sales_ItemMaster_${range}`);
       }
     } catch (e) { alert(e.message || "Download failed"); }
+    finally { setDownloading(""); }
   };
 
   const printInvoice = async (row, e) => {
@@ -164,6 +180,44 @@ export default function Sales() {
       });
     } catch (e) { alert(e.message || "Failed to print"); }
   };
+
+  const openPayHistory = async (row) => {
+    setPayHistRow(row);
+    setShowPayHist(true);
+    setPayHistLoading(true);
+    setNewPay({ type: "Cash", amount: "" });
+    try {
+      const r = await fetch(`${API}/get_invoice_payments.php?invoiceId=${row.id}`);
+      const j = await r.json().catch(() => ({}));
+      setPayHistData(j.payments || []);
+    } catch { setPayHistData([]); }
+    finally { setPayHistLoading(false); }
+  };
+
+  const deletePayment = async (payId) => {
+    if (!payHistRow) return;
+    try {
+      const r = await fetch(`${API}/delete_invoice_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: payId, invoiceId: payHistRow.id }) });
+      const j = await r.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Failed");
+      openPayHistory(payHistRow);
+      fetch_();
+    } catch (e) { alert(e.message); }
+  };
+
+  const addPayment = async () => {
+    if (!payHistRow || !asNum(newPay.amount)) return;
+    try {
+      const r = await fetch(`${API}/add_sales_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ invoiceId: payHistRow.id, payType: newPay.type, amount: asNum(newPay.amount), createdBy: user?.id || 1 }) });
+      const j = await r.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Failed");
+      setNewPay({ type: "Cash", amount: "" });
+      openPayHistory(payHistRow);
+      fetch_();
+    } catch (e) { alert(e.message); }
+  };
+
+  const asNum = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
 
   const deleteInvoice = async () => {
     if (!delRow) return;
@@ -200,7 +254,9 @@ export default function Sales() {
         <button className="g-btn ghost sm" onClick={fetch_} disabled={loading}><FiRefreshCw size={14} /></button>
         {/* Download dropdown */}
         <div style={{ position: "relative" }}>
-          <button className="g-btn ghost sm" onClick={(e) => { e.stopPropagation(); setShowDownload((p) => !p); }}><FiDownload size={14} /> Download</button>
+          <button className="g-btn ghost sm" disabled={!!downloading} onClick={(e) => { e.stopPropagation(); setShowDownload((p) => !p); }}>
+            {downloading ? <><FiRefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Downloading…</> : <><FiDownload size={14} /> Download</>}
+          </button>
           {showDownload && (
             <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 50, background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.12)", minWidth: 200, padding: "6px 0" }}>
               {[
@@ -233,7 +289,7 @@ export default function Sales() {
                 <th>Phone</th>
                 <th>Payment</th>
                 <SortTH label="Amount ₹" colKey="amount" sortConfig={sort} onSort={onSort} />
-                <th style={{ width: 100 }}>Actions</th>
+                <th style={{ width: 130 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -241,7 +297,7 @@ export default function Sales() {
                 <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: C.textSub }}>Loading…</td></tr>
               ) : sorted.length === 0 ? (
                 <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No records found</td></tr>
-              ) : sorted.map((r) => (
+              ) : paged.map((r) => (
                 <tr key={r.id} onClick={() => navigate(`/addsales?id=${r.id}`)} style={{ cursor: "pointer" }}>
                   <td>{r.date}</td>
                   <td style={{ fontWeight: 600 }}>{r.invoice}</td>
@@ -252,7 +308,10 @@ export default function Sales() {
                   <td><StatusBadge status={r.paymentType || "Cash"} /></td>
                   <td style={{ fontWeight: 700 }}>₹{fmt2(r.amount)}</td>
                   <td>
-                    <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="g-btn ghost sm" title="Payments" onClick={(e) => { e.stopPropagation(); openPayHistory(r); }}>
+                        <FiDollarSign size={12} />
+                      </button>
                       <button className="g-btn ghost sm" title="Print" onClick={(e) => printInvoice(r, e)}>
                         <FiPrinter size={12} />
                       </button>
@@ -266,6 +325,7 @@ export default function Sales() {
             </tbody>
           </table>
         </div>
+        <Pagination total={sorted.length} page={page} onPage={setPage} />
       </div>
 
       {/* Delete Modal */}
@@ -280,6 +340,56 @@ export default function Sales() {
               <div><strong>Date:</strong> {delRow.date}</div>
               <div><strong>Amount:</strong> ₹{fmt2(delRow.amount)}</div>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Payment History Modal */}
+      <Modal show={showPayHist} title={`Payments — ${payHistRow?.invoice || ""}`} onClose={() => setShowPayHist(false)} width={520}>
+        {payHistRow && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, padding: "8px 12px", background: C.brandLighter, borderRadius: 8, fontSize: 13 }}>
+              <span>Invoice: <strong>{payHistRow.invoice}</strong></span>
+              <span>Total: <strong>₹{fmt2(payHistRow.amount)}</strong></span>
+            </div>
+
+            {payHistLoading ? <div style={{ padding: 16, textAlign: "center", color: C.textSub }}>Loading...</div> : (
+              <>
+                {payHistData.length === 0 ? (
+                  <div style={{ padding: 16, textAlign: "center", color: C.textSub, fontSize: 13 }}>No payments recorded</div>
+                ) : (
+                  <table className="g-table" style={{ marginBottom: 14 }}>
+                    <thead><tr><th>Mode</th><th style={{ textAlign: "right" }}>Amount</th><th style={{ width: 40 }}></th></tr></thead>
+                    <tbody>
+                      {payHistData.map((p) => (
+                        <tr key={p.id}>
+                          <td style={{ fontWeight: 600 }}>{p.pay_type}</td>
+                          <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmt2(p.amount)}</td>
+                          <td>
+                            <button className="g-btn danger sm" onClick={() => deletePayment(p.id)} title="Delete"><FiX size={12} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* Add payment */}
+                <div style={{ display: "flex", gap: 8, alignItems: "end", paddingTop: 10, borderTop: "1.5px solid #e5e7eb" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, marginBottom: 4 }}>Mode</div>
+                    <select className="g-sel sm" value={newPay.type} onChange={(e) => setNewPay((p) => ({ ...p, type: e.target.value }))}>
+                      {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, marginBottom: 4 }}>Amount</div>
+                    <input className="g-inp sm" value={newPay.amount} onChange={(e) => setNewPay((p) => ({ ...p, amount: e.target.value }))} inputMode="decimal" placeholder="0.00" />
+                  </div>
+                  <button className="g-btn success sm" onClick={addPayment} style={{ height: 34 }}>Add</button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </Modal>

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiUserPlus, FiUser, FiTrash2, FiEye, FiEyeOff, FiShield, FiRefreshCw, FiSearch } from "react-icons/fi";
+import { FiUserPlus, FiUser, FiTrash2, FiEye, FiEyeOff, FiShield, FiRefreshCw, FiSearch, FiEdit2 } from "react-icons/fi";
 import { C, API, GLOBAL_CSS, Modal, Field } from "../ui.jsx";
+import usePageMeta from "../usePageMeta.js";
 
 export default function AdminUsers() {
+  usePageMeta("Users", "Manage shop users and access roles");
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "null");
   const [users, setUsers] = useState([]);
@@ -15,7 +17,11 @@ export default function AdminUsers() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [deleteId, setDeleteId] = useState(null);
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", password: "", role: "user" });
+  const [editShowPass, setEditShowPass] = useState(false);
   const nameRef = useRef(null);
+  const editNameRef = useRef(null);
 
   useEffect(() => {
     if (!user || user.role !== "admin") navigate("/");
@@ -86,6 +92,35 @@ export default function AdminUsers() {
     }
   };
 
+  const openEdit = (u) => {
+    setEditUser(u);
+    setEditForm({ name: u.name, password: "", role: u.role || "user" });
+    setEditShowPass(false);
+    setMsg("");
+    setTimeout(() => editNameRef.current?.focus(), 100);
+  };
+
+  const handleEdit = async (e) => {
+    if (e) e.preventDefault();
+    if (!editForm.name.trim()) { setMsg("Username is required"); return; }
+    try {
+      setSaving(true);
+      setMsg("");
+      const res = await fetch(`${API}/update_user.php`, {
+        method: "POST",
+        body: JSON.stringify({ id: editUser.id, ...editForm }),
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setEditUser(null);
+        fetchUsers();
+      } else {
+        setMsg(data.message || "Failed to update user");
+      }
+    } catch { setMsg("Server not responding"); }
+    finally { setSaving(false); }
+  };
+
   const filtered = users.filter((u) => {
     if (!q.trim()) return true;
     const qLow = q.trim().toLowerCase();
@@ -118,7 +153,7 @@ export default function AdminUsers() {
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
         <div style={{ position: "relative", flex: 1, minWidth: 160 }}>
           <FiSearch size={13} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
-          <input className="g-inp sm" style={{ paddingLeft: 28, width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search username or role…" />
+          <input className="g-inp sm search" style={{ width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search username or role…" />
         </div>
         <span style={{ fontSize: 11, color: C.textSub, whiteSpace: "nowrap" }}>{filtered.length} results</span>
         <button className="g-btn ghost sm" onClick={fetchUsers} disabled={loading}><FiRefreshCw size={14} /></button>
@@ -136,7 +171,7 @@ export default function AdminUsers() {
                 <th style={{ width: 50 }}>#</th>
                 <th>Username</th>
                 <th>Role</th>
-                <th style={{ width: 80 }}>Actions</th>
+                <th style={{ width: 100 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -170,11 +205,16 @@ export default function AdminUsers() {
                     </span>
                   </td>
                   <td>
-                    {u.role !== "admin" && (
-                      <button className="g-btn danger sm" onClick={() => setDeleteId(u.id)} title="Delete user">
-                        <FiTrash2 size={13} />
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="g-btn ghost sm" onClick={() => openEdit(u)} title="Edit user">
+                        <FiEdit2 size={13} />
                       </button>
-                    )}
+                      {u.role !== "admin" && (
+                        <button className="g-btn danger sm" onClick={() => setDeleteId(u.id)} title="Delete user">
+                          <FiTrash2 size={13} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -227,6 +267,58 @@ export default function AdminUsers() {
             <Field label="Role">
               <select className="g-sel" value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </Field>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit User Modal */}
+      <Modal show={!!editUser} title="Edit User" onClose={() => setEditUser(null)} width={420} footer={
+        <>
+          <button className="g-btn ghost" onClick={() => setEditUser(null)}>Cancel</button>
+          <button className="g-btn primary" onClick={handleEdit} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
+        </>
+      }>
+        <form onSubmit={handleEdit}>
+          {msg && (
+            <div style={{
+              marginBottom: 14, padding: "8px 12px", borderRadius: 8,
+              background: C.redLight, border: "1.5px solid #fca5a5",
+              fontSize: 12, fontWeight: 600, color: C.red,
+            }}>
+              {msg}
+            </div>
+          )}
+          <Field label="Username">
+            <input ref={editNameRef} className="g-inp" value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              placeholder="Enter username" />
+          </Field>
+          <div style={{ marginTop: 14 }}>
+            <Field label="New Password" hint="Leave blank to keep current password">
+              <div style={{ position: "relative" }}>
+                <input className="g-inp" value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  type={editShowPass ? "text" : "password"}
+                  placeholder="Leave blank to keep unchanged"
+                  style={{ paddingRight: 42 }} />
+                <button type="button" onClick={() => setEditShowPass((p) => !p)}
+                  style={{
+                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", color: C.textSub, padding: 4, display: "flex",
+                  }}>
+                  {editShowPass ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                </button>
+              </div>
+            </Field>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Field label="Role">
+              <select className="g-sel" value={editForm.role}
+                onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
               </select>

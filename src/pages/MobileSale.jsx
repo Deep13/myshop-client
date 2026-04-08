@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { API, asNum, fmt2, todayISO } from "../ui.jsx";
+import { buildReceiptHTML } from "../thermalPrint.js";
+import usePageMeta from "../usePageMeta.js";
 
 const C = {
   brand: "#034C9D", green: "#16a34a", red: "#dc2626",
   orange: "#ea580c", bg: "#f0f4f8", text: "#111827", sub: "#6b7280",
 };
-const PAY_MODES = ["Cash", "UPI", "Card"];
+const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function MobileSale() {
+  usePageMeta("Quick Sale", "Scan or search items for a quick sale");
   const [inventory, setInventory] = useState([]);
   const [cart, setCart] = useState([]);
   const [scanning, setScanning] = useState(false);
@@ -18,9 +21,11 @@ export default function MobileSale() {
   const [invoiceNo, setInvoiceNo] = useState("");
   const [custName, setCustName] = useState("Cash");
   const [phone, setPhone] = useState("");
+  const [multiPay, setMultiPay] = useState(false);
   const [payMode, setPayMode] = useState("Cash");
+  const [payLines, setPayLines] = useState([{ type: "Cash", amount: "" }]);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedInvoice, setSavedInvoice] = useState(null); // { invoiceNo, total, custName, phone }
   const [showCheckout, setShowCheckout] = useState(false);
   const scannerRef = useRef(null);
   const html5QrRef = useRef(null);
@@ -30,7 +35,7 @@ export default function MobileSale() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/get_inventory.php?include_zero=0`);
+        const r = await fetch(`${API}/get_inventory.php?include_zero=1`);
         const j = await r.json();
         if (j.status === "success") setInventory(j.data || []);
       } catch {}
@@ -46,9 +51,13 @@ export default function MobileSale() {
 
   // Find item by barcode (item_code)
   const findByCode = useCallback((code) => {
-    const q = code.trim().toLowerCase();
+    const q = code.replace(/[\s\r\n\t\x00-\x1f]/g, "").toLowerCase();
+    if (!q) return null;
     return inventory.find(
-      (it) => (it.item_code || "").toLowerCase() === q || (it.barcode || "").toLowerCase() === q
+      (it) => {
+        const c = (it.item_code || "").toLowerCase();
+        return c === q || c === q.replace(/^0+/, "") || q === c.replace(/^0+/, "") || (it.barcode || "").toLowerCase() === q;
+      }
     );
   }, [inventory]);
 
@@ -83,25 +92,27 @@ export default function MobileSale() {
   }, []);
 
   // Handle barcode scan result
+  const stopScanner = async () => {
+    try { await html5QrRef.current?.stop(); } catch {}
+    html5QrRef.current = null;
+    setScanning(false);
+  };
+
   const onScanResult = useCallback((code) => {
     const item = findByCode(code);
     if (item) {
       addToCart(item);
-      // Vibrate on success
+      stopScanner();
       if (navigator.vibrate) navigator.vibrate(100);
     } else {
-      alert(`Item not found: ${code}`);
+      const cleaned = code.replace(/[\s\r\n\t\x00-\x1f]/g, "");
+      alert(`Item not found: ${cleaned}\n${inventory.length} items loaded.`);
     }
   }, [findByCode, addToCart]);
 
   // Start/stop camera scanner
   const toggleScanner = async () => {
-    if (scanning) {
-      try { await html5QrRef.current?.stop(); } catch {}
-      html5QrRef.current = null;
-      setScanning(false);
-      return;
-    }
+    if (scanning) { stopScanner(); return; }
     setScanning(true);
     try {
       const qr = new Html5Qrcode("mobile-scanner");
@@ -187,6 +198,10 @@ export default function MobileSale() {
         received: fmt2(roundedTotal),
         balance: "0",
       };
+      const payList = multiPay
+        ? payLines.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0)
+        : [{ type: payMode, amount: roundedTotal }];
+      if (!payList.length) return alert("Add at least one payment");
       const body = {
         invoiceNo,
         invoiceDate: todayISO(),
@@ -194,7 +209,7 @@ export default function MobileSale() {
         customerName: custName || "Cash",
         phone,
         rows,
-        payments: [{ type: payMode, amount: roundedTotal }],
+        payments: payList,
         totals,
         createdBy: user?.id || 1,
       };
@@ -205,16 +220,22 @@ export default function MobileSale() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
-      setSaved(true);
+      const savedNo = invoiceNo;
+      const savedTotal = roundedTotal;
+      const savedName = custName || "Cash";
+      const savedPhone = phone;
+      const savedItems = [...cart];
+      setSavedInvoice({ invoiceNo: savedNo, total: savedTotal, custName: savedName, phone: savedPhone, items: savedItems, date: todayISO() });
       setCart([]);
       setShowCheckout(false);
+      setMultiPay(false);
+      setPayLines([{ type: "Cash", amount: "" }]);
       // Get next invoice number
       try {
         const r2 = await fetch(`${API}/get_next_invoice.php`);
         const j2 = await r2.json();
         if (j2.status === "success") setInvoiceNo(j2.invoiceNo);
       } catch {}
-      setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       alert(e.message || "Save failed");
     } finally {
@@ -241,10 +262,16 @@ export default function MobileSale() {
           <div style={{ fontSize: 16, fontWeight: 800 }}>Ganga Instamart</div>
           <div style={{ fontSize: 11, opacity: 0.8 }}>{invoiceNo}</div>
         </div>
-        <button onClick={logout} style={{
-          background: "rgba(255,255,255,0.15)", border: "none", color: "#fff",
-          padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer",
-        }}>Logout</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => window.location.href = "/m/inventory"} style={{
+            background: "rgba(255,255,255,0.15)", border: "none", color: "#fff",
+            padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer",
+          }}>Stock</button>
+          <button onClick={logout} style={{
+            background: "rgba(255,255,255,0.15)", border: "none", color: "#fff",
+            padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer",
+          }}>Logout</button>
+        </div>
       </div>
 
       {/* ── Scanner Area ── */}
@@ -307,13 +334,131 @@ export default function MobileSale() {
         </div>
       </div>
 
-      {/* ── Success toast ── */}
-      {saved && (
+      {/* ── Post-Save Modal ── */}
+      {savedInvoice && (
         <div style={{
-          position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)",
-          background: C.green, color: "#fff", padding: "10px 20px", borderRadius: 10,
-          fontWeight: 700, fontSize: 14, zIndex: 200, boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-        }}>Invoice Saved!</div>
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 300,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+        }} onClick={() => setSavedInvoice(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400,
+            padding: "28px 20px", textAlign: "center",
+          }}>
+            {/* Success icon */}
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#dcfce7", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 28, color: C.green }}>&#10003;</span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: C.text, marginBottom: 4 }}>Invoice Saved!</div>
+            <div style={{ fontSize: 14, color: C.sub, marginBottom: 4 }}>{savedInvoice.invoiceNo}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: C.green, marginBottom: 20 }}>&#8377;{fmt2(savedInvoice.total)}</div>
+
+            {/* Action buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* Download Invoice as Image */}
+              <button onClick={async () => {
+                try {
+                  const printData = {
+                    invoiceNo: savedInvoice.invoiceNo,
+                    invoiceDate: savedInvoice.date,
+                    customerType: "Cash Sale",
+                    customerName: savedInvoice.custName,
+                    phone: savedInvoice.phone,
+                    items: savedInvoice.items.map((c) => ({
+                      name: c.itemName, mrp: c.mrp, qty: c.qty,
+                      price: c.salePrice, amount: c.salePrice * c.qty, tax: c.tax,
+                    })),
+                    totalQty: savedInvoice.items.reduce((s, c) => s + c.qty, 0),
+                    subTotal: savedInvoice.total,
+                    discount: 0,
+                    total: savedInvoice.total,
+                    received: savedInvoice.total,
+                    balance: 0,
+                  };
+                  const html = buildReceiptHTML(printData);
+                  // Render in hidden iframe, then capture as image via canvas
+                  const iframe = document.createElement("iframe");
+                  iframe.style.cssText = "position:fixed;left:0;top:0;width:320px;height:auto;border:none;opacity:0;pointer-events:none;z-index:-1";
+                  document.body.appendChild(iframe);
+                  const doc = iframe.contentDocument || iframe.contentWindow.document;
+                  doc.open(); doc.write(html); doc.close();
+                  // Wait for render
+                  await new Promise((r) => setTimeout(r, 500));
+                  const body = doc.body;
+                  const w = body.scrollWidth, h = body.scrollHeight;
+                  // Use canvas to capture
+                  const canvas = document.createElement("canvas");
+                  const scale = 3; // high-res
+                  canvas.width = w * scale;
+                  canvas.height = h * scale;
+                  const ctx = canvas.getContext("2d");
+                  ctx.scale(scale, scale);
+                  ctx.fillStyle = "#fff";
+                  ctx.fillRect(0, 0, w, h);
+                  // Draw using SVG foreignObject
+                  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+                    <foreignObject width="100%" height="100%">
+                      <div xmlns="http://www.w3.org/1999/xhtml">${doc.documentElement.outerHTML}</div>
+                    </foreignObject>
+                  </svg>`;
+                  const img = new Image();
+                  img.onload = () => {
+                    ctx.drawImage(img, 0, 0);
+                    canvas.toBlob((blob) => {
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `Invoice_${savedInvoice.invoiceNo}.png`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      document.body.removeChild(iframe);
+                    }, "image/png");
+                  };
+                  img.onerror = () => {
+                    // Fallback: open HTML in new tab for manual save
+                    const blob = new Blob([html], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, "_blank");
+                    document.body.removeChild(iframe);
+                  };
+                  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
+                } catch {
+                  alert("Download failed. Please try again.");
+                }
+              }} style={{
+                width: "100%", padding: "14px", border: "none", borderRadius: 10,
+                background: C.brand, color: "#fff",
+                fontSize: 15, fontWeight: 700, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}>
+                &#128229; Download Invoice
+              </button>
+
+              {/* Share via WhatsApp — open chat with customer number */}
+              {savedInvoice.phone && savedInvoice.phone.replace(/\D/g, "").length >= 10 && (
+                <button onClick={() => {
+                  const phoneNum = savedInvoice.phone.replace(/\D/g, "").slice(-10);
+                  window.open(`https://wa.me/91${phoneNum}`, "_blank");
+                }} style={{
+                  width: "100%", padding: "14px", border: "none", borderRadius: 10,
+                  background: "#25D366", color: "#fff",
+                  fontSize: 15, fontWeight: 700, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  &#128172; WhatsApp Customer
+                </button>
+              )}
+
+              {/* New Sale */}
+              <button onClick={() => { setSavedInvoice(null); setCustName("Cash"); setPhone(""); }} style={{
+                width: "100%", padding: "14px", border: "1.5px solid #d1d5db", borderRadius: 10,
+                background: "#fff", color: C.text,
+                fontSize: 15, fontWeight: 700, cursor: "pointer",
+              }}>
+                New Sale
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Cart ── */}
@@ -425,18 +570,58 @@ export default function MobileSale() {
 
             {/* Payment mode */}
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: C.sub, display: "block", marginBottom: 6 }}>Payment Mode</label>
-              <div style={{ display: "flex", gap: 6 }}>
-                {PAY_MODES.map((m) => (
-                  <button key={m} onClick={() => setPayMode(m)} style={{
-                    flex: 1, padding: "10px 0", borderRadius: 8, border: "1.5px solid",
-                    borderColor: payMode === m ? C.brand : "#d1d5db",
-                    background: payMode === m ? C.brand : "#fff",
-                    color: payMode === m ? "#fff" : C.text,
-                    fontSize: 14, fontWeight: 700, cursor: "pointer",
-                  }}>{m}</button>
-                ))}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>Payment</label>
+                <button onClick={() => { setMultiPay((p) => !p); if (!multiPay) setPayLines([{ type: "Cash", amount: String(roundedTotal) }]); }}
+                  style={{ fontSize: 11, fontWeight: 700, color: C.brand, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                  {multiPay ? "Single Mode" : "Split Payment"}
+                </button>
               </div>
+              {!multiPay ? (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {PAY_MODES.slice(0, 4).map((m) => (
+                    <button key={m} onClick={() => setPayMode(m)} style={{
+                      flex: 1, minWidth: 70, padding: "10px 0", borderRadius: 8, border: "1.5px solid",
+                      borderColor: payMode === m ? C.brand : "#d1d5db",
+                      background: payMode === m ? C.brand : "#fff",
+                      color: payMode === m ? "#fff" : C.text,
+                      fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    }}>{m}</button>
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  {payLines.map((p, i) => (
+                    <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                      <select value={p.type} onChange={(e) => setPayLines((prev) => { const n = [...prev]; n[i] = { ...n[i], type: e.target.value }; return n; })}
+                        style={{ flex: 1, padding: "9px 8px", border: "1.5px solid #d1d5db", borderRadius: 8, fontSize: 13, fontWeight: 600, outline: "none", background: "#fff" }}>
+                        {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                      <input value={p.amount} onChange={(e) => setPayLines((prev) => { const n = [...prev]; n[i] = { ...n[i], amount: e.target.value }; return n; })}
+                        inputMode="decimal" placeholder="₹ Amount"
+                        style={{ flex: 1, padding: "9px 10px", border: "1.5px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 700, outline: "none", textAlign: "right" }} />
+                      {payLines.length > 1 && (
+                        <button onClick={() => setPayLines((prev) => prev.filter((_, j) => j !== i))}
+                          style={{ width: 32, height: 36, border: "1.5px solid #fca5a5", borderRadius: 8, background: "#fff", color: C.red, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button onClick={() => setPayLines((prev) => [...prev, { type: "Cash", amount: "" }])}
+                    style={{ width: "100%", padding: "8px", border: "1.5px dashed #d1d5db", borderRadius: 8, background: "none", color: C.brand, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    + Add Payment Line
+                  </button>
+                  {(() => {
+                    const totalPay = payLines.reduce((s, l) => s + asNum(l.amount), 0);
+                    const diff = roundedTotal - totalPay;
+                    if (Math.abs(diff) > 0.01) return (
+                      <div style={{ fontSize: 12, fontWeight: 700, color: diff > 0 ? C.orange : C.red, marginTop: 6, textAlign: "right" }}>
+                        {diff > 0 ? `₹${fmt2(diff)} remaining` : `₹${fmt2(-diff)} excess`}
+                      </div>
+                    );
+                    return null;
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Summary */}

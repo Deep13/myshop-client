@@ -2,8 +2,10 @@ import React, { useState, useRef } from "react";
 import { FiSettings, FiPrinter, FiImage, FiSave, FiUpload, FiTrash2, FiEye } from "react-icons/fi";
 import { C, GLOBAL_CSS, Field } from "../ui.jsx";
 import { getShopSettings, saveShopSettings, printReceipt } from "../thermalPrint.js";
+import usePageMeta from "../usePageMeta.js";
 
 export default function Settings() {
+  usePageMeta("Settings", "Shop details, printer, inventory and invoice settings");
   const [form, setForm] = useState(getShopSettings);
   const [saved, setSaved] = useState(false);
   const fileRef = useRef(null);
@@ -141,6 +143,18 @@ export default function Settings() {
               <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#166534" }}>
                 Set your thermal printer as the <strong>default printer</strong> in your OS settings for seamless one-click printing. The receipt will be sent directly to the printer without a preview dialog.
               </div>
+            </div>
+          </div>
+
+          {/* Inventory Settings */}
+          <div className="g-card" style={{ marginBottom: 20 }}>
+            <div className="g-card-head">
+              <div className="g-card-title"><FiSettings size={15} style={{ color: C.brand }} /> Inventory Settings</div>
+            </div>
+            <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+              <Field label="Low Stock Limit" hint="Items with qty at or below this will show as low stock on dashboard">
+                <input className="g-inp" type="number" min="1" max="999" value={form.lowStockLimit || 5} onChange={(e) => f("lowStockLimit", Math.max(1, parseInt(e.target.value) || 1))} style={{ width: 120 }} />
+              </Field>
             </div>
           </div>
 

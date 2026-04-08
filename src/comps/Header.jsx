@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { RiShutDownLine } from "react-icons/ri";
-import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield } from "react-icons/fi";
+import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield, FiMoon, FiSun } from "react-icons/fi";
 import { C, Modal, GLOBAL_CSS } from "../ui.jsx";
 import { SHORTCUTS } from "../shortcuts.js";
 
@@ -29,6 +29,12 @@ export default function Header() {
   const moreRef = useRef(null);
   const user = JSON.parse(localStorage.getItem("user") || "null");
   const isAdmin = user?.role === "admin";
+  const [dark, setDark] = useState(() => localStorage.getItem("darkMode") === "true");
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("darkMode", dark);
+  }, [dark]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -155,6 +161,19 @@ export default function Header() {
         </nav>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Dark mode toggle */}
+          <button onClick={() => setDark((d) => !d)} title={dark ? "Light Mode" : "Dark Mode"}
+            style={{
+              background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer",
+              color: "rgba(255,255,255,0.8)", width: 34, height: 34, borderRadius: 8,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.2)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}>
+            {dark ? <FiSun size={15} /> : <FiMoon size={15} />}
+          </button>
+
           {/* New Sale quick button */}
           <button onClick={() => navigate("/addsales")} title="New Sale (Ctrl+Shift+S)"
             style={{

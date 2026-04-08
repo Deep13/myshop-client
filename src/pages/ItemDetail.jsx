@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmt2 } from "../ui.jsx";
+import usePageMeta from "../usePageMeta.js";
 
 const today = todayISO();
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
@@ -38,6 +39,7 @@ export default function ItemDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving]   = useState(false);
+  usePageMeta(data ? `${data.item?.name || "Item"} — Detail` : "Item Detail", "Item stock, batches, purchase and sales history");
 
   const startEdit = () => {
     const it = data.item;

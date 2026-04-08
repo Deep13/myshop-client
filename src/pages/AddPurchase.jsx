@@ -3,22 +3,54 @@ import { useSearchParams } from "react-router-dom";
 import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
+import usePageMeta from "../usePageMeta.js";
 
 /* ── helpers ── */
 const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
 const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
-const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+const user = (() => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+})();
+
+function parseDiscount(val, price) {
+  const s = String(val || "").trim();
+  if (!s) return 0;
+  if (s.endsWith("%")) { const pct = parseFloat(s) || 0; return price * pct / 100; }
+  return parseFloat(s) || 0;
+}
 
 function calcRowAmt(row) {
-  return asNum(row.qty) * asNum(row.purchasePrice);
+  const price = asNum(row.purchasePrice);
+  const disc = parseDiscount(row.discount, price);
+  return asNum(row.qty) * (price - disc);
 }
 
 function SectionHead({ num, title, icon, actions }) {
   return (
     <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{num}</div>
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            background: C.brand,
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 13,
+            fontWeight: 800,
+            flexShrink: 0,
+          }}
+        >
+          {num}
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ color: C.brand }}>{icon}</span>
           <span style={{ fontWeight: 800, fontSize: 15, color: C.text }}>{title}</span>
@@ -33,6 +65,7 @@ export default function AddPurchase() {
   const [sp] = useSearchParams();
   const purchaseId = sp.get("purchaseId");
   const isEdit = Boolean(purchaseId);
+  usePageMeta(isEdit ? "Edit Purchase" : "New Purchase", "Create or edit a purchase bill");
 
   /* item master — loaded from DB */
   const [itemMaster, setItemMaster] = useState([]);
@@ -94,10 +127,15 @@ export default function AddPurchase() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/get_items_all.php?limit=500`);
+        const r = await fetch(`${API}/get_items_all.php?limit=10000`);
         const j = await r.json();
-        if (j.status === "success") { setItemMaster(j.data || []); setMasterLoaded(true); }
-      } catch { setMasterLoaded(true); }
+        if (j.status === "success") {
+          setItemMaster(j.data || []);
+          setMasterLoaded(true);
+        }
+      } catch {
+        setMasterLoaded(true);
+      }
     })();
   }, []);
 
@@ -113,35 +151,53 @@ export default function AddPurchase() {
         setSelDist({ id: h.distributor_id, name: h.distributor_name, gstin: h.distributor_gstin });
         setDistQ(`${h.distributor_name}${h.distributor_gstin ? ` (${h.distributor_gstin})` : ""}`);
         setGstin(h.distributor_gstin || "");
-        setBillNo(h.bill_no); setBillDate(h.bill_date); setDueDate(h.due_date || "");
+        setBillNo(h.bill_no);
+        setBillDate(h.bill_date);
+        setDueDate(h.due_date || "");
         setBillType(h.bill_type || "GST");
         setGstMode(h.gst_mode || "exclusive");
-        setRows(j.items.map((r) => ({
-          itemId: asNum(r.item_id), itemName: r.item_name, code: r.item_code,
-          hsn: r.hsn, batchNo: r.batch_no, expDate: r.exp_date || "",
-          mrp: r.mrp, qty: r.qty, purchasePrice: r.purchase_price,
-          salePrice: r.sale_price, discount: r.discount, tax: r.tax, amount: r.amount,
-        })));
+        setRows(
+          j.items.map((r) => ({
+            itemId: asNum(r.item_id),
+            itemName: r.item_name,
+            code: r.item_code,
+            hsn: r.hsn,
+            batchNo: r.batch_no,
+            expDate: r.exp_date || "",
+            mrp: r.mrp,
+            qty: r.qty,
+            purchasePrice: r.purchase_price,
+            salePrice: r.sale_price,
+            discount: r.discount,
+            tax: r.tax,
+            amount: r.amount,
+          })),
+        );
         setRoundOff(Boolean(h.round_off_enabled));
         if (j.payments?.length) setPayments(j.payments.map((p) => ({ type: p.mode, amount: String(p.amount) })));
-      } catch (e) { alert(e.message || "Failed to load"); }
+      } catch (e) {
+        alert(e.message || "Failed to load");
+      }
     })();
   }, [purchaseId, masterLoaded]);
 
   /* ── Item search filtering ── */
   const getSug = (text) => {
-    const q = String(text || "").trim().toLowerCase();
+    const q = String(text || "")
+      .trim()
+      .toLowerCase();
     if (!q) return [];
     return itemMaster.filter((it) => it.name.toLowerCase().includes(q) || it.code.toLowerCase().includes(q) || (it.hsn || "").includes(q)).slice(0, 10);
   };
 
-  const updRow = (i, patch) => setRows((prev) => {
-    const n = [...prev];
-    const u = { ...n[i], ...patch };
-    u.amount = calcRowAmt(u).toFixed(2);
-    n[i] = u;
-    return n;
-  });
+  const updRow = (i, patch) =>
+    setRows((prev) => {
+      const n = [...prev];
+      const u = { ...n[i], ...patch };
+      u.amount = calcRowAmt(u).toFixed(2);
+      n[i] = u;
+      return n;
+    });
 
   /* Recalculate amounts when billType changes */
   useEffect(() => {
@@ -152,24 +208,18 @@ export default function AddPurchase() {
     setActiveSug(null);
     setItemSearch((p) => ({ ...p, [ri]: "" }));
     setRows((prev) => {
-      // Check if this item already exists in another filled row
-      const existingIdx = prev.findIndex((r, i) => i !== ri && r.itemId === item.id && String(r.itemName || "").trim());
-      if (existingIdx >= 0) {
-        // Increment qty of existing row instead of filling a new one
-        const n = [...prev];
-        const existing = { ...n[existingIdx] };
-        existing.qty = String(asNum(existing.qty) + 1);
-        existing.amount = calcRowAmt(existing).toFixed(2);
-        n[existingIdx] = existing;
-        // Clear the current row search
-        n[ri] = blankRow();
-        return n;
-      }
-      // No duplicate — fill the current row
+      // Always fill the current row — allow same item with different batch
       const fill = {
-        itemId: item.id, itemName: item.name, code: item.code,
-        hsn: item.hsn || "", mrp: item.mrp ?? "", salePrice: item.salePrice ?? "",
-        purchasePrice: item.purchasePrice ?? "", tax: item.tax ?? "", qty: 1, discount: "",
+        itemId: item.id,
+        itemName: item.name,
+        code: item.code,
+        hsn: item.hsn || "",
+        mrp: item.mrp ?? "",
+        salePrice: item.salePrice ?? "",
+        purchasePrice: item.purchasePrice ?? "",
+        tax: item.tax ?? "",
+        qty: 1,
+        discount: "",
       };
       const n = [...prev];
       n[ri] = { ...n[ri], ...fill };
@@ -181,19 +231,44 @@ export default function AddPurchase() {
   };
 
   /* close sug on outside click */
-  useEffect(() => { const c = () => setActiveSug(null); document.addEventListener("click", c); return () => document.removeEventListener("click", c); }, []);
+  useEffect(() => {
+    const c = () => setActiveSug(null);
+    document.addEventListener("click", c);
+    return () => document.removeEventListener("click", c);
+  }, []);
 
   /* ── Distributor search ── */
-  useEffect(() => { const c = (e) => { if (!distRef.current?.contains(e.target)) setShowDistSug(false); }; document.addEventListener("mousedown", c); return () => document.removeEventListener("mousedown", c); }, []);
   useEffect(() => {
-    const q = distQ.trim(); if (!q) { setDistSug([]); return; }
+    const c = (e) => {
+      if (!distRef.current?.contains(e.target)) setShowDistSug(false);
+    };
+    document.addEventListener("mousedown", c);
+    return () => document.removeEventListener("mousedown", c);
+  }, []);
+  useEffect(() => {
+    const q = distQ.trim();
+    if (!q) {
+      setDistSug([]);
+      return;
+    }
     const t = setTimeout(async () => {
-      try { const r = await fetch(`${API}/get_distributors.php?q=${encodeURIComponent(q)}&limit=8`); const j = await r.json().catch(() => ({})); setDistSug(r.ok && j.status === "success" ? (j.data || []) : []); } catch { setDistSug([]); }
+      try {
+        const r = await fetch(`${API}/get_distributors.php?q=${encodeURIComponent(q)}&limit=8`);
+        const j = await r.json().catch(() => ({}));
+        setDistSug(r.ok && j.status === "success" ? j.data || [] : []);
+      } catch {
+        setDistSug([]);
+      }
     }, 250);
     return () => clearTimeout(t);
   }, [distQ]);
 
-  const pickDist = (d) => { setSelDist(d); setGstin(d.gstin || ""); setDistQ(`${d.name}${d.gstin ? ` (${d.gstin})` : ""}`); setShowDistSug(false); };
+  const pickDist = (d) => {
+    setSelDist(d);
+    setGstin(d.gstin || "");
+    setDistQ(`${d.name}${d.gstin ? ` (${d.gstin})` : ""}`);
+    setShowDistSug(false);
+  };
 
   /* ── Totals ── */
   const subTotal = useMemo(() => rows.reduce((a, r) => a + asNum(r.amount), 0), [rows]);
@@ -203,37 +278,60 @@ export default function AddPurchase() {
       // Tax is already inside the purchase price, extract it: tax = amount * rate / (100 + rate)
       return rows.reduce((a, r) => {
         const rate = asNum(r.tax);
-        return a + (rate > 0 ? asNum(r.amount) * rate / (100 + rate) : 0);
+        return a + (rate > 0 ? (asNum(r.amount) * rate) / (100 + rate) : 0);
       }, 0);
     }
     // Exclusive: tax is added on top
     return rows.reduce((a, r) => a + (asNum(r.amount) * asNum(r.tax)) / 100, 0);
   }, [rows, isGST, gstMode]);
   // For inclusive: grand total = subTotal (tax is already inside), for exclusive: grand total = subTotal + tax on top
-  const grandTotal = useMemo(() => gstMode === "inclusive" ? subTotal : subTotal + taxTotal, [subTotal, taxTotal, gstMode]);
-  const roundedTotal = useMemo(() => roundOff ? Math.ceil(grandTotal) : grandTotal, [grandTotal, roundOff]);
+  const grandTotal = useMemo(() => (gstMode === "inclusive" ? subTotal : subTotal + taxTotal), [subTotal, taxTotal, gstMode]);
+  const roundedTotal = useMemo(() => (roundOff ? Math.round(grandTotal) : grandTotal), [grandTotal, roundOff]);
   const roundDiff = useMemo(() => roundedTotal - grandTotal, [roundedTotal, grandTotal]);
   const sumPay = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
-  const totalPaid = useMemo(() => multiPay ? sumPay : asNum(received), [multiPay, sumPay, received]);
+  const totalPaid = useMemo(() => (multiPay ? sumPay : asNum(received)), [multiPay, sumPay, received]);
   const balance = useMemo(() => roundedTotal - totalPaid, [roundedTotal, totalPaid]);
-  useEffect(() => { if (!multiPay && !recTouched) setReceived(roundedTotal.toFixed(2)); }, [roundedTotal, multiPay, recTouched]);
+  useEffect(() => {
+    if (!multiPay && !recTouched) setReceived(roundedTotal.toFixed(2));
+  }, [roundedTotal, multiPay, recTouched]);
 
   /* ── Save distributor ── */
   const saveDist = async () => {
-    const name = newDist.name.trim(); if (!name) return alert("Name required");
-    const r = await fetch(`${API}/add_distributor.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, gstin: newDist.gstin.trim(), phone: newDist.phone.trim(), createdBy: user?.id || 1 }) });
+    const name = newDist.name.trim();
+    if (!name) return alert("Name required");
+    const r = await fetch(`${API}/add_distributor.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, gstin: newDist.gstin.trim(), phone: newDist.phone.trim(), createdBy: user?.id || 1 }),
+    });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.status !== "success") return alert(j.message || "Failed");
-    pickDist(j.data); setShowAddDist(false);
+    pickDist(j.data);
+    setShowAddDist(false);
   };
 
   /* ── Save item to master ── */
   const saveNewItem = async () => {
-    const name = newItem.itemName.trim(), code = newItem.itemCode.trim();
+    const name = newItem.itemName.trim(),
+      code = newItem.itemCode.trim();
     if (!name) return alert("Item name required");
     if (!code) return alert("Item code required");
     try {
-      const r = await fetch(`${API}/add_item.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, code, hsn: newItem.hsn.trim(), mrp: asNum(newItem.mrp), salePrice: asNum(newItem.salePrice), purchasePrice: asNum(newItem.purchasePrice), tax: asNum(newItem.tax), is_primary: !!newItem.is_primary, createdBy: user?.id || 1 }) });
+      const r = await fetch(`${API}/add_item.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          code,
+          hsn: newItem.hsn.trim(),
+          mrp: asNum(newItem.mrp),
+          salePrice: asNum(newItem.salePrice),
+          purchasePrice: asNum(newItem.purchasePrice),
+          tax: asNum(newItem.tax),
+          is_primary: !!newItem.is_primary,
+          createdBy: user?.id || 1,
+        }),
+      });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
       const created = j.data;
@@ -245,7 +343,9 @@ export default function AddPurchase() {
       }
       setShowAddItem(false);
       setNewItem(blankNewItem());
-    } catch (e) { alert(e.message || "Failed"); }
+    } catch (e) {
+      alert(e.message || "Failed");
+    }
   };
 
   /* ── Upload bill file ── */
@@ -258,20 +358,50 @@ export default function AddPurchase() {
     { key: "mrp", label: "MRP" },
     { key: "qty", label: "Qty", required: true },
     { key: "purchasePrice", label: "Purchase Price", required: true },
+    { key: "discount", label: "Discount %" },
     { key: "salePrice", label: "Sale Price" },
-    { key: "tax", label: "Tax %" },
+    { key: "tax", label: "Tax / GST %" },
+    { key: "cgst", label: "CGST %", virtual: true },
+    { key: "sgst", label: "SGST %", virtual: true },
   ];
 
   const DIST_DETECT_KEYS = ["distributor", "supplier", "vendor", "party", "company", "firm"];
   const GSTIN_PATTERN = /\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}/;
 
-  const handleFileUpload = (e) => {
+  const COL_MATCHERS = [
+    { key: "itemName", patterns: ["item", "product", "name", "description", "particular", "medicine"] },
+    { key: "code", patterns: ["code", "sku", "item code", "product code"] },
+    { key: "hsn", patterns: ["hsn", "sac", "hsn/sac"] },
+    { key: "batchNo", patterns: ["batch", "lot", "batch no"] },
+    { key: "expDate", patterns: ["exp", "expiry", "expiry date", "exp date", "best before"] },
+    { key: "mrp", patterns: ["mrp", "m.r.p", "max retail"] },
+    { key: "qty", patterns: ["qty", "quantity", "pcs", "nos", "units"] },
+    { key: "purchasePrice", patterns: ["rate", "price", "purchase", "cost", "buy", "purchase price", "unit price", "ptr"] },
+    { key: "discount", patterns: ["disc", "discount", "dis%", "disc%", "discount%"] },
+    { key: "salePrice", patterns: ["sale", "sell", "selling", "sale price", "selling price", "sp"] },
+    { key: "tax", patterns: ["tax", "gst", "gst%", "tax%", "tax rate", "gst rate", "igst"] },
+    { key: "cgst", patterns: ["cgst", "cgst%", "c.gst", "central gst"] },
+    { key: "sgst", patterns: ["sgst", "sgst%", "s.gst", "state gst"] },
+  ];
+
+  const autoDetectMapping = (headers) => {
+    const autoMap = {};
+    const lowerHeaders = headers.map((h) => h.toLowerCase());
+    for (const m of COL_MATCHERS) {
+      const idx = lowerHeaders.findIndex((h) => m.patterns.some((p) => h === p || h.includes(p)));
+      if (idx >= 0) autoMap[m.key] = idx;
+    }
+    return autoMap;
+  };
+
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadFile(file);
     const ext = file.name.split(".").pop().toLowerCase();
 
     if (["xlsx", "xls", "csv"].includes(ext)) {
+      // Excel/CSV: parse client-side
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
@@ -284,47 +414,49 @@ export default function AddPurchase() {
           const dataRows = json.slice(1).filter((r) => r.some((c) => String(c).trim()));
           setUploadHeaders(headers);
           setUploadRows(dataRows);
-
-          // Auto-detect column mapping
-          const autoMap = {};
-          const lowerHeaders = headers.map((h) => h.toLowerCase());
-          const matchers = [
-            { key: "itemName", patterns: ["item", "product", "name", "description", "particular", "medicine"] },
-            { key: "code", patterns: ["code", "sku", "item code", "product code"] },
-            { key: "hsn", patterns: ["hsn", "sac", "hsn/sac"] },
-            { key: "batchNo", patterns: ["batch", "lot", "batch no"] },
-            { key: "expDate", patterns: ["exp", "expiry", "expiry date", "exp date", "best before"] },
-            { key: "mrp", patterns: ["mrp", "m.r.p", "max retail"] },
-            { key: "qty", patterns: ["qty", "quantity", "pcs", "nos", "units"] },
-            { key: "purchasePrice", patterns: ["rate", "price", "purchase", "cost", "buy", "purchase price", "unit price"] },
-            { key: "salePrice", patterns: ["sale", "sell", "selling", "sale price", "selling price", "sp"] },
-            { key: "tax", patterns: ["tax", "gst", "gst%", "tax%", "tax rate", "gst rate"] },
-          ];
-          for (const m of matchers) {
-            const idx = lowerHeaders.findIndex((h) => m.patterns.some((p) => h === p || h.includes(p)));
-            if (idx >= 0) autoMap[m.key] = idx;
-          }
-          setColMap(autoMap);
-
-          // Try to detect distributor from file metadata or first rows
+          setColMap(autoDetectMapping(headers));
           tryDetectDistributor(json, headers);
-
           setShowMapping(true);
         } catch (err) {
           alert("Failed to parse file: " + err.message);
         }
       };
       reader.readAsArrayBuffer(file);
-    } else {
-      // Image/PDF — just upload for reference, show alert
+    } else if (ext === "pdf") {
+      // PDF: send to server for text extraction
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await fetch(`${API}/parse_bill.php`, { method: "POST", body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (j.status !== "success") {
+          alert(j.message || "Failed to extract data from PDF");
+          return;
+        }
+        const headers = j.headers.map((h) => String(h).trim());
+        setUploadHeaders(headers);
+        setUploadRows(j.rows);
+        setColMap(autoDetectMapping(headers));
+        setShowMapping(true);
+      } catch {
+        alert("Failed to parse PDF. Please try Excel or CSV format.");
+      }
+    } else if (["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      // Images — upload for reference, can't auto-parse
       uploadFileToServer(file);
+      alert("Image uploaded for reference. Please enter items manually, or re-upload as Excel/CSV/PDF for auto-import.");
+    } else {
+      alert("Unsupported file type. Please upload Excel (.xlsx), CSV, PDF, or image files.");
     }
     e.target.value = "";
   };
 
   const tryDetectDistributor = (json, headers) => {
     // Look for GSTIN pattern or distributor name in the first few rows
-    const searchArea = json.slice(0, 5).flat().map((c) => String(c));
+    const searchArea = json
+      .slice(0, 5)
+      .flat()
+      .map((c) => String(c));
     for (const cell of searchArea) {
       const gstMatch = cell.match(GSTIN_PATTERN);
       if (gstMatch) {
@@ -348,7 +480,64 @@ export default function AddPurchase() {
       const r = await fetch(`${API}/upload_bill.php`, { method: "POST", body: fd });
       const j = await r.json().catch(() => ({}));
       if (j.status !== "success") alert(j.message || "Upload failed");
-    } catch { alert("Upload failed"); }
+    } catch {
+      alert("Upload failed");
+    }
+  };
+
+  /* Parse various date string formats to YYYY-MM-DD */
+  const parseDate = (val) => {
+    if (!val) return "";
+    if (val instanceof Date) return val.toISOString().slice(0, 10);
+    let s = String(val).trim();
+    if (!s) return "";
+    // Already ISO: 2026-03-19
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // DDMMYYYY (8 digits): 19032026
+    if (/^\d{8}$/.test(s)) {
+      const d = s.slice(0, 2),
+        m = s.slice(2, 4),
+        y = s.slice(4, 8);
+      return `${y}-${m}-${d}`;
+    }
+    // MMYYYY or MMYY (6 or 4 digits — month/year, assume last day): 032026, 0326
+    if (/^\d{6}$/.test(s)) {
+      const m = s.slice(0, 2),
+        y = s.slice(2, 6);
+      const last = new Date(Number(y), Number(m), 0).getDate();
+      return `${y}-${m}-${String(last).padStart(2, "0")}`;
+    }
+    if (/^\d{4}$/.test(s) && Number(s.slice(0, 2)) <= 12) {
+      const m = s.slice(0, 2),
+        yy = s.slice(2, 4);
+      const y = Number(yy) > 50 ? `19${yy}` : `20${yy}`;
+      const last = new Date(Number(y), Number(m), 0).getDate();
+      return `${y}-${m}-${String(last).padStart(2, "0")}`;
+    }
+    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    const dmyFull = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+    if (dmyFull) {
+      const [, d, m, y] = dmyFull;
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+    // DD/MM/YY or DD-MM-YY
+    const dmyShort = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})$/);
+    if (dmyShort) {
+      const [, d, m, yy] = dmyShort;
+      const y = Number(yy) > 50 ? `19${yy}` : `20${yy}`;
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+    // MM/YYYY or MM-YYYY (month/year)
+    const myFull = s.match(/^(\d{1,2})[/\-.](\d{4})$/);
+    if (myFull) {
+      const [, m, y] = myFull;
+      const last = new Date(Number(y), Number(m), 0).getDate();
+      return `${y}-${m.padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+    }
+    // Fallback: try native Date parse
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    return s; // return as-is if nothing works
   };
 
   const applyMapping = () => {
@@ -356,38 +545,123 @@ export default function AddPurchase() {
     const missing = OUR_COLS.filter((c) => c.required && colMap[c.key] === undefined);
     if (missing.length) return alert(`Please map: ${missing.map((c) => c.label).join(", ")}`);
 
-    const newRows = uploadRows.map((row) => {
-      const r = blankRow();
-      for (const col of OUR_COLS) {
-        if (colMap[col.key] !== undefined) {
-          let val = row[colMap[col.key]];
-          if (val instanceof Date) val = val.toISOString().slice(0, 10);
-          else val = String(val ?? "").trim();
-          r[col.key] = val;
+    const newRows = uploadRows
+      .map((row) => {
+        const r = blankRow();
+        // Temp fields for virtual columns
+        let cgstVal = 0,
+          sgstVal = 0,
+          discVal = 0;
+        for (const col of OUR_COLS) {
+          if (colMap[col.key] !== undefined) {
+            let val = row[colMap[col.key]];
+            if (col.key === "expDate") {
+              val = parseDate(val);
+            } else if (val instanceof Date) {
+              val = val.toISOString().slice(0, 10);
+            } else {
+              val = String(val ?? "").trim();
+            }
+            if (col.key === "cgst") {
+              cgstVal = asNum(val);
+              continue;
+            }
+            if (col.key === "sgst") {
+              sgstVal = asNum(val);
+              continue;
+            }
+            if (col.key === "discount") {
+              discVal = asNum(val);
+              r.discount = val;
+              continue;
+            }
+            r[col.key] = val;
+          }
         }
-      }
-      // Try to match item from master by name or code
-      const nameL = (r.itemName || "").toLowerCase();
-      const codeL = (r.code || "").toLowerCase();
-      const match = itemMaster.find((it) =>
-        it.code.toLowerCase() === codeL ||
-        it.name.toLowerCase() === nameL ||
-        it.name.toLowerCase().includes(nameL) ||
-        nameL.includes(it.name.toLowerCase())
-      );
-      if (match) {
-        r.itemId = match.id;
-        r.itemName = match.name;
-        r.code = match.code;
-        r.hsn = r.hsn || match.hsn || "";
-        r.mrp = r.mrp || String(match.mrp || "");
-        r.salePrice = r.salePrice || String(match.salePrice || "");
-        r.purchasePrice = r.purchasePrice || String(match.purchasePrice || "");
-        r.tax = r.tax || String(match.tax || "");
-      }
-      r.amount = calcRowAmt(r).toFixed(2);
-      return r;
-    }).filter((r) => r.itemName);
+
+        // Combine CGST + SGST into tax if tax not already mapped
+        if ((cgstVal > 0 || sgstVal > 0) && !asNum(r.tax)) {
+          r.tax = String(cgstVal + sgstVal);
+        }
+
+        // Apply discount to purchase price if discount is mapped
+        if (discVal > 0 && asNum(r.purchasePrice) > 0) {
+          const price = asNum(r.purchasePrice);
+          r.purchasePrice = fmt2(price - (price * discVal) / 100);
+        }
+
+        // Try to match item from master by name or code
+        const nameL = (r.itemName || "").toLowerCase().trim();
+        const codeL = (r.code || "").toLowerCase().trim();
+
+        // Normalize: strip common suffixes/noise, split into words for fuzzy matching
+        const normalize = (s) =>
+          s
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        const billWords = normalize(nameL)
+          .split(" ")
+          .filter((w) => w.length > 1);
+
+        // Score each master item: higher = better match
+        let bestMatch = null,
+          bestScore = 0;
+        for (const it of itemMaster) {
+          const masterName = normalize(it.name);
+          const masterCode = it.code.toLowerCase().trim();
+
+          // Exact code match — best possible
+          if (codeL && masterCode === codeL) {
+            bestMatch = it;
+            bestScore = 100;
+            break;
+          }
+
+          // Exact name match
+          if (masterName === normalize(nameL)) {
+            bestMatch = it;
+            bestScore = 99;
+            continue;
+          }
+
+          // Word-based matching: count how many bill words appear in master name
+          if (billWords.length > 0) {
+            const masterWords = masterName.split(" ");
+            const matchedWords = billWords.filter((w) => masterWords.some((mw) => mw.includes(w) || w.includes(mw)));
+            const score = (matchedWords.length / Math.max(billWords.length, masterWords.length)) * 90;
+            if (score > bestScore && score >= 50) {
+              bestScore = score;
+              bestMatch = it;
+            }
+          }
+
+          // Substring match (one contains the other)
+          if (bestScore < 60) {
+            if (masterName.includes(normalize(nameL)) || normalize(nameL).includes(masterName)) {
+              if (60 > bestScore) {
+                bestScore = 60;
+                bestMatch = it;
+              }
+            }
+          }
+        }
+
+        if (bestMatch) {
+          r.itemId = bestMatch.id;
+          r.itemName = bestMatch.name;
+          r.code = bestMatch.code;
+          r.hsn = r.hsn || bestMatch.hsn || "";
+          r.mrp = r.mrp || String(bestMatch.mrp || "");
+          r.salePrice = r.salePrice || String(bestMatch.salePrice || "");
+          if (!asNum(r.purchasePrice)) r.purchasePrice = String(bestMatch.purchasePrice || "");
+          r.tax = r.tax || String(bestMatch.tax || "");
+        }
+        r.amount = calcRowAmt(r).toFixed(2);
+        return r;
+      })
+      .filter((r) => r.itemName);
 
     if (!newRows.length) return alert("No valid rows found after mapping.");
     setRows([...newRows, blankRow()]);
@@ -398,23 +672,62 @@ export default function AddPurchase() {
 
   /* ── Build save payload ── */
   const buildSavePayload = () => {
-    if (!selDist) { alert("Please select a distributor"); return null; }
-    if (!billNo.trim()) { alert("Bill number is required"); return null; }
-    const cleanRows = rows.map((r) => ({
-      itemName: String(r.itemName || "").trim(), code: String(r.code || "").trim(),
-      hsn: String(r.hsn || "").trim(), batchNo: String(r.batchNo || "").trim(),
-      expDate: r.expDate || "", mrp: asNum(r.mrp), qty: asNum(r.qty),
-      purchasePrice: asNum(r.purchasePrice), salePrice: asNum(r.salePrice),
-      discount: String(r.discount || "").trim(), tax: isGST ? asNum(r.tax) : 0,
-      amount: asNum(r.amount),
-    })).filter((r) => r.itemName && r.qty > 0);
-    if (!cleanRows.length) { alert("Add at least one item"); return null; }
+    if (!selDist) {
+      alert("Please select a distributor");
+      return null;
+    }
+    if (!billNo.trim()) {
+      alert("Bill number is required");
+      return null;
+    }
+    const cleanRows = rows
+      .map((r) => ({
+        itemName: String(r.itemName || "").trim(),
+        code: String(r.code || "").trim(),
+        hsn: String(r.hsn || "").trim(),
+        batchNo: String(r.batchNo || "").trim(),
+        expDate: r.expDate || "",
+        mrp: asNum(r.mrp),
+        qty: asNum(r.qty),
+        purchasePrice: asNum(r.purchasePrice),
+        salePrice: asNum(r.salePrice),
+        discount: String(r.discount || "").trim(),
+        tax: isGST ? asNum(r.tax) : 0,
+        amount: asNum(r.amount),
+      }))
+      .filter((r) => r.itemName && r.qty > 0);
+    if (!cleanRows.length) {
+      alert("Add at least one item");
+      return null;
+    }
     for (const r of cleanRows) {
-      if (!itemMaster.some((it) => it.code === r.code)) { alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`); return null; }
+      if (!itemMaster.some((it) => it.code === r.code)) {
+        alert(`Item "${r.itemName}" not in item master. Please select from suggestions.`);
+        return null;
+      }
     }
     const payList = multiPay ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0) : [{ type: payMode, amount: asNum(received) }];
-    const totals = { subTotal: asNum(subTotal), taxTotal: asNum(taxTotal), grandTotal: asNum(grandTotal), roundOffEnabled: roundOff, roundOffDiff: asNum(roundDiff), roundedGrandTotal: asNum(roundedTotal) };
-    const base = { distributorId: selDist.id, distributorName: selDist.name, gstin: gstin.trim(), billNo: billNo.trim(), billDate, dueDate, billType, gstMode: isGST ? gstMode : "exclusive", rows: cleanRows, totals, payments: payList };
+    const totals = {
+      subTotal: asNum(subTotal),
+      taxTotal: asNum(taxTotal),
+      grandTotal: asNum(grandTotal),
+      roundOffEnabled: roundOff,
+      roundOffDiff: asNum(roundDiff),
+      roundedGrandTotal: asNum(roundedTotal),
+    };
+    const base = {
+      distributorId: selDist.id,
+      distributorName: selDist.name,
+      gstin: gstin.trim(),
+      billNo: billNo.trim(),
+      billDate,
+      dueDate,
+      billType,
+      gstMode: isGST ? gstMode : "exclusive",
+      rows: cleanRows,
+      totals,
+      payments: payList,
+    };
     return base;
   };
 
@@ -424,10 +737,15 @@ export default function AddPurchase() {
     try {
       setSaving(true);
       if (isEdit) {
-        const r = await fetch(`${API}/update_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, purchaseId: Number(purchaseId), updatedBy: user?.id || 1 }) });
+        const r = await fetch(`${API}/update_purchase.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...base, purchaseId: Number(purchaseId), updatedBy: user?.id || 1 }),
+        });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
-        alert("Purchase Updated!"); window.location.href = "/purchase";
+        alert("Purchase Updated!");
+        window.location.href = "/purchase";
       } else {
         const r = await fetch(`${API}/save_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, createdBy: user?.id || 1 }) });
         const j = await r.json().catch(() => ({}));
@@ -435,11 +753,20 @@ export default function AddPurchase() {
         const newId = j.purchaseId;
         for (const p of base.payments) {
           if (!p.amount || p.amount <= 0) continue;
-          await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "", createdBy: user?.id || 1 }) });
+          await fetch(`${API}/add_purchase_payment.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ distributorId: selDist.id, purchaseId: newId, payDate: billDate, mode: p.type, amount: p.amount, referenceNo: "", note: "", createdBy: user?.id || 1 }),
+          });
         }
-        alert("Purchase Saved!"); window.location.href = "/purchase";
+        alert("Purchase Saved!");
+        window.location.href = "/purchase";
       }
-    } catch (e) { alert(e.message || "Failed"); } finally { setSaving(false); }
+    } catch (e) {
+      alert(e.message || "Failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* ── Main save — check for cheaper past purchases first ── */
@@ -451,7 +778,8 @@ export default function AddPurchase() {
     if (!isEdit) {
       try {
         const res = await fetch(`${API}/check_purchase_prices.php`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ items: payload.rows }),
         });
         const j = await res.json().catch(() => ({}));
@@ -461,7 +789,9 @@ export default function AddPurchase() {
           setShowPriceWarning(true);
           return; // Don't save yet — show warning first
         }
-      } catch { /* proceed with save if check fails */ }
+      } catch {
+        /* proceed with save if check fails */
+      }
     }
 
     await doSave(payload);
@@ -469,7 +799,9 @@ export default function AddPurchase() {
 
   // Ctrl+S shortcut
   useEffect(() => {
-    const fn = () => { if (!saving) onSave(); };
+    const fn = () => {
+      if (!saving) onSave();
+    };
     window.addEventListener("shortcut-save", fn);
     return () => window.removeEventListener("shortcut-save", fn);
   }, [saving, onSave]);
@@ -481,104 +813,192 @@ export default function AddPurchase() {
     <div id="g-root" style={{ padding: "18px 24px", background: C.bg, minHeight: "100vh" }}>
       <style>{GLOBAL_CSS}</style>
 
-      {/* PAGE HEADER */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: C.brand, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: `0 3px 10px rgba(3,76,157,0.3)` }}>
-            <FiTruck size={20} />
-          </div>
+      {/* ── COMPACT HEADER BAR ── */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 12,
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+          marginBottom: 14,
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        {/* Bill Date */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.brand, borderRadius: 9, padding: "6px 14px", color: "#fff" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.text }}>{isEdit ? "Edit Purchase Bill" : "New Purchase Entry"}</h2>
-            <p style={{ margin: "2px 0 0", fontSize: 13, color: C.textSub }}>{isEdit ? `Bill #${purchaseId}` : "Fill all steps and save"}</p>
+            <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.8, textTransform: "uppercase" }}>Bill Date</div>
+            <input
+              type="date"
+              value={billDate}
+              onChange={(e) => setBillDate(e.target.value)}
+              style={{ background: "none", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: 0, cursor: "pointer", width: 120 }}
+            />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {/* GST / NON-GST toggle — prominent */}
-          <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 9, padding: 3, gap: 3 }}>
-            {["GST", "NON-GST"].map((t) => (
-              <button key={t} onClick={() => setBillType(t)} style={{ padding: "6px 18px", borderRadius: 7, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.15s", background: billType === t ? (t === "GST" ? C.brand : "#374151") : "transparent", color: billType === t ? "#fff" : C.textSub }}>
-                {t}
+
+        {/* Bill No */}
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 110 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Bill No</span>
+          <input className="g-inp sm" value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="INV-001" style={{ height: 30, fontSize: 13, fontWeight: 700 }} />
+        </div>
+
+        {/* Due Date */}
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 110 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Due Date</span>
+          <input className="g-inp sm" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={{ height: 30, fontSize: 13 }} />
+        </div>
+
+        <div style={{ width: 1, height: 32, background: "#e5e7eb" }} />
+
+        {/* Distributor */}
+        <div ref={distRef} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 180, position: "relative" }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Distributor</span>
+          {selDist ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: C.brand }}>{selDist.name}</span>
+              {gstin && <span style={{ fontSize: 11, color: C.textSub }}>{gstin}</span>}
+              <button
+                onClick={() => {
+                  setSelDist(null);
+                  setDistQ("");
+                  setGstin("");
+                }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, padding: 2, display: "flex" }}
+              >
+                <FiX size={13} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ position: "relative" }}>
+                <FiSearch size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
+                <input
+                  className="g-inp sm"
+                  style={{ height: 30, fontSize: 13, paddingLeft: 26 }}
+                  value={distQ}
+                  onChange={(e) => {
+                    setSelDist(null);
+                    setDistQ(e.target.value);
+                    setShowDistSug(true);
+                  }}
+                  onFocus={() => setShowDistSug(true)}
+                  onBlur={() =>
+                    setTimeout(() => {
+                      if (!selDist) {
+                        setDistQ("");
+                        setGstin("");
+                      }
+                    }, 160)
+                  }
+                  placeholder="Search distributor…"
+                />
+              </div>
+              {showDistSug && distSug.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    zIndex: 50,
+                    background: "#fff",
+                    border: `1.5px solid ${C.border}`,
+                    borderRadius: 10,
+                    boxShadow: "0 6px 20px rgba(0,0,0,0.1)",
+                    maxHeight: 240,
+                    overflow: "auto",
+                  }}
+                >
+                  {distSug.map((d) => (
+                    <div key={d.id} className="g-sug" onMouseDown={() => pickDist(d)} style={{ padding: "10px 14px", borderBottom: "1px solid #f3f4f6" }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{d.name}</div>
+                      <div style={{ fontSize: 12, color: C.textSub, marginTop: 1 }}>
+                        GSTIN: {d.gstin || "—"}
+                        {d.phone ? ` · ${d.phone}` : ""}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <button
+          className="g-btn ghost sm"
+          onClick={() => {
+            setNewDist({ name: "", gstin: "", phone: "" });
+            setShowAddDist(true);
+          }}
+        >
+          <FiPlus size={13} />
+        </button>
+
+        <div style={{ width: 1, height: 32, background: "#e5e7eb" }} />
+
+        {/* GST toggle */}
+        <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 7, padding: 2, gap: 2 }}>
+          {["GST", "NON-GST"].map((t) => (
+            <button
+              key={t}
+              onClick={() => setBillType(t)}
+              style={{
+                padding: "4px 12px",
+                borderRadius: 6,
+                border: "none",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                background: billType === t ? (t === "GST" ? C.brand : "#374151") : "transparent",
+                color: billType === t ? "#fff" : C.textSub,
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        {isGST && (
+          <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 7, padding: 2, gap: 2 }}>
+            {[
+              { k: "exclusive", l: "Excl" },
+              { k: "inclusive", l: "Incl" },
+            ].map(({ k, l }) => (
+              <button
+                key={k}
+                onClick={() => setGstMode(k)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  border: "none",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                  background: gstMode === k ? "#059669" : "transparent",
+                  color: gstMode === k ? "#fff" : C.textSub,
+                }}
+              >
+                {l}
               </button>
             ))}
           </div>
-          {/* Inclusive / Exclusive toggle — only when GST */}
-          {isGST && (
-            <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 9, padding: 3, gap: 3 }}>
-              {[{ k: "exclusive", l: "Exclusive" }, { k: "inclusive", l: "Inclusive" }].map(({ k, l }) => (
-                <button key={k} onClick={() => setGstMode(k)} style={{ padding: "6px 14px", borderRadius: 7, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.15s", background: gstMode === k ? "#059669" : "transparent", color: gstMode === k ? "#fff" : C.textSub }}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          )}
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
-          <button className="g-btn ghost" onClick={() => fileInputRef.current?.click()} title="Upload Excel/PDF/Image of purchase bill">
-            <FiUpload size={14} /> Upload Bill
-          </button>
-          <button className="g-btn ghost" onClick={() => window.history.back()}>← Back</button>
-          <button className="g-btn success" onClick={onSave} disabled={saving} style={{ minWidth: 130 }}>
-            <FiCheck size={14} />{saving ? "Saving…" : isEdit ? "Update" : "Save Purchase"}
-          </button>
-        </div>
-      </div>
+        )}
 
-      {/* ── STEP 1: SUPPLIER ── */}
-      <div className="g-card" style={{ marginBottom: 18 }}>
-        <SectionHead num="1" icon={<FiTruck size={15} />} title="Supplier Details" />
-        <div style={{ padding: 18 }}>
-          <div className="g-grid-2">
-            {/* Distributor search */}
-            <div className="g-span-2">
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-                <Field label="Distributor / Supplier" required style={{ flex: 1 }}>
-                  <div ref={distRef} style={{ position: "relative" }}>
-                    <FiSearch size={15} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
-                    <input className="g-inp" style={{ paddingLeft: 36 }} value={distQ}
-                      onChange={(e) => { setSelDist(null); setDistQ(e.target.value); setShowDistSug(true); }}
-                      onFocus={() => setShowDistSug(true)}
-                      onBlur={() => setTimeout(() => { if (!selDist) { setDistQ(""); setGstin(""); } }, 160)}
-                      placeholder="Search by name or GSTIN…" />
-                    {showDistSug && distSug.length > 0 && (
-                      <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.1)", maxHeight: 240, overflow: "auto" }}>
-                        {distSug.map((d) => (
-                          <div key={d.id} className="g-sug" onMouseDown={() => pickDist(d)} style={{ padding: "10px 14px", borderBottom: "1px solid #f3f4f6" }}>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{d.name}</div>
-                            <div style={{ fontSize: 12, color: C.textSub, marginTop: 1 }}>GSTIN: {d.gstin || "—"}{d.phone ? ` · ${d.phone}` : ""}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Field>
-                <button className="g-btn ghost" style={{ height: 40, marginBottom: 0 }} onClick={() => { setNewDist({ name: "", gstin: "", phone: "" }); setShowAddDist(true); }}>
-                  <FiPlus size={14} /> New Distributor
-                </button>
-              </div>
-              {selDist && (
-                <div style={{ marginTop: 10, background: C.brandLighter, border: `1.5px solid #bfdbfe`, borderRadius: 9, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: C.brand, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}><FiTruck size={16} /></div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: C.brand }}>{selDist.name}</div>
-                    {gstin && <div style={{ fontSize: 12, color: "#1e40af", marginTop: 1 }}>GSTIN: {gstin}</div>}
-                  </div>
-                  <div style={{ marginLeft: "auto", fontSize: 12, color: C.green, fontWeight: 700 }}>✓ Selected</div>
-                </div>
-              )}
-            </div>
-
-            <Field label="GSTIN (auto-filled)">
-              <input className="g-inp" value={gstin} disabled placeholder="Auto-filled" />
-            </Field>
-            <Field label="Bill / Invoice No" required>
-              <input className="g-inp" value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="e.g. INV-2025-001" />
-            </Field>
-            <Field label="Bill Date" required>
-              <input className="g-inp" type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
-            </Field>
-            <Field label="Due Date">
-              <input className="g-inp" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </Field>
-          </div>
+        <div style={{ flex: "0 0 auto", display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
+          {/* <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
+          <button className="g-btn ghost sm" onClick={() => fileInputRef.current?.click()} title="Import from Excel, CSV, PDF or upload image">
+            <FiUpload size={14} />
+          </button> */}
+          <button className="g-btn success sm" onClick={onSave} disabled={saving} style={{ minWidth: 90 }}>
+            <FiCheck size={14} />
+            {saving ? "Saving…" : isEdit ? "Update" : "Save"}
+          </button>
         </div>
       </div>
 
@@ -589,7 +1009,14 @@ export default function AddPurchase() {
           icon={<FiPackage size={15} />}
           title={`Items / Medicines${filledCount > 0 ? ` — ${filledCount} added` : ""}${!isGST ? "  [NON-GST — Tax not applied]" : ""}`}
           actions={
-            <button className="g-btn ghost sm" onClick={() => { setNewItem(blankNewItem()); setAddItemForRow(null); setShowAddItem(true); }}>
+            <button
+              className="g-btn ghost sm"
+              onClick={() => {
+                setNewItem(blankNewItem());
+                setAddItemForRow(null);
+                setShowAddItem(true);
+              }}
+            >
               <FiPlus size={13} /> Add to Master
             </button>
           }
@@ -599,17 +1026,18 @@ export default function AddPurchase() {
           <table className="g-table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th style={{ width: 36, paddingLeft: 14 }}>#</th>
-                <th style={{ minWidth: 210 }}>Item Name</th>
-                <th style={{ minWidth: 95 }}>Batch No</th>
-                <th style={{ minWidth: 128 }}>Expiry Date</th>
-                <th style={{ minWidth: 72 }}>MRP ₹</th>
-                <th style={{ minWidth: 55 }}>Qty</th>
-                <th style={{ minWidth: 98 }}>Buy Price ₹</th>
-                <th style={{ minWidth: 90 }}>Sale Price ₹</th>
-                {isGST && <th style={{ minWidth: 62 }}>Tax %</th>}
-                <th style={{ minWidth: 98, textAlign: "right", paddingRight: 14 }}>Amount ₹</th>
-                <th style={{ width: 40 }}></th>
+                <th style={{ width: 30, paddingLeft: 10 }}>#</th>
+                <th style={{ minWidth: 320 }}>Item Name</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Batch</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Expiry</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>MRP</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Qty</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Buy ₹</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Disc</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Sale ₹</th>
+                {isGST && <th style={{ minWidth: 100, textAlign: "right" }}>Tax%</th>}
+                <th style={{ minWidth: 100, textAlign: "right", paddingRight: 10 }}>Amount</th>
+                <th style={{ width: 32 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -619,87 +1047,264 @@ export default function AddPurchase() {
                 const filled = r.itemName.trim();
                 return (
                   <tr key={idx}>
-                    <td style={{ paddingLeft: 12 }}>
-                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: filled ? C.brandLighter : "#f3f4f6", color: filled ? C.brand : C.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{idx + 1}</div>
+                    <td style={{ paddingLeft: 8 }}>
+                      <div
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: filled ? C.brandLighter : "#f3f4f6",
+                          color: filled ? C.brand : C.textSub,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 10,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {idx + 1}
+                      </div>
                     </td>
 
                     {/* Item name — search + pick only */}
                     <td style={{ position: "relative" }}>
                       {filled ? (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px" }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>{r.itemName}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.itemName}</div>
                             <div style={{ fontSize: 11, color: C.textSub }}>{r.code}</div>
                           </div>
-                          <button onClick={() => { updRow(idx, { ...blankRow() }); setItemSearch((p) => ({ ...p, [idx]: "" })); }} style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, padding: 3, borderRadius: 4, display: "flex" }}>
+                          <button
+                            onClick={() => {
+                              updRow(idx, { ...blankRow() });
+                              setItemSearch((p) => ({ ...p, [idx]: "" }));
+                            }}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, padding: 3, borderRadius: 4, display: "flex", flexShrink: 0 }}
+                          >
                             <FiX size={13} />
                           </button>
                         </div>
                       ) : (
                         <div>
                           <div style={{ position: "relative" }}>
-                            <FiSearch size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
+                            <FiSearch size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
                             <input
                               ref={(el) => (itemRefs.current[idx] = el)}
-                              className="g-td-inp"
-                              style={{ paddingLeft: 26 }}
+                              className="g-td-inp item-search"
                               value={searchText}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setItemSearch((p) => ({ ...p, [idx]: val }));
                                 setActiveSug(idx);
-                                // Auto-select if exactly one item matches the typed code
                                 const q = val.trim().toLowerCase();
                                 if (q) {
-                                  const exact = itemMaster.filter((it) =>
-                                    it.code.toLowerCase() === q || it.name.toLowerCase() === q
-                                  );
+                                  const exact = itemMaster.filter((it) => it.code.toLowerCase() === q || it.name.toLowerCase() === q);
                                   if (exact.length === 1) pickItem(idx, exact[0]);
                                 }
                               }}
                               onFocus={() => setActiveSug(idx)}
-                              placeholder={idx === 0 ? "Search item…" : ""}
+                              placeholder={idx === 0 ? "Search or scan code…" : ""}
                               autoComplete="off"
                             />
                           </div>
+                          {/* Suggestions dropdown */}
                           {activeSug === idx && sug.length > 0 && (
-                            <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: "100%", left: 0, width: 340, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", maxHeight: 220, overflow: "auto" }}>
-                              {sug.map((it) => (
-                                <div key={it.id} className="g-sug" onMouseDown={() => pickItem(idx, it)} style={{ padding: "9px 14px", borderBottom: "1px solid #f3f4f6" }}>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{it.name} <span style={{ color: C.textSub, fontWeight: 500 }}>({it.code})</span></div>
-                                  <div style={{ fontSize: 11, color: C.textSub, marginTop: 1 }}>MRP: ₹{it.mrp} · Buy: ₹{it.purchasePrice} · Tax: {it.tax}%</div>
-                                </div>
-                              ))}
+                            <div
+                              onMouseDown={(e) => e.stopPropagation()}
+                              style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: 0,
+                                width: 550,
+                                zIndex: 30,
+                                background: "#fff",
+                                border: `1.5px solid ${C.border}`,
+                                borderRadius: 12,
+                                boxShadow: "0 12px 40px rgba(0,0,0,0.15)",
+                                maxHeight: 380,
+                                overflow: "hidden",
+                              }}
+                            >
+                              {/* Header row */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 80px 60px", gap: 0, padding: "8px 16px", background: "#f1f5f9", borderBottom: "1.5px solid #e2e8f0" }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Item</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "right" }}>MRP</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "right" }}>Buy ₹</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "center" }}>Tax%</span>
+                              </div>
+                              <div style={{ maxHeight: 340, overflowY: "auto" }}>
+                                {sug.map((it, si) => {
+                                  const isFirst = si === 0;
+                                  return (
+                                    <div
+                                      key={it.id}
+                                      onMouseDown={() => pickItem(idx, it)}
+                                      style={{
+                                        display: "grid",
+                                        gridTemplateColumns: "1fr 90px 80px 60px",
+                                        gap: 0,
+                                        padding: "10px 16px",
+                                        cursor: "pointer",
+                                        borderBottom: "1px solid #f3f4f6",
+                                        background: isFirst ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
+                                        color: isFirst ? "#fff" : C.text,
+                                        transition: "background 0.1s",
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!isFirst) e.currentTarget.style.background = "#f0f9ff";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!isFirst) e.currentTarget.style.background = "#fff";
+                                      }}
+                                    >
+                                      <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isFirst ? "#fff" : C.text }}>
+                                          {it.name}
+                                        </div>
+                                        <div style={{ fontSize: 11, marginTop: 1, color: isFirst ? "rgba(255,255,255,0.75)" : C.textSub }}>
+                                          {it.code}
+                                          {it.hsn ? ` · HSN: ${it.hsn}` : ""}
+                                        </div>
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          textAlign: "right",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "flex-end",
+                                          color: isFirst ? "#fff" : C.text,
+                                        }}
+                                      >
+                                        ₹{it.mrp}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: 13,
+                                          fontWeight: 600,
+                                          textAlign: "right",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "flex-end",
+                                          color: isFirst ? "rgba(255,255,255,0.9)" : C.textSub,
+                                        }}
+                                      >
+                                        ₹{it.purchasePrice}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: 13,
+                                          fontWeight: 600,
+                                          textAlign: "center",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          color: isFirst ? "rgba(255,255,255,0.9)" : C.brand,
+                                        }}
+                                      >
+                                        {it.tax}%
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                           {activeSug === idx && String(searchText || "").trim().length > 0 && sug.length === 0 && (
-                            <div style={{ position: "absolute", top: "100%", left: 0, width: 280, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", padding: "10px 14px" }}>
-                              <div style={{ fontSize: 12, color: C.textSub }}>No item found.</div>
-                              <button className="g-btn ghost sm" style={{ marginTop: 8 }} onClick={() => { const code = String(itemSearch[idx] || "").trim(); setNewItem({ ...blankNewItem(), itemCode: code }); setAddItemForRow(idx); setShowAddItem(true); }}><FiPlus size={12} /> Add to Master</button>
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: 0,
+                                width: 300,
+                                zIndex: 30,
+                                background: "#fff",
+                                border: `1.5px solid ${C.border}`,
+                                borderRadius: 10,
+                                boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
+                                padding: "14px 16px",
+                              }}
+                            >
+                              <div style={{ fontSize: 13, color: C.textSub }}>No item found.</div>
+                              <button
+                                className="g-btn ghost sm"
+                                style={{ marginTop: 8 }}
+                                onClick={() => {
+                                  const code = String(itemSearch[idx] || "").trim();
+                                  setNewItem({ ...blankNewItem(), itemCode: code });
+                                  setAddItemForRow(idx);
+                                  setShowAddItem(true);
+                                }}
+                              >
+                                <FiPlus size={12} /> Add to Master
+                              </button>
                             </div>
                           )}
                         </div>
                       )}
                     </td>
 
-                    <td><input className="g-td-inp" ref={(el) => (batchRefs.current[idx] = el)} value={r.batchNo} onChange={(e) => updRow(idx, { batchNo: e.target.value })} placeholder="Batch" /></td>
-                    <td><input className="g-td-inp" type="date" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })} style={{ fontSize: 13 }} /></td>
-                    <td><input className="g-td-inp" value={r.mrp} onChange={(e) => updRow(idx, { mrp: e.target.value })} inputMode="decimal" placeholder="0" /></td>
-                    <td><input className="g-td-inp" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} /></td>
-                    <td><input className="g-td-inp" value={r.purchasePrice} onChange={(e) => updRow(idx, { purchasePrice: e.target.value })} inputMode="decimal" placeholder="0" /></td>
-                    <td><input className="g-td-inp" value={r.salePrice} onChange={(e) => updRow(idx, { salePrice: e.target.value })} inputMode="decimal" placeholder="0" /></td>
-                    {isGST && <td><input className="g-td-inp" value={r.tax} onChange={(e) => updRow(idx, { tax: e.target.value })} inputMode="decimal" placeholder="0" /></td>}
-                    <td style={{ textAlign: "right", paddingRight: 12 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: filled ? C.text : "#d1d5db" }}>
-                        {filled ? `₹${fmt2(r.amount)}` : "—"}
-                      </span>
+                    <td>
+                      <input
+                        className="g-td-inp num"
+                        ref={(el) => (batchRefs.current[idx] = el)}
+                        value={r.batchNo}
+                        onChange={(e) => updRow(idx, { batchNo: e.target.value })}
+                        placeholder="Batch"
+                        style={{ textAlign: "left" }}
+                      />
                     </td>
-                    <td style={{ paddingRight: 8 }}>
-                      <button onClick={() => { if (rows.length > 1) setRows((p) => p.filter((_, i) => i !== idx)); }} disabled={rows.length <= 1}
-                        style={{ background: "none", border: "none", cursor: rows.length <= 1 ? "not-allowed" : "pointer", color: "#d1d5db", padding: 6, borderRadius: 6, display: "flex", transition: "color 0.15s" }}
-                        onMouseEnter={(e) => { if (rows.length > 1) e.currentTarget.style.color = C.red; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = "#d1d5db"; }}>
-                        <FiTrash2 size={14} />
+                    <td>
+                      <input className="g-td-inp num" type="date" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })} style={{ fontSize: 11, textAlign: "left" }} />
+                    </td>
+                    <td>
+                      <input className="g-td-inp num" value={r.mrp} onChange={(e) => updRow(idx, { mrp: e.target.value })} inputMode="decimal" placeholder="0" />
+                    </td>
+                    <td>
+                      <input className="g-td-inp num" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} />
+                    </td>
+                    <td>
+                      <input className="g-td-inp num" value={r.purchasePrice} onChange={(e) => updRow(idx, { purchasePrice: e.target.value })} inputMode="decimal" placeholder="0" />
+                    </td>
+                    <td>
+                      <input className="g-td-inp num" value={r.discount} onChange={(e) => updRow(idx, { discount: e.target.value })} placeholder="0 or 10%" style={{ textAlign: "right" }} />
+                    </td>
+                    <td>
+                      <input className="g-td-inp num" value={r.salePrice} onChange={(e) => updRow(idx, { salePrice: e.target.value })} inputMode="decimal" placeholder="0" />
+                    </td>
+                    {isGST && (
+                      <td>
+                        <input className="g-td-inp num" value={r.tax} onChange={(e) => updRow(idx, { tax: e.target.value })} inputMode="decimal" placeholder="0" style={{ textAlign: "center" }} />
+                      </td>
+                    )}
+                    <td style={{ textAlign: "right", paddingRight: 10 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: filled ? C.text : "#d1d5db" }}>{filled ? `₹${fmt2(r.amount)}` : "—"}</span>
+                    </td>
+                    <td style={{ paddingRight: 6 }}>
+                      <button
+                        onClick={() => {
+                          if (rows.length > 1) setRows((p) => p.filter((_, i) => i !== idx));
+                        }}
+                        disabled={rows.length <= 1}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: rows.length <= 1 ? "not-allowed" : "pointer",
+                          color: "#d1d5db",
+                          padding: 4,
+                          borderRadius: 6,
+                          display: "flex",
+                          transition: "color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (rows.length > 1) e.currentTarget.style.color = C.red;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = "#d1d5db";
+                        }}
+                      >
+                        <FiTrash2 size={13} />
                       </button>
                     </td>
                   </tr>
@@ -717,17 +1322,38 @@ export default function AddPurchase() {
 
       {/* ── STEP 3: PAYMENT + SUMMARY ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 18, alignItems: "start" }}>
-
         {/* Payment */}
         <div className="g-card" style={{ marginBottom: 0 }}>
-          <SectionHead num="3" icon={<FiCreditCard size={15} />} title="Payment"
+          <SectionHead
+            num="3"
+            icon={<FiCreditCard size={15} />}
+            title="Payment"
             actions={
               <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 8, padding: 3, gap: 3 }}>
                 {["Single", "Multiple"].map((m) => {
                   const active = (m === "Multiple") === multiPay;
                   return (
-                    <button key={m} onClick={() => { setMultiPay(m === "Multiple"); if (m === "Single") { setRecTouched(false); setPayments([{ type: "Cash", amount: "" }]); } }}
-                      style={{ padding: "4px 12px", borderRadius: 6, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.15s", background: active ? C.brand : "transparent", color: active ? "#fff" : C.textSub }}>
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setMultiPay(m === "Multiple");
+                        if (m === "Single") {
+                          setRecTouched(false);
+                          setPayments([{ type: "Cash", amount: "" }]);
+                        }
+                      }}
+                      style={{
+                        padding: "4px 12px",
+                        borderRadius: 6,
+                        border: "none",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                        background: active ? C.brand : "transparent",
+                        color: active ? "#fff" : C.textSub,
+                      }}
+                    >
                       {m}
                     </button>
                   );
@@ -740,11 +1366,22 @@ export default function AddPurchase() {
               <div style={{ display: "grid", gridTemplateColumns: "200px 1fr auto", gap: 14, alignItems: "end" }}>
                 <Field label="Mode">
                   <select className="g-sel" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
-                    {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
+                    {PAY_MODES.map((m) => (
+                      <option key={m}>{m}</option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="Amount Paid (₹)">
-                  <input className="g-inp" value={received} onChange={(e) => { setRecTouched(true); setReceived(e.target.value); }} inputMode="decimal" placeholder="0.00" />
+                  <input
+                    className="g-inp"
+                    value={received}
+                    onChange={(e) => {
+                      setRecTouched(true);
+                      setReceived(e.target.value);
+                    }}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
                 </Field>
                 <div style={{ paddingBottom: 2, textAlign: "right" }}>
                   <div style={{ fontSize: 12, color: C.textSub, fontWeight: 700, marginBottom: 4 }}>Balance</div>
@@ -756,22 +1393,55 @@ export default function AddPurchase() {
                 {payments.map((p, i) => (
                   <div key={i} style={{ display: "grid", gridTemplateColumns: "180px 1fr 38px", gap: 12, alignItems: "end", marginBottom: 12 }}>
                     <Field label={i === 0 ? "Mode" : ""}>
-                      <select className="g-sel" value={p.type} onChange={(e) => setPayments((prev) => { const n = [...prev]; n[i] = { ...n[i], type: e.target.value }; return n; })}>
-                        {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
+                      <select
+                        className="g-sel"
+                        value={p.type}
+                        onChange={(e) =>
+                          setPayments((prev) => {
+                            const n = [...prev];
+                            n[i] = { ...n[i], type: e.target.value };
+                            return n;
+                          })
+                        }
+                      >
+                        {PAY_MODES.map((m) => (
+                          <option key={m}>{m}</option>
+                        ))}
                       </select>
                     </Field>
                     <Field label={i === 0 ? "Amount (₹)" : ""}>
-                      <input className="g-inp" value={p.amount} onChange={(e) => setPayments((prev) => { const n = [...prev]; n[i] = { ...n[i], amount: e.target.value }; return n; })} inputMode="decimal" placeholder="0.00" />
+                      <input
+                        className="g-inp"
+                        value={p.amount}
+                        onChange={(e) =>
+                          setPayments((prev) => {
+                            const n = [...prev];
+                            n[i] = { ...n[i], amount: e.target.value };
+                            return n;
+                          })
+                        }
+                        inputMode="decimal"
+                        placeholder="0.00"
+                      />
                     </Field>
                     <div style={{ paddingBottom: 2 }}>
-                      {payments.length > 1 && <button className="g-btn danger sm" onClick={() => setPayments((p) => p.filter((_, j) => j !== i))}><FiX size={13} /></button>}
+                      {payments.length > 1 && (
+                        <button className="g-btn danger sm" onClick={() => setPayments((p) => p.filter((_, j) => j !== i))}>
+                          <FiX size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1.5px solid #f3f4f6", marginTop: 4 }}>
-                  <button className="g-btn ghost sm" onClick={() => setPayments((p) => [...p, { type: "Cash", amount: "" }])}><FiPlus size={13} /> Add Line</button>
+                  <button className="g-btn ghost sm" onClick={() => setPayments((p) => [...p, { type: "Cash", amount: "" }])}>
+                    <FiPlus size={13} /> Add Line
+                  </button>
                   <div style={{ display: "flex", gap: 24 }}>
-                    {[{ l: "Paid", v: fmt2(sumPay), c: C.text }, { l: "Balance", v: fmt2(balance), c: balance <= 0 ? C.green : C.orange }].map(({ l, v, c }) => (
+                    {[
+                      { l: "Paid", v: fmt2(sumPay), c: C.text },
+                      { l: "Balance", v: fmt2(balance), c: balance <= 0 ? C.green : C.orange },
+                    ].map(({ l, v, c }) => (
                       <div key={l} style={{ textAlign: "right" }}>
                         <div style={{ fontSize: 12, color: C.textSub, fontWeight: 700 }}>{l}</div>
                         <div style={{ fontSize: 18, fontWeight: 900, color: c }}>₹{v}</div>
@@ -786,38 +1456,78 @@ export default function AddPurchase() {
 
         {/* Summary */}
         <div className="g-card" style={{ marginBottom: 0 }}>
-          <div className="g-card-head"><div className="g-card-title">Summary</div></div>
+          <div className="g-card-head">
+            <div className="g-card-title">Summary</div>
+          </div>
           <div className="g-card-body">
             {[
               ...(isGST && gstMode === "inclusive"
-                ? [{ l: "Total (Tax Inclusive)", v: `₹${fmt2(subTotal)}` }, { l: "Tax (included)", v: `₹${fmt2(taxTotal)}` }]
-                : [{ l: "Subtotal", v: `₹${fmt2(subTotal)}` }, ...(isGST ? [{ l: "Tax Total", v: `₹${fmt2(taxTotal)}` }] : [])]
-              ),
+                ? [
+                    { l: "Total (Tax Inclusive)", v: `₹${fmt2(subTotal)}` },
+                    { l: "Tax (included)", v: `₹${fmt2(taxTotal)}` },
+                  ]
+                : [{ l: "Subtotal", v: `₹${fmt2(subTotal)}` }, ...(isGST ? [{ l: "Tax Total", v: `₹${fmt2(taxTotal)}` }] : [])]),
             ].map(({ l, v }) => (
               <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: C.textSub, marginBottom: 10 }}>
-                <span>{l}</span><span style={{ fontWeight: 600 }}>{v}</span>
+                <span>{l}</span>
+                <span style={{ fontWeight: 600 }}>{v}</span>
               </div>
             ))}
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, padding: "10px 12px", background: "#f8fafc", borderRadius: 8, border: "1.5px solid #e5e7eb" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 14,
+                padding: "10px 12px",
+                background: "#f8fafc",
+                borderRadius: 8,
+                border: "1.5px solid #e5e7eb",
+              }}
+            >
               <label htmlFor="roundchk" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.text }}>
                 <input type="checkbox" id="roundchk" checked={roundOff} onChange={(e) => setRoundOff(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.brand }} />
                 Round off
               </label>
-              <span style={{ fontSize: 13, fontWeight: 700, color: roundOff ? C.green : C.textSub }}>{roundOff ? `+₹${fmt2(roundDiff)}` : "Off"}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: roundOff ? (roundDiff >= 0 ? C.green : C.red) : C.textSub }}>{roundOff ? `${roundDiff >= 0 ? "+" : ""}₹${fmt2(roundDiff)}` : "Off"}</span>
             </div>
 
-            <div style={{ background: C.brand, borderRadius: 10, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, boxShadow: `0 3px 10px rgba(3,76,157,0.25)` }}>
+            <div
+              style={{
+                background: C.brand,
+                borderRadius: 10,
+                padding: "14px 16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+                boxShadow: `0 3px 10px rgba(3,76,157,0.25)`,
+              }}
+            >
               <span style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>Grand Total</span>
               <span style={{ fontWeight: 900, fontSize: 22, color: "#fff" }}>₹{fmt2(roundedTotal)}</span>
             </div>
 
             <button className="g-btn success lg" onClick={onSave} disabled={saving}>
-              <FiCheck size={16} />{saving ? "Saving…" : isEdit ? "Update Purchase" : "Save Purchase"}
+              <FiCheck size={16} />
+              {saving ? "Saving…" : isEdit ? "Update Purchase" : "Save Purchase"}
             </button>
 
             {/* Bill type indicator */}
-            <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: isGST ? C.brandLighter : "#f3f4f6", border: `1.5px solid ${isGST ? "#bfdbfe" : "#e5e7eb"}`, fontSize: 13, fontWeight: 700, color: isGST ? C.brand : "#374151", textAlign: "center" }}>
+            <div
+              style={{
+                marginTop: 12,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: isGST ? C.brandLighter : "#f3f4f6",
+                border: `1.5px solid ${isGST ? "#bfdbfe" : "#e5e7eb"}`,
+                fontSize: 13,
+                fontWeight: 700,
+                color: isGST ? C.brand : "#374151",
+                textAlign: "center",
+              }}
+            >
               {isGST ? `GST Bill (${gstMode === "inclusive" ? "Tax Inclusive" : "Tax Exclusive"})` : "NON-GST Bill"}
             </div>
           </div>
@@ -825,20 +1535,51 @@ export default function AddPurchase() {
       </div>
 
       {/* ── MODAL: ADD DISTRIBUTOR ── */}
-      <Modal show={showAddDist} title="Add New Distributor" onClose={() => setShowAddDist(false)}
-        footer={<><button className="g-btn ghost" onClick={() => setShowAddDist(false)}>Cancel</button><button className="g-btn primary" onClick={saveDist}>Save</button></>}>
+      <Modal
+        show={showAddDist}
+        title="Add New Distributor"
+        onClose={() => setShowAddDist(false)}
+        footer={
+          <>
+            <button className="g-btn ghost" onClick={() => setShowAddDist(false)}>
+              Cancel
+            </button>
+            <button className="g-btn primary" onClick={saveDist}>
+              Save
+            </button>
+          </>
+        }
+      >
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <Field label="Distributor Name" required hint="Full name of the company or person">
             <input className="g-inp lg" value={newDist.name} onChange={(e) => setNewDist((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. ABC Pharma" />
           </Field>
-          <Field label="GSTIN" hint="Optional"><input className="g-inp lg" value={newDist.gstin} onChange={(e) => setNewDist((p) => ({ ...p, gstin: e.target.value }))} placeholder="Optional" /></Field>
-          <Field label="Phone" hint="Optional"><input className="g-inp lg" value={newDist.phone} onChange={(e) => setNewDist((p) => ({ ...p, phone: e.target.value }))} placeholder="Optional" type="tel" /></Field>
+          <Field label="GSTIN" hint="Optional">
+            <input className="g-inp lg" value={newDist.gstin} onChange={(e) => setNewDist((p) => ({ ...p, gstin: e.target.value }))} placeholder="Optional" />
+          </Field>
+          <Field label="Phone" hint="Optional">
+            <input className="g-inp lg" value={newDist.phone} onChange={(e) => setNewDist((p) => ({ ...p, phone: e.target.value }))} placeholder="Optional" type="tel" />
+          </Field>
         </div>
       </Modal>
 
       {/* ── MODAL: ADD ITEM TO MASTER ── */}
-      <Modal show={showAddItem} title="Add Item to Master" onClose={() => setShowAddItem(false)} width={580}
-        footer={<><button className="g-btn ghost" onClick={() => setShowAddItem(false)}>Cancel</button><button className="g-btn primary" onClick={saveNewItem}>Save Item</button></>}>
+      <Modal
+        show={showAddItem}
+        title="Add Item to Master"
+        onClose={() => setShowAddItem(false)}
+        width={580}
+        footer={
+          <>
+            <button className="g-btn ghost" onClick={() => setShowAddItem(false)}>
+              Cancel
+            </button>
+            <button className="g-btn primary" onClick={saveNewItem}>
+              Save Item
+            </button>
+          </>
+        }
+      >
         <div className="g-grid-2">
           <div className="g-span-2">
             <Field label="Item / Medicine Name" required>
@@ -851,69 +1592,92 @@ export default function AddPurchase() {
           <Field label="HSN Code" hint="For GST">
             <input className="g-inp lg" value={newItem.hsn} onChange={(e) => setNewItem((p) => ({ ...p, hsn: e.target.value }))} placeholder="Optional" />
           </Field>
-          <Field label="MRP (₹)"><input className="g-inp lg" value={newItem.mrp} onChange={(e) => setNewItem((p) => ({ ...p, mrp: e.target.value }))} inputMode="decimal" placeholder="0.00" /></Field>
-          <Field label="Sale Price (₹)"><input className="g-inp lg" value={newItem.salePrice} onChange={(e) => setNewItem((p) => ({ ...p, salePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" /></Field>
-          <Field label="Purchase Price (₹)"><input className="g-inp lg" value={newItem.purchasePrice} onChange={(e) => setNewItem((p) => ({ ...p, purchasePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" /></Field>
-          <Field label="Tax %"><input className="g-inp lg" value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" /></Field>
+          <Field label="MRP (₹)">
+            <input className="g-inp lg" value={newItem.mrp} onChange={(e) => setNewItem((p) => ({ ...p, mrp: e.target.value }))} inputMode="decimal" placeholder="0.00" />
+          </Field>
+          <Field label="Sale Price (₹)">
+            <input className="g-inp lg" value={newItem.salePrice} onChange={(e) => setNewItem((p) => ({ ...p, salePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
+          </Field>
+          <Field label="Purchase Price (₹)">
+            <input className="g-inp lg" value={newItem.purchasePrice} onChange={(e) => setNewItem((p) => ({ ...p, purchasePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
+          </Field>
+          <Field label="Tax %">
+            <input className="g-inp lg" value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" />
+          </Field>
         </div>
       </Modal>
 
       {/* ── MODAL: COLUMN MAPPING ── */}
-      <Modal show={showMapping} title="Map Columns from Uploaded Bill" onClose={() => setShowMapping(false)} width={720}
-        footer={<>
-          <button className="g-btn ghost" onClick={() => setShowMapping(false)}>Cancel</button>
-          <button className="g-btn primary" onClick={applyMapping}><FiCheck size={14} /> Apply & Import</button>
-        </>}>
+      <Modal
+        show={showMapping}
+        title="Map Columns from Uploaded Bill"
+        onClose={() => setShowMapping(false)}
+        width={960}
+        footer={
+          <>
+            <button className="g-btn ghost" onClick={() => setShowMapping(false)}>
+              Cancel
+            </button>
+            <button className="g-btn primary" onClick={applyMapping}>
+              <FiCheck size={14} /> Apply & Import ({uploadRows.length} rows)
+            </button>
+          </>
+        }
+      >
         <div>
-          <p style={{ fontSize: 13, color: C.textSub, marginTop: 0, marginBottom: 14 }}>
-            Map your file columns to our fields. Required fields are marked with *.
-          </p>
-
-          {/* Mapping selects */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
-            {OUR_COLS.map((col) => (
-              <div key={col.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.text, minWidth: 120 }}>
-                  {col.label}{col.required ? <span style={{ color: C.red }}> *</span> : ""}
-                </span>
-                <select className="g-sel sm" style={{ flex: 1 }} value={colMap[col.key] ?? ""} onChange={(e) => {
-                  const v = e.target.value;
-                  setColMap((p) => {
-                    const n = { ...p };
-                    if (v === "") delete n[col.key];
-                    else n[col.key] = Number(v);
-                    return n;
-                  });
-                }}>
-                  <option value="">— Skip —</option>
-                  {uploadHeaders.map((h, i) => (
-                    <option key={i} value={i}>{h || `Column ${i + 1}`}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-
-          {/* Preview */}
+          {/* Raw file data */}
           <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, marginBottom: 6, textTransform: "uppercase" }}>
-            Preview ({Math.min(uploadRows.length, 5)} of {uploadRows.length} rows)
+            Uploaded Data — {uploadRows.length} rows, {uploadHeaders.length} columns
           </div>
-          <div style={{ overflowX: "auto", border: "1.5px solid #e5e7eb", borderRadius: 8, maxHeight: 220 }}>
-            <table className="g-table" style={{ fontSize: 12 }}>
+          <div style={{ overflowX: "auto", border: "1.5px solid #e5e7eb", borderRadius: 8, maxHeight: 240, marginBottom: 18 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
-                <tr>
-                  {OUR_COLS.filter((c) => colMap[c.key] !== undefined).map((c) => (
-                    <th key={c.key} style={{ whiteSpace: "nowrap", fontSize: 11 }}>{c.label}</th>
-                  ))}
+                <tr style={{ background: "#f1f5f9", position: "sticky", top: 0, zIndex: 1 }}>
+                  {uploadHeaders.map((h, i) => {
+                    const mappedTo = OUR_COLS.find((c) => colMap[c.key] === i);
+                    return (
+                      <th
+                        key={i}
+                        style={{
+                          padding: "8px 10px",
+                          textAlign: "left",
+                          whiteSpace: "nowrap",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: mappedTo ? C.brand : C.textSub,
+                          borderBottom: "1.5px solid #e2e8f0",
+                          background: mappedTo ? C.brandLighter : "#f1f5f9",
+                        }}
+                      >
+                        <div>{h || `Col ${i + 1}`}</div>
+                        {mappedTo && <div style={{ fontSize: 9, fontWeight: 800, color: C.brand, marginTop: 2 }}>= {mappedTo.label}</div>}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {uploadRows.slice(0, 5).map((row, i) => (
-                  <tr key={i}>
-                    {OUR_COLS.filter((c) => colMap[c.key] !== undefined).map((c) => {
-                      let val = row[colMap[c.key]];
+                {uploadRows.slice(0, 8).map((row, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    {uploadHeaders.map((_, ci) => {
+                      let val = row[ci];
                       if (val instanceof Date) val = val.toISOString().slice(0, 10);
-                      return <td key={c.key} style={{ whiteSpace: "nowrap" }}>{String(val ?? "")}</td>;
+                      const mapped = OUR_COLS.find((c) => colMap[c.key] === ci);
+                      return (
+                        <td
+                          key={ci}
+                          style={{
+                            padding: "6px 10px",
+                            whiteSpace: "nowrap",
+                            fontSize: 12,
+                            color: mapped ? C.text : C.textSub,
+                            fontWeight: mapped ? 600 : 400,
+                            background: mapped ? "#fafcff" : "transparent",
+                          }}
+                        >
+                          {String(val ?? "")}
+                        </td>
+                      );
                     })}
                   </tr>
                 ))}
@@ -921,20 +1685,83 @@ export default function AddPurchase() {
             </table>
           </div>
 
-          <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: C.brandLighter, border: "1.5px solid #bfdbfe", fontSize: 12, color: C.brand }}>
-            Items will be auto-matched with your item master by name/code. Unmatched items will show as-is for manual selection.
+          {/* Mapping selects */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, marginBottom: 8, textTransform: "uppercase" }}>Column Mapping — match file columns to our fields</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+            {OUR_COLS.map((col) => {
+              const mapped = colMap[col.key] !== undefined;
+              return (
+                <div
+                  key={col.key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: `1.5px solid ${mapped ? "#bfdbfe" : "#e5e7eb"}`,
+                    background: mapped ? C.brandLighter : "#fff",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, color: mapped ? C.brand : C.text, minWidth: 110 }}>
+                    {col.label}
+                    {col.required ? <span style={{ color: C.red }}> *</span> : ""}
+                  </span>
+                  <select
+                    className="g-sel sm"
+                    style={{ flex: 1, height: 30, fontSize: 12 }}
+                    value={colMap[col.key] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setColMap((p) => {
+                        const n = { ...p };
+                        if (v === "") delete n[col.key];
+                        else n[col.key] = Number(v);
+                        return n;
+                      });
+                    }}
+                  >
+                    <option value="">— Skip —</option>
+                    {uploadHeaders.map((h, i) => (
+                      <option key={i} value={i}>
+                        {h || `Column ${i + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: C.brandLighter, border: "1.5px solid #bfdbfe", fontSize: 12, color: C.brand }}>
+            Mapped columns are highlighted in blue above. Items will be auto-matched with your item master by name/code.
           </div>
         </div>
       </Modal>
 
       {/* ── MODAL: PRICE WARNING ── */}
-      <Modal show={showPriceWarning} title="Price & MRP Alert" onClose={() => setShowPriceWarning(false)} width={720}
-        footer={<>
-          <button className="g-btn ghost" onClick={() => setShowPriceWarning(false)}>Go Back & Edit</button>
-          <button className="g-btn success" onClick={async () => { setShowPriceWarning(false); if (pendingSaveData) await doSave(pendingSaveData); }}>
-            <FiCheck size={14} /> Save Anyway
-          </button>
-        </>}>
+      <Modal
+        show={showPriceWarning}
+        title="Price & MRP Alert"
+        onClose={() => setShowPriceWarning(false)}
+        width={720}
+        footer={
+          <>
+            <button className="g-btn ghost" onClick={() => setShowPriceWarning(false)}>
+              Go Back & Edit
+            </button>
+            <button
+              className="g-btn success"
+              onClick={async () => {
+                setShowPriceWarning(false);
+                if (pendingSaveData) await doSave(pendingSaveData);
+              }}
+            >
+              <FiCheck size={14} /> Save Anyway
+            </button>
+          </>
+        }
+      >
         <div>
           <div style={{ background: "#fff7ed", border: "1.5px solid #fed7aa", borderRadius: 9, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#9a3412" }}>
             Review the following price/MRP changes before saving.
@@ -947,22 +1774,33 @@ export default function AddPurchase() {
                   <span style={{ fontSize: 12, color: C.textSub, marginLeft: 8 }}>({w.item_code})</span>
                 </div>
                 <div style={{ display: "flex", gap: 14, fontSize: 13, fontWeight: 700 }}>
-                  {w.current_price > 0 && <span>Price: <span style={{ color: C.red }}>₹{w.current_price.toFixed(2)}</span></span>}
-                  {w.current_mrp > 0 && <span>MRP: <span style={{ color: C.brand }}>₹{w.current_mrp.toFixed(2)}</span></span>}
+                  {w.current_price > 0 && (
+                    <span>
+                      Price: <span style={{ color: C.red }}>₹{w.current_price.toFixed(2)}</span>
+                    </span>
+                  )}
+                  {w.current_mrp > 0 && (
+                    <span>
+                      MRP: <span style={{ color: C.brand }}>₹{w.current_mrp.toFixed(2)}</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Cheaper purchase history */}
               {w.cheaper_purchases?.length > 0 && (
                 <div>
-                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.orange, background: "#fff7ed" }}>
-                    Bought cheaper before
-                  </div>
+                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.orange, background: "#fff7ed" }}>Bought cheaper before</div>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "#fafbfc" }}>
                         {["Past Price", "Qty", "Distributor", "Bill No", "Date"].map((h) => (
-                          <th key={h} style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}>{h}</th>
+                          <th
+                            key={h}
+                            style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}
+                          >
+                            {h}
+                          </th>
                         ))}
                       </tr>
                     </thead>
@@ -984,14 +1822,17 @@ export default function AddPurchase() {
               {/* MRP change history */}
               {w.mrp_changes?.length > 0 && (
                 <div>
-                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.brand, background: "#eff6ff" }}>
-                    MRP was different before
-                  </div>
+                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.brand, background: "#eff6ff" }}>MRP was different before</div>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "#fafbfc" }}>
                         {["Past MRP", "Price", "Distributor", "Bill No", "Date"].map((h) => (
-                          <th key={h} style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}>{h}</th>
+                          <th
+                            key={h}
+                            style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}
+                          >
+                            {h}
+                          </th>
                         ))}
                       </tr>
                     </thead>

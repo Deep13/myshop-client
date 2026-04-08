@@ -2,6 +2,8 @@ import { useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { FiPackage, FiUser, FiLock, FiEye, FiEyeOff, FiLogIn } from "react-icons/fi";
 import storeImg from "../assets/store.png";
+import { API } from "../ui.jsx";
+import usePageMeta from "../usePageMeta.js";
 
 const C = {
   brand: "#034C9D",
@@ -14,6 +16,7 @@ const C = {
 };
 
 export default function Login() {
+  usePageMeta("Login", "Sign in to your shop management account");
   const navigate = useNavigate();
   const isLoggedIn = localStorage.getItem("auth");
   const userRef = useRef(null);
@@ -40,7 +43,7 @@ export default function Login() {
     try {
       setLoading(true);
       setResponseMsg("");
-      const res = await fetch("http://localhost/myshop-backend/login.php", {
+      const res = await fetch(`${API}/login.php`, {
         method: "POST",
         body: JSON.stringify({ name, password }),
       });

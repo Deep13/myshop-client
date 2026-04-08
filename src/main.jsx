@@ -15,6 +15,7 @@ import Reports from "./pages/Reports.jsx";
 import Settings from "./pages/Settings.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import MobileSale from "./pages/MobileSale.jsx";
+import MobileInventory from "./pages/MobileInventory.jsx";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./Layout";
 import ProtectedRoute from "./ProtectedRoute.jsx";
@@ -48,6 +49,7 @@ createRoot(document.getElementById("root")).render(
 
       {/* Mobile route — no header, no layout */}
       <Route path="/m/sale" element={<MobileGuard><MobileSale /></MobileGuard>} />
+      <Route path="/m/inventory" element={<MobileGuard><MobileInventory /></MobileGuard>} />
 
       {/* Desktop routes — redirect mobile users to /m/sale */}
       <Route element={<ProtectedRoute><DesktopRedirect><Layout /></DesktopRedirect></ProtectedRoute>}>

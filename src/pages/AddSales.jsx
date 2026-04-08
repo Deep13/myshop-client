@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
+import usePageMeta from "../usePageMeta.js";
 
 /* ═══════════════════════════════════════════════════════
    PRICING MODEL
@@ -64,10 +65,12 @@ export default function AddSales() {
   const [sp] = useSearchParams();
   const invoiceId = sp.get("id");
   const isEdit = Boolean(invoiceId);
+  usePageMeta(isEdit ? "Edit Sale" : "New Sale", "Create or edit a sales invoice");
 
   const [custType, setCustType]   = useState("Retail");
   const [custName, setCustName]   = useState("");
   const [phone, setPhone]         = useState("");
+  const [custGstin, setCustGstin] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(todayISO());
 
@@ -89,6 +92,10 @@ export default function AddSales() {
   const [payments, setPayments]   = useState([{ type: "Cash", amount: "" }]);
 
   const [saving, setSaving]       = useState(false);
+  const [toast, setToast]         = useState("");   // inline message instead of alert
+  const [cashGiven, setCashGiven] = useState("");   // cash tendered by customer
+
+  const showToast = (msg, duration = 3000) => { setToast(msg); setTimeout(() => setToast(""), duration); };
 
   /* ── Shop / Printer settings ── */
   const [showShopSettings, setShowShopSettings] = useState(false);
@@ -117,6 +124,7 @@ export default function AddSales() {
         setCustType(h.customer_type || "Retail");
         setCustName(h.customer_name || "");
         setPhone(h.phone || "");
+        setCustGstin(h.customer_gstin || "");
         setInvoiceNo(h.invoice_no || "");
         setInvoiceDate(h.invoice_date || todayISO());
         setBillDisc(h.bill_discount || "");
@@ -146,7 +154,7 @@ export default function AddSales() {
           if (pList.length > 1) setMultiPay(true);
           else { setPayMode(pList[0]?.type || "Cash"); setReceived(String(pList[0]?.amount || "")); setRecTouched(true); }
         }
-      } catch (e) { alert(e.message || "Load failed"); }
+      } catch (e) { showToast(e.message || "Load failed"); }
     })();
   }, [invoiceId]);
 
@@ -171,7 +179,13 @@ export default function AddSales() {
         (inv.item_name || "").toLowerCase().includes(q) ||
         (inv.item_code || "").toLowerCase().includes(q)
       )
-      .slice(0, 12);
+      .sort((a, b) => {
+        if (!a.exp_date && !b.exp_date) return 0;
+        if (!a.exp_date) return 1;
+        if (!b.exp_date) return -1;
+        return a.exp_date.localeCompare(b.exp_date);
+      })
+      .slice(0, 15);
   };
 
   /* ── Row update — recalc amount ── */
@@ -361,6 +375,7 @@ export default function AddSales() {
   const sumPay       = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
   const totalPaid    = useMemo(() => multiPay ? sumPay : asNum(received), [multiPay, sumPay, received]);
   const balance      = useMemo(() => roundedTotal - totalPaid, [roundedTotal, totalPaid]);
+  const changeReturn = useMemo(() => asNum(cashGiven) - roundedTotal, [cashGiven, roundedTotal]);
   useEffect(() => { if (!multiPay && !recTouched) setReceived(roundedTotal.toFixed(2)); }, [roundedTotal, multiPay, recTouched]);
 
   /* ── Build print data from current form ── */
@@ -383,13 +398,13 @@ export default function AddSales() {
   /* ── Print current invoice (without saving) ── */
   const onPrint = () => {
     const data = buildPrintData();
-    if (!data.items.length) return alert("Add at least one item to print");
+    if (!data.items.length) return showToast("Add at least one item to print");
     printReceipt(data);
   };
 
   /* ── Save ── */
   const onSave = async (andPrint = false) => {
-    if (!invoiceNo.trim()) return alert("Invoice number required");
+    if (!invoiceNo.trim()) return showToast("Invoice number required");
     const cleanRows = rows.map((r) => ({
       invId: asNum(r.invId),               // inventory record PK — used to resolve gst_flag
       itemName: String(r.itemName || "").trim(),
@@ -404,7 +419,7 @@ export default function AddSales() {
       tax: asNum(r.tax),
       amount: asNum(r.amount),
     })).filter((r) => r.itemName && r.qty > 0);
-    if (!cleanRows.length) return alert("Add at least one item");
+    if (!cleanRows.length) return showToast("Add at least one item");
     const payList = multiPay
       ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0)
       : [{ type: payMode, amount: asNum(received) }];
@@ -428,17 +443,21 @@ export default function AddSales() {
         invoiceNo, invoiceDate,
         customerType: custType,
         customerName: custName || "Cash",
-        phone, rows: cleanRows, payments: payList, totals,
+        phone, customerGstin: custGstin.trim(),
+        rows: cleanRows, payments: payList, totals,
         ...(isEdit ? { invoiceId: Number(invoiceId), updatedBy: user?.id || 1 } : { createdBy: user?.id || 1 }),
       };
       const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
       const shouldPrint = andPrint || (!isEdit && getShopSettings().autoPrint);
-      if (shouldPrint) printReceipt(buildPrintData());
-      alert(isEdit ? "Invoice Updated!" : "Invoice Saved!");
-      window.location.href = "/sales";
-    } catch (e) { alert(e.message || "Failed"); } finally { setSaving(false); }
+      if (shouldPrint) {
+        printReceipt(buildPrintData());
+        setTimeout(() => { window.location.href = "/sales"; }, 1500);
+      } else {
+        window.location.href = "/sales";
+      }
+    } catch (e) { showToast(e.message || "Failed"); } finally { setSaving(false); }
   };
 
   // Ctrl+S shortcut
@@ -458,57 +477,64 @@ export default function AddSales() {
     <div id="g-root" style={{ padding: "18px 24px", background: C.bg, minHeight: "100vh" }}>
       <style>{GLOBAL_CSS}</style>
 
-      {/* PAGE HEADER */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: "0 3px 10px rgba(22,163,74,0.3)" }}>
-            <FiShoppingCart size={20} />
-          </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.text }}>{isEdit ? "Edit Invoice" : "New Sale"}</h2>
-            <p style={{ margin: "2px 0 0", fontSize: 13, color: C.textSub }}>{isEdit ? `Invoice #${invoiceId}` : "Add items and save"}</p>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button className="g-btn ghost sm" title="Printer Settings" onClick={() => { setShopForm(getShopSettings()); setShowShopSettings(true); }}>
-            <FiSettings size={14} />
-          </button>
-          <button className="g-btn ghost" onClick={onPrint} title="Print Preview">
-            <FiPrinter size={14} /> Print
-          </button>
-          <button className="g-btn ghost" onClick={() => window.history.back()}>← Back</button>
-          <button className="g-btn success" onClick={() => onSave(false)} disabled={saving} style={{ minWidth: 130 }}>
-            <FiCheck size={14} />{saving ? "Saving…" : isEdit ? "Update" : "Save Invoice"}
-          </button>
-          <button className="g-btn primary" onClick={() => onSave(true)} disabled={saving} title="Save and Print">
-            <FiPrinter size={14} /> Save & Print
-          </button>
-        </div>
-      </div>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 9999,
+          background: "#1e293b", color: "#fff", padding: "10px 24px", borderRadius: 10,
+          fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+          animation: "fadeIn 0.2s",
+        }}>{toast}</div>
+      )}
 
-      {/* ── STEP 1: CUSTOMER ── */}
-      <div className="g-card" style={{ marginBottom: 18 }}>
-        <SectionHead num="1" icon={<FiShoppingCart size={15} />} title="Customer & Invoice Details" />
-        <div style={{ padding: 18 }}>
-          <div className="g-grid-2">
-            <Field label="Invoice No" required>
-              <input className="g-inp" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="Auto-generated" />
-            </Field>
-            <Field label="Invoice Date" required>
-              <input className="g-inp" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-            </Field>
-            <Field label="Customer Type">
-              <select className="g-sel" value={custType} onChange={(e) => setCustType(e.target.value)}>
-                {["Retail", "Wholesale", "Credit"].map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Customer Name" hint="Leave blank for cash sale">
-              <input className="g-inp" value={custName} onChange={(e) => setCustName(e.target.value)} placeholder="Cash" />
-            </Field>
-            <Field label="Phone">
-              <input className="g-inp" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" type="tel" />
-            </Field>
+      {/* ── COMPACT HEADER BAR ── */}
+      <div style={{
+        background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: 14, padding: "10px 16px",
+        display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+      }}>
+        {/* Invoice Date */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.brand, borderRadius: 9, padding: "6px 14px", color: "#fff" }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.8, textTransform: "uppercase" }}>Bill Date</div>
+            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)}
+              style={{ background: "none", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: 0, cursor: "pointer", width: 120 }} />
           </div>
+        </div>
+
+        {/* Invoice No */}
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Invoice No</span>
+          <input className="g-inp sm" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="Auto" style={{ height: 30, fontSize: 13, fontWeight: 700 }} />
+        </div>
+
+        <div style={{ width: 1, height: 32, background: "#e5e7eb" }} />
+
+        {/* Customer Name */}
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 140 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Customer Name</span>
+          <input className="g-inp sm" value={custName} onChange={(e) => setCustName(e.target.value)} placeholder="Cash" style={{ height: 30, fontSize: 13 }} />
+        </div>
+
+        {/* Phone */}
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Phone</span>
+          <input className="g-inp sm" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" type="tel" style={{ height: 30, fontSize: 13 }} />
+        </div>
+
+        {/* GST Number */}
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 150 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>GST Number</span>
+          <input className="g-inp sm" value={custGstin} onChange={(e) => setCustGstin(e.target.value.toUpperCase())} placeholder="Optional" maxLength={15} style={{ height: 30, fontSize: 13, letterSpacing: "0.03em" }} />
+        </div>
+
+        <div style={{ flex: "0 0 auto", display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
+          <button className="g-btn success sm" onClick={() => onSave(false)} disabled={saving} style={{ minWidth: 90 }}>
+            <FiCheck size={14} />{saving ? "Saving…" : isEdit ? "Update" : "Save"}
+          </button>
+          <button className="g-btn primary sm" onClick={() => onSave(true)} disabled={saving} title="Save & Print">
+            <FiPrinter size={14} />
+          </button>
         </div>
       </div>
 
@@ -522,31 +548,16 @@ export default function AddSales() {
           <table className="g-table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th style={{ width: 36, paddingLeft: 14 }}>#</th>
-                <th style={{ minWidth: 200 }}>Item</th>
-                <th style={{ minWidth: 90 }}>Expiry</th>
-                <th style={{ minWidth: 80 }}>MRP ₹</th>
-                <th style={{ minWidth: 95 }}>
-                  Discount ₹
-                  <div style={{ fontSize: 9.5, fontWeight: 500, color: C.textLight, textTransform: "none", letterSpacing: 0 }}>MRP − Sale</div>
-                </th>
-                <th style={{ minWidth: 95 }}>
-                  Sale Price ₹
-                  <div style={{ fontSize: 9.5, fontWeight: 500, color: C.textLight, textTransform: "none", letterSpacing: 0 }}>Tax-inclusive</div>
-                </th>
-                <th style={{ minWidth: 70 }}>
-                  Tax %
-                  <div style={{ fontSize: 9.5, fontWeight: 500, color: C.textLight, textTransform: "none", letterSpacing: 0 }}>GST rate</div>
-                </th>
-                <th style={{ minWidth: 90 }}>
-                  Qty
-                  <div style={{ fontSize: 9.5, fontWeight: 500, color: C.textLight, textTransform: "none", letterSpacing: 0 }}>Max = stock</div>
-                </th>
-                <th style={{ minWidth: 95, textAlign: "right", paddingRight: 14 }}>
-                  Amount ₹
-                  <div style={{ fontSize: 9.5, fontWeight: 500, color: C.textLight, textTransform: "none", letterSpacing: 0 }}>Qty × Sale</div>
-                </th>
-                <th style={{ width: 40 }}></th>
+                <th style={{ width: 30, paddingLeft: 10 }}>#</th>
+                <th style={{ minWidth: 320 }}>Item</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Expiry</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>MRP</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Disc</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Sale ₹</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Tax%</th>
+                <th style={{ minWidth: 100, textAlign: "right" }}>Qty</th>
+                <th style={{ minWidth: 100, textAlign: "right", paddingRight: 10 }}>Amount</th>
+                <th style={{ width: 32 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -566,8 +577,8 @@ export default function AddSales() {
 
                 return (
                   <tr key={idx} style={{ background: isZeroStock && filled ? "#fff5f5" : undefined }}>
-                    <td style={{ paddingLeft: 12 }}>
-                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: filled ? C.greenLight : "#f3f4f6", color: filled ? C.green : C.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{idx + 1}</div>
+                    <td style={{ paddingLeft: 8 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: "50%", background: filled ? C.greenLight : "#f3f4f6", color: filled ? C.green : C.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{idx + 1}</div>
                     </td>
 
                     {/* ── Item search & display ── */}
@@ -595,8 +606,8 @@ export default function AddSales() {
                       ) : (
                         <div>
                           <div style={{ position: "relative" }}>
-                            <FiSearch size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
-                            <input ref={(el) => (searchRefs.current[idx] = el)} className="g-td-inp" style={{ paddingLeft: 26 }} value={st}
+                            <FiSearch size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
+                            <input ref={(el) => (searchRefs.current[idx] = el)} className="g-td-inp item-search" value={st}
                               onChange={(e) => handleSearchChange(idx, e.target.value)}
                               onFocus={() => setActiveSug(idx)}
                               onBlur={() => { if (!r.itemName.trim()) setTimeout(() => setSearchText((p) => ({ ...p, [idx]: "" })), 150); }}
@@ -607,52 +618,78 @@ export default function AddSales() {
                           {/* Suggestions dropdown */}
                           {activeSug === idx && sug.length > 0 && (
                             <div onMouseDown={(e) => e.stopPropagation()}
-                              style={{ position: "absolute", top: "100%", left: 0, width: 420, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", maxHeight: 300, overflow: "auto" }}>
-                              <div style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, background: "#f8fafc", borderBottom: "1px solid #f3f4f6", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                                Select batch from inventory
+                              style={{ position: "absolute", top: "100%", left: 0, width: 650, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.15)", maxHeight: 380, overflow: "hidden" }}>
+                              {/* Header row */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0, padding: "8px 16px", background: "#f1f5f9", borderBottom: "1.5px solid #e2e8f0" }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Item</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Batch</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Expiry</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "right" }}>MRP</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "center" }}>Qty</span>
                               </div>
-                              {sug.map((inv) => {
+                              <div style={{ maxHeight: 340, overflowY: "auto" }}>
+                              {(() => { let firstInStock = -1; return sug.map((inv, si) => {
                                 const isExp  = inv.exp_date && inv.exp_date < today;
                                 const qty    = asNum(inv.current_qty);
                                 const isZero = qty <= 0;
-                                const savePct = discountPct(inv.mrp, inv.sale_price);
+                                if (firstInStock < 0 && !isZero) firstInStock = si;
+                                const isFirst = si === firstInStock;
                                 return (
-                                  <div key={inv.id} className="g-sug" onMouseDown={() => pickBatch(idx, inv)}
-                                    style={{ padding: "9px 14px", borderBottom: "1px solid #f3f4f6", background: isZero ? "#fafafa" : "#fff" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: isZero ? C.textSub : C.text }}>
-                                          {inv.item_name}
-                                          <span style={{ color: C.textLight, fontWeight: 400, fontSize: 11, marginLeft: 4 }}>({inv.item_code})</span>
-                                        </div>
-                                        <div style={{ fontSize: 11, color: C.textSub, marginTop: 2 }}>
-                                          Batch: <strong>{inv.batch_no || "—"}</strong>
-                                          {" · "}Exp: <span style={{ color: isExp ? C.red : C.textSub, fontWeight: isExp ? 700 : 400 }}>{inv.exp_date || "—"}</span>
-                                          {" · "}MRP: <strong>₹{inv.mrp}</strong>
-                                          {" · "}Sale: <strong>₹{inv.sale_price}</strong>
-                                          {savePct > 0 && <span style={{ color: C.green }}> ({savePct.toFixed(1)}% off)</span>}
-                                        </div>
+                                  <div key={inv.id} onMouseDown={isZero ? undefined : () => pickBatch(idx, inv)}
+                                    style={{
+                                      display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0,
+                                      padding: "10px 16px", cursor: isZero ? "not-allowed" : "pointer",
+                                      borderBottom: "1px solid #f3f4f6",
+                                      background: isFirst ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : isZero ? "#f8f8f8" : "#fff",
+                                      color: isFirst ? "#fff" : isZero ? C.textLight : C.text,
+                                      opacity: isZero ? 0.6 : 1,
+                                      transition: "background 0.1s",
+                                    }}
+                                    onMouseEnter={(e) => { if (!isFirst && !isZero) e.currentTarget.style.background = "#f0f9ff"; }}
+                                    onMouseLeave={(e) => { if (!isFirst && !isZero) e.currentTarget.style.background = "#fff"; }}>
+                                    {/* Item name + code */}
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        color: isFirst ? "#fff" : isZero ? C.textLight : C.text }}>
+                                        {inv.item_name}
                                       </div>
-                                      <div style={{ flexShrink: 0, textAlign: "center", minWidth: 76 }}>
-                                        <div style={{
-                                          padding: "3px 8px", borderRadius: 6, fontWeight: 800, fontSize: 12,
-                                          background: isZero ? C.redLight : isExp ? C.yellowLight : C.greenLight,
-                                          color: isZero ? C.red : isExp ? C.yellow : C.green,
-                                          border: `1px solid ${isZero ? "#fca5a5" : isExp ? "#fde047" : "#86efac"}`,
-                                        }}>
-                                          {isZero ? "No stock" : `${qty} left`}
-                                        </div>
-                                        {isExp && <div style={{ fontSize: 9, color: C.red, fontWeight: 700, marginTop: 2 }}>EXPIRED</div>}
+                                      <div style={{ fontSize: 11, marginTop: 1, color: isFirst ? "rgba(255,255,255,0.75)" : C.textSub }}>
+                                        {inv.item_code}
                                       </div>
+                                    </div>
+                                    {/* Batch */}
+                                    <div style={{ fontSize: 12, color: isFirst ? "rgba(255,255,255,0.9)" : C.textSub, display: "flex", alignItems: "center" }}>
+                                      {inv.batch_no || "—"}
+                                    </div>
+                                    {/* Expiry */}
+                                    <div style={{ fontSize: 12, display: "flex", alignItems: "center",
+                                      color: isExp ? (isFirst ? "#fecaca" : C.red) : (isFirst ? "rgba(255,255,255,0.9)" : C.textSub),
+                                      fontWeight: isExp ? 700 : 400 }}>
+                                      {inv.exp_date || "—"}
+                                    </div>
+                                    {/* MRP */}
+                                    <div style={{ fontSize: 13, fontWeight: 700, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end",
+                                      color: isFirst ? "#fff" : C.text }}>
+                                      ₹{inv.mrp}
+                                    </div>
+                                    {/* Stock */}
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                      <span style={{
+                                        fontWeight: 800, fontSize: 13,
+                                        color: isFirst ? "#fff" : isZero ? C.red : C.text,
+                                      }}>
+                                        {isZero ? "0" : qty}
+                                      </span>
                                     </div>
                                   </div>
                                 );
-                              })}
+                              }); })()}
+                              </div>
                             </div>
                           )}
                           {activeSug === idx && String(st || "").trim().length > 0 && sug.length === 0 && (
-                            <div style={{ position: "absolute", top: "100%", left: 0, width: 260, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 20px rgba(0,0,0,0.08)", padding: "12px 14px" }}>
-                              <div style={{ fontSize: 12, color: C.textSub }}>No stock found. Add stock via Purchase first.</div>
+                            <div style={{ position: "absolute", top: "100%", left: 0, width: 300, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 20px rgba(0,0,0,0.08)", padding: "14px 16px" }}>
+                              <div style={{ fontSize: 13, color: C.textSub }}>No stock found. Add stock via Purchase first.</div>
                             </div>
                           )}
                         </div>
@@ -660,15 +697,14 @@ export default function AddSales() {
                     </td>
 
                     {/* Expiry */}
-                    <td style={{ fontSize: 12, color: isExpired ? C.red : C.textSub, fontWeight: isExpired ? 700 : 400, paddingLeft: 10 }}>
+                    <td style={{ fontSize: 12, color: isExpired ? C.red : C.textSub, fontWeight: isExpired ? 700 : 400, textAlign: "right", paddingRight: 8 }}>
                       {r.expDate || "—"}
                     </td>
 
-                    {/* MRP — read only after batch picked */}
+                    {/* MRP */}
                     <td>
-                      <input className="g-td-inp" value={r.mrp}
+                      <input className="g-td-inp num" value={r.mrp}
                         onChange={(e) => {
-                          // When MRP changes, recalc discount keeping sale price
                           setRows((prev) => {
                             const n = [...prev];
                             const u = { ...n[i], mrp: e.target.value };
@@ -684,47 +720,42 @@ export default function AddSales() {
                       />
                     </td>
 
-                    {/* Discount — editable, updates sale price */}
+                    {/* Discount */}
                     <td>
-                      <input className="g-td-inp" value={r.discount}
+                      <input className="g-td-inp num" value={r.discount}
                         onChange={(e) => onDiscountChange(idx, e.target.value)}
                         inputMode="decimal" placeholder="0"
                       />
                       {dPct > 0 && filled && (
-                        <div style={{ fontSize: 9.5, color: C.green, fontWeight: 700, paddingLeft: 8 }}>
-                          {dPct.toFixed(1)}% off
+                        <div style={{ fontSize: 9, color: C.green, fontWeight: 700, textAlign: "right", paddingRight: 6 }}>
+                          {dPct.toFixed(0)}%
                         </div>
                       )}
                     </td>
 
-                    {/* Sale Price — editable, updates discount */}
+                    {/* Sale Price */}
                     <td>
-                      <input className="g-td-inp" value={r.salePrice}
+                      <input className="g-td-inp num" value={r.salePrice}
                         onChange={(e) => onSalePriceChange(idx, e.target.value)}
                         inputMode="decimal" placeholder="0"
                         style={{ fontWeight: 600 }}
                       />
                     </td>
 
-                    {/* Tax % — editable; amount stays same, breakdown recalculates */}
+                    {/* Tax % */}
                     <td>
-                      <input className="g-td-inp" value={r.tax}
+                      <input className="g-td-inp num" value={r.tax}
                         onChange={(e) => updRow(idx, { tax: e.target.value })}
                         inputMode="decimal" placeholder="0"
                         style={{ textAlign: "center", color: asNum(r.tax) > 0 ? C.brand : C.textSub }}
                       />
-                      {filled && asNum(r.tax) > 0 && (
-                        <div style={{ fontSize: 9.5, color: C.brand, fontWeight: 600, textAlign: "center" }}>
-                          GST
-                        </div>
-                      )}
                     </td>
 
-                    {/* Qty — capped at stock */}
+                    {/* Qty */}
                     <td>
                       <input
                         ref={(el) => (qtyRefs.current[idx] = el)}
-                        className="g-td-inp"
+                        className="g-td-inp num"
                         value={r.qty}
                         onChange={(e) => onQtyChange(idx, e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const next = idx + 1; setTimeout(() => searchRefs.current[next]?.focus(), 0); } }}
@@ -732,23 +763,18 @@ export default function AddSales() {
                         style={{ textAlign: "center", fontWeight: 600 }}
                       />
                       {filled && stockQty !== null && (
-                        <div style={{ fontSize: 9.5, textAlign: "center", fontWeight: 700,
-                          color: isZeroStock ? C.red : C.textLight, paddingLeft: 4 }}>
-                          {isZeroStock ? "No stock" : `max ${stockQty}`}
+                        <div style={{ fontSize: 9, textAlign: "center", fontWeight: 700,
+                          color: isZeroStock ? C.red : C.textLight }}>
+                          {isZeroStock ? "0" : stockQty}
                         </div>
                       )}
                     </td>
 
                     {/* Amount */}
-                    <td style={{ textAlign: "right", paddingRight: 12 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: filled ? C.text : "#d1d5db" }}>
+                    <td style={{ textAlign: "right", paddingRight: 10 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: filled ? C.text : "#d1d5db" }}>
                         {filled ? `₹${fmt2(r.amount)}` : "—"}
                       </div>
-                      {filled && asNum(r.tax) > 0 && asNum(r.amount) > 0 && (
-                        <div style={{ fontSize: 9.5, color: C.textLight, fontWeight: 500, textAlign: "right" }}>
-                          incl. ₹{fmt2(taxInAmount(asNum(r.amount), asNum(r.tax)))} tax
-                        </div>
-                      )}
                     </td>
 
                     {/* Delete */}
@@ -840,6 +866,27 @@ export default function AddSales() {
                 </div>
               </div>
             )}
+            {/* Cash given / Change return */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16,
+              padding: "14px 16px", background: "#fffbeb", borderRadius: 10, border: "1.5px solid #fde68a",
+            }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, marginBottom: 4, textTransform: "uppercase" }}>Cash Given by Customer</div>
+                <input className="g-inp" value={cashGiven} onChange={(e) => setCashGiven(e.target.value)}
+                  inputMode="decimal" placeholder="0.00"
+                  style={{ fontSize: 20, fontWeight: 800, textAlign: "right" }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "flex-end" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, marginBottom: 4, textTransform: "uppercase" }}>Change Return</div>
+                <div style={{
+                  fontSize: 28, fontWeight: 900, letterSpacing: "-0.02em",
+                  color: asNum(cashGiven) > 0 && changeReturn >= 0 ? C.green : asNum(cashGiven) > 0 ? C.red : C.textLight,
+                }}>
+                  {asNum(cashGiven) > 0 ? `₹${fmt2(changeReturn)}` : "—"}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -933,7 +980,7 @@ export default function AddSales() {
             <button className="g-btn success lg" onClick={() => onSave(false)} disabled={saving}>
               <FiCheck size={16} />{saving ? "Saving…" : isEdit ? "Update Invoice" : "Save Invoice"}
             </button>
-            <button className="g-btn primary lg" onClick={() => onSave(true)} disabled={saving} style={{ marginTop: 8 }}>
+            <button className="g-btn primary lg" onClick={() => onSave(true)} disabled={saving} style={{ marginTop: 8, width: "100%" }}>
               <FiPrinter size={16} /> Save & Print
             </button>
           </div>
@@ -944,7 +991,7 @@ export default function AddSales() {
       <Modal show={showShopSettings} title="Shop & Printer Settings" onClose={() => setShowShopSettings(false)} width={480}
         footer={<>
           <button className="g-btn ghost" onClick={() => setShowShopSettings(false)}>Cancel</button>
-          <button className="g-btn primary" onClick={() => { saveShopSettings(shopForm); setShowShopSettings(false); alert("Settings saved!"); }}>Save Settings</button>
+          <button className="g-btn primary" onClick={() => { saveShopSettings(shopForm); setShowShopSettings(false); showToast("Settings saved!"); }}>Save Settings</button>
         </>}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Field label="Shop Name">
@@ -990,6 +1037,7 @@ export default function AddSales() {
           </div>
         </div>
       </Modal>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }`}</style>
     </div>
   );
 }

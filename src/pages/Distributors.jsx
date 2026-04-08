@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FiSearch, FiRefreshCw, FiTruck, FiDollarSign, FiX, FiDownload } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO } from "../ui.jsx";
+import { FiSearch, FiRefreshCw, FiTruck, FiDollarSign, FiX, FiDownload, FiCheck } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { downloadExcel } from "../excelExport.js";
+import usePageMeta from "../usePageMeta.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function Distributors() {
+  usePageMeta("Distributors", "Distributor list, balances and payment history");
   const [rawBills, setRawBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState({ key: "name", direction: "asc" });
+  const [page, setPage] = useState(1);
 
   // Pay modal
   const [showPay, setShowPay] = useState(false);
@@ -18,6 +21,7 @@ export default function Distributors() {
   const [payDate, setPayDate] = useState(todayISO());
   const [payLines, setPayLines] = useState([{ type: "Cash", amount: "", referenceNo: "", note: "" }]);
   const [paySaving, setPaySaving] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   const load = async () => {
     try {
@@ -87,6 +91,9 @@ export default function Distributors() {
       return dir === "asc" ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
     });
   }, [data, q, sort]);
+
+  const paged = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
+  useEffect(() => setPage(1), [q, sort]);
 
   const totalDistributors = filtered.length;
   const totalPurchase = filtered.reduce((s, r) => s + r.totalAmount, 0);
@@ -181,11 +188,11 @@ export default function Distributors() {
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
         <div style={{ position: "relative", flex: 1, minWidth: 160 }}>
           <FiSearch size={13} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
-          <input className="g-inp sm" style={{ paddingLeft: 28, width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search distributor name or GSTIN…" />
+          <input className="g-inp sm search" style={{ width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search distributor name or GSTIN…" />
         </div>
         <span style={{ fontSize: 11, color: C.textSub, whiteSpace: "nowrap" }}>{filtered.length} results</span>
-        <button className="g-btn ghost sm" title="Download Excel" onClick={() => downloadExcel(
-          [
+        <button className="g-btn ghost sm" title="Download Excel" onClick={() => {
+          downloadExcel([
             { key: "name", label: "Distributor" },
             { key: "gstin", label: "GSTIN" },
             { key: "billCount", label: "Bills", type: "int" },
@@ -194,8 +201,9 @@ export default function Distributors() {
             { key: "balance", label: "Balance ₹", type: "number" },
             { key: "lastDate", label: "Last Date" },
             { key: "lastBillNo", label: "Last Bill" },
-          ], filtered.map((r) => ({ ...r, balance: r.totalAmount - r.paidAmount })), "Distributors"
-        )}><FiDownload size={14} /></button>
+          ], filtered.map((r) => ({ ...r, balance: r.totalAmount - r.paidAmount })), "Distributors");
+          setDownloaded(true); setTimeout(() => setDownloaded(false), 2000);
+        }}>{downloaded ? <FiCheck size={14} /> : <FiDownload size={14} />}</button>
         <button className="g-btn ghost sm" onClick={load} disabled={loading}><FiRefreshCw size={14} /></button>
       </div>
 
@@ -221,7 +229,7 @@ export default function Distributors() {
                 <tr><td colSpan={9} style={{ textAlign: "center", padding: 24, color: C.textSub }}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={9} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No distributors found</td></tr>
-              ) : filtered.map((r, i) => {
+              ) : paged.map((r, i) => {
                 const bal = r.totalAmount - r.paidAmount;
                 return (
                   <tr key={i}>
@@ -253,6 +261,7 @@ export default function Distributors() {
             </tbody>
           </table>
         </div>
+        <Pagination total={filtered.length} page={page} onPage={setPage} />
       </div>
 
       {/* Pay Modal */}

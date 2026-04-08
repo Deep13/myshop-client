@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO } from "../ui.jsx";
+import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX, FiClock } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import usePageMeta from "../usePageMeta.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function Purchase() {
+  usePageMeta("Purchase", "View, filter and manage all purchase bills");
   const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ from: "", to: "", q: "", status: "", billType: "", dateRange: "This Month" });
   const [sort, setSort] = useState({ key: "bill_date", direction: "desc" });
+  const [page, setPage] = useState(1);
 
   // Pay modal
   const [showPay, setShowPay] = useState(false);
@@ -19,6 +22,8 @@ export default function Purchase() {
   const [payDate, setPayDate] = useState(todayISO());
   const [payLines, setPayLines] = useState([{ type: "Cash", amount: "", referenceNo: "", note: "" }]);
   const [paySaving, setPaySaving] = useState(false);
+  const [payHistory, setPayHistory] = useState([]);
+  const [payHistLoading, setPayHistLoading] = useState(false);
 
   // Delete modal
   const [showDel, setShowDel] = useState(false);
@@ -71,6 +76,9 @@ export default function Purchase() {
     });
   }, [data, sort, filters.billType]);
 
+  const paged = useMemo(() => sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [sorted, page]);
+  useEffect(() => setPage(1), [filters, sort]);
+
   const totBills = sorted.length;
   const totGrand = sorted.reduce((s, r) => s + Number(r.round_off_enabled ? r.rounded_grand_total : r.grand_total), 0);
   const totPaid = sorted.reduce((s, r) => s + r.paid_amount, 0);
@@ -78,11 +86,30 @@ export default function Purchase() {
 
   const onSort = (k) => setSort((p) => ({ key: k, direction: p.key === k && p.direction === "asc" ? "desc" : "asc" }));
 
-  const openPay = (row) => {
+  const openPay = async (row) => {
     const bal = Number(row.round_off_enabled ? row.rounded_grand_total : row.grand_total) - row.paid_amount;
     setPayRow(row); setPayDate(todayISO());
     setPayLines([{ type: "Cash", amount: bal.toFixed(2), referenceNo: "", note: "" }]);
     setShowPay(true);
+    // Load payment history
+    setPayHistLoading(true);
+    try {
+      const r = await fetch(`${API}/get_purchase_payments.php?purchaseId=${row.id}`);
+      const j = await r.json().catch(() => ({}));
+      setPayHistory(j.data || []);
+    } catch { setPayHistory([]); }
+    finally { setPayHistLoading(false); }
+  };
+
+  const deletePayment = async (payId) => {
+    if (!payRow) return;
+    try {
+      const r = await fetch(`${API}/delete_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: payId, purchaseId: payRow.id }) });
+      const j = await r.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Failed");
+      openPay(payRow);
+      fetch_();
+    } catch (e) { alert(e.message); }
   };
 
   const savePay = async () => {
@@ -171,7 +198,7 @@ export default function Purchase() {
                 <tr><td colSpan={10} style={{ textAlign: "center", padding: 24, color: C.textSub }}>Loading…</td></tr>
               ) : sorted.length === 0 ? (
                 <tr><td colSpan={10} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No records found</td></tr>
-              ) : sorted.map((r) => {
+              ) : paged.map((r) => {
                 const total = r.round_off_enabled ? r.rounded_grand_total : r.grand_total;
                 const bal = total - r.paid_amount;
                 const overdue = r.due_date && r.due_date < todayISO() && r.payment_status !== "Paid";
@@ -211,6 +238,7 @@ export default function Purchase() {
             </tbody>
           </table>
         </div>
+        <Pagination total={sorted.length} page={page} onPage={setPage} />
       </div>
 
       {/* Pay Modal */}
@@ -223,6 +251,26 @@ export default function Purchase() {
             <div style={{ marginTop: 4 }}><strong>Total:</strong> ₹{fmt2(payRow.round_off_enabled ? payRow.rounded_grand_total : payRow.grand_total)} · <strong>Paid:</strong> ₹{fmt2(payRow.paid_amount)} · <strong>Balance:</strong> ₹{fmt2((payRow.round_off_enabled ? payRow.rounded_grand_total : payRow.grand_total) - payRow.paid_amount)}</div>
           </div>
         )}
+        {/* Existing payments */}
+        {payHistLoading ? <div style={{ padding: 12, textAlign: "center", color: C.textSub, fontSize: 13 }}>Loading history...</div> : payHistory.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, marginBottom: 6, textTransform: "uppercase" }}>Payment History</div>
+            <table className="g-table" style={{ fontSize: 13 }}>
+              <thead><tr><th>Date</th><th>Mode</th><th style={{ textAlign: "right" }}>Amount</th><th style={{ width: 36 }}></th></tr></thead>
+              <tbody>
+                {payHistory.map((p) => (
+                  <tr key={p.id}>
+                    <td style={{ color: C.textSub }}>{p.pay_date}</td>
+                    <td style={{ fontWeight: 600 }}>{p.mode}</td>
+                    <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmt2(p.amount)}</td>
+                    <td><button className="g-btn danger sm" onClick={() => deletePayment(p.id)}><FiX size={11} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <Field label="Payment Date"><input className="g-inp" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></Field>
         <div style={{ marginTop: 14 }}>
           {payLines.map((p, i) => (

@@ -20,7 +20,11 @@
       "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"SELECT id, name, role FROM users;\")",
       "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"DESCRIBE invoices;\")",
       "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"SHOW TABLES LIKE ''%payment%'';\")",
-      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"DESCRIBE invoice_payments;\")"
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"DESCRIBE invoice_payments;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root myshop -e \"SHOW COLUMNS FROM invoices LIKE ''%gstin%'';\")",
+      "Bash(where pdftotext:*)",
+      "Bash(pdftotext -v)",
+      "Bash(where tesseract:*)"
     ]
   }
 }

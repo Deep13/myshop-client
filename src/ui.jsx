@@ -32,6 +32,7 @@ export const GLOBAL_CSS = `
 #g-root .g-inp:disabled { background: #f8fafc !important; color: #9ca3af !important; cursor: not-allowed !important; }
 #g-root .g-inp::placeholder { color: #a1a1aa !important; font-weight: 400 !important; }
 #g-root .g-inp.sm { height: 34px !important; font-size: 13px !important; padding: 0 10px !important; border-radius: 7px !important; }
+#g-root .g-inp.sm.search { padding-left: 30px !important; }
 #g-root .g-inp.lg { height: 48px !important; font-size: 15px !important; padding: 0 15px !important; border-radius: 10px !important; }
 
 /* ── Select ── */
@@ -140,6 +141,15 @@ export const GLOBAL_CSS = `
   border: 1.5px solid transparent !important; outline: none !important;
   border-radius: 7px !important; transition: all 0.12s !important;
 }
+#g-root .g-td-inp.num {
+  height: 30px !important; padding: 0 6px !important;
+  font-size: 12px !important; text-align: right !important;
+  border-radius: 6px !important;
+}
+#g-root .g-td-inp.item-search {
+  height: 40px !important; padding: 0 8px 0 28px !important;
+  font-size: 14.5px !important; font-weight: 500 !important;
+}
 #g-root .g-td-inp:focus { background: #eff6ff !important; border-color: #bfdbfe !important; }
 #g-root .g-td-inp::placeholder { color: #cbd5e1 !important; }
 
@@ -201,6 +211,34 @@ export const GLOBAL_CSS = `
 
 @keyframes g-modal-in { from{opacity:0;transform:scale(0.97) translateY(8px);}to{opacity:1;transform:none;} }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Dark Mode ── */
+html.dark #g-root { background: #0f172a !important; color: #e2e8f0 !important; }
+html.dark #g-root .g-card,
+html.dark #g-root .g-table thead tr { background: #1e293b !important; border-color: #334155 !important; }
+html.dark #g-root .g-table tbody td { border-color: #334155 !important; color: #cbd5e1 !important; }
+html.dark #g-root .g-table tbody tr:hover td { background: #293548 !important; }
+html.dark #g-root .g-inp,
+html.dark #g-root .g-sel,
+html.dark #g-root .g-td-inp { background: #1e293b !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+html.dark #g-root .g-inp:focus,
+html.dark #g-root .g-sel:focus,
+html.dark #g-root .g-td-inp:focus { border-color: #60a5fa !important; box-shadow: 0 0 0 3px rgba(96,165,250,0.15) !important; }
+html.dark #g-root .g-inp::placeholder,
+html.dark #g-root .g-td-inp::placeholder { color: #64748b !important; }
+html.dark #g-root .g-btn.ghost { background: #1e293b !important; color: #cbd5e1 !important; border-color: #475569 !important; }
+html.dark #g-root .g-btn.ghost:hover { background: #334155 !important; border-color: #60a5fa !important; color: #60a5fa !important; }
+html.dark #g-root .g-card-head,
+html.dark #g-root .g-table thead th { background: #1e293b !important; color: #94a3b8 !important; border-color: #334155 !important; }
+html.dark [style*="background: #fff"],
+html.dark [style*="background:#fff"],
+html.dark [style*="background: rgb(255"],
+html.dark div[style*="#f8fafc"],
+html.dark div[style*="#f1f5f9"],
+html.dark div[style*="#fafafa"] { background-color: #1e293b !important; }
+html.dark [style*="color: #111827"],
+html.dark [style*="color:#111827"],
+html.dark [style*="color: #0f172a"] { color: #e2e8f0 !important; }
 `;
 
 import React, { useEffect } from "react";
@@ -301,7 +339,43 @@ export function applyDateRange(range) {
   }
 }
 
-export const API = "http://localhost/myshop-backend";
+export const PAGE_SIZE = 100;
+export function Pagination({ total, page, onPage }) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages <= 1) return null;
+  const from = (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, total);
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1.5px solid #e5e7eb", background: "#fafafa", fontSize: 13 }}>
+      <span style={{ color: "#6b7280", fontWeight: 500 }}>Showing {from}–{to} of {total}</span>
+      <div style={{ display: "flex", gap: 4 }}>
+        <button onClick={() => onPage(1)} disabled={page === 1}
+          style={{ ...pgBtn, opacity: page === 1 ? 0.4 : 1 }}>«</button>
+        <button onClick={() => onPage(page - 1)} disabled={page === 1}
+          style={{ ...pgBtn, opacity: page === 1 ? 0.4 : 1 }}>‹</button>
+        {Array.from({ length: pages }, (_, i) => i + 1)
+          .filter((p) => p === 1 || p === pages || Math.abs(p - page) <= 2)
+          .reduce((acc, p, i, arr) => {
+            if (i > 0 && p - arr[i - 1] > 1) acc.push("...");
+            acc.push(p);
+            return acc;
+          }, [])
+          .map((p, i) =>
+            p === "..." ? <span key={`e${i}`} style={{ padding: "0 4px", color: "#9ca3af" }}>…</span> :
+            <button key={p} onClick={() => onPage(p)}
+              style={{ ...pgBtn, background: p === page ? "#034C9D" : "#fff", color: p === page ? "#fff" : "#374151", borderColor: p === page ? "#034C9D" : "#d1d5db", fontWeight: p === page ? 700 : 500 }}>{p}</button>
+          )}
+        <button onClick={() => onPage(page + 1)} disabled={page === pages}
+          style={{ ...pgBtn, opacity: page === pages ? 0.4 : 1 }}>›</button>
+        <button onClick={() => onPage(pages)} disabled={page === pages}
+          style={{ ...pgBtn, opacity: page === pages ? 0.4 : 1 }}>»</button>
+      </div>
+    </div>
+  );
+}
+const pgBtn = { minWidth: 32, height: 32, border: "1.5px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", color: "#374151" };
+
+export const API = import.meta.env.VITE_API_URL || "http://localhost/myshop-backend";
 export const asNum = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
 export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 export const fmt2 = (n) => Number(n || 0).toFixed(2);

@@ -6,6 +6,8 @@ import {
   FiClock, FiDollarSign, FiRefreshCw, FiTrendingUp, FiTrendingDown,
   FiCreditCard, FiSmartphone
 } from "react-icons/fi";
+import { getShopSettings } from "./thermalPrint.js";
+import usePageMeta from "./usePageMeta.js";
 import { BsCash } from "react-icons/bs";
 
 const asN = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
@@ -57,10 +59,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("Today");
 
+  usePageMeta("Dashboard", "Sales, purchase, inventory overview and alerts");
+  const lowStockLimit = getShopSettings().lowStockLimit || 5;
+
   const load = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API}/get_dashboard.php`);
+      const res = await fetch(`${API}/get_dashboard.php?low_stock_limit=${lowStockLimit}`);
       const j = await res.json();
       if (j.status === "success") setData(j.data);
     } catch (e) { console.error(e); }
@@ -79,6 +84,7 @@ export default function App() {
   const inv = data?.inventory || {};
   const expiring = data?.expiring_items || [];
   const expired = data?.expired_items || [];
+  const lowStock = data?.low_stock_items || [];
   const needPay = data?.need_to_pay || [];
   const needColl = data?.need_to_collect || [];
   const today = todayISO();
@@ -262,6 +268,53 @@ export default function App() {
           </div>
 
           {/* ══════════════════════════════════
+              LOW STOCK ITEMS
+          ══════════════════════════════════ */}
+          {lowStock.length > 0 && (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", marginBottom: 20, overflow: "hidden" }}>
+              <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#fff7ed", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, background: C.orangeLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.orange }}><FiPackage size={14} /></div>
+                  <span style={{ fontWeight: 800, fontSize: 14, color: C.text }}>Low Stock Items</span>
+                  <span style={{ fontSize: 11, color: C.textSub, fontWeight: 500 }}>(qty &le; {lowStockLimit})</span>
+                </div>
+                <span style={{ fontWeight: 800, fontSize: 14, color: C.orange, background: C.orangeLight, padding: "2px 10px", borderRadius: 20 }}>{lowStock.length}</span>
+              </div>
+              <div style={{ maxHeight: 280, overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      {["Item", "Code", "Stock"].map((h) => (
+                        <th key={h} style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", borderBottom: "1.5px solid #f3f4f6", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStock.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: "pointer" }} onClick={() => navigate(`/inventory/${r.id}`)}>
+                        <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{r.item_name}</td>
+                        <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.item_code}</td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <span style={{
+                            fontWeight: 800, fontSize: 13,
+                            color: asN(r.total_qty) <= 2 ? C.red : C.orange,
+                            background: asN(r.total_qty) <= 2 ? C.redLight : C.orangeLight,
+                            padding: "2px 10px", borderRadius: 6,
+                          }}>{r.total_qty}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ padding: "10px 18px", borderTop: "1.5px solid #f3f4f6", background: "#fafafa", display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12, color: C.textSub }}>{lowStock.length} items low</span>
+                <button className="g-btn ghost sm" onClick={() => navigate("/inventory")}>View All &rarr;</button>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════
               SECTIONS 5 & 6 — PAYABLES / RECEIVABLES
           ══════════════════════════════════ */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
@@ -282,21 +335,20 @@ export default function App() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "#f8fafc" }}>
-                        {["Distributor", "Bill No", "Bill Date", "Due Date", "Balance"].map((h) => (
+                        {["Distributor", "Bills", "Due Date", "Balance"].map((h) => (
                           <th key={h} style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", borderBottom: "1.5px solid #f3f4f6", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {needPay.map((r, i) => {
-                        const overdue = r.due_date && r.due_date < today;
+                        const overdue = r.earliest_due && r.earliest_due < today;
                         return (
-                          <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: "pointer" }} onClick={() => navigate(`/addpurchase?purchaseId=${r.id}`)}>
+                          <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: "pointer" }} onClick={() => navigate("/distributors")}>
                             <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{r.distributor_name}</td>
-                            <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.bill_no}</td>
-                            <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.bill_date}</td>
+                            <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.bill_count}</td>
                             <td style={{ padding: "8px 12px", fontSize: 12 }}>
-                              <span style={{ color: overdue ? C.red : C.text, fontWeight: overdue ? 700 : 400 }}>{r.due_date || "—"}</span>
+                              <span style={{ color: overdue ? C.red : C.text, fontWeight: overdue ? 700 : 400 }}>{r.earliest_due || "—"}</span>
                               {overdue && <div style={{ fontSize: 10, color: C.red }}>OVERDUE</div>}
                             </td>
                             <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 800, color: C.orange }}>₹{asN(r.balance).toFixed(2)}</td>
@@ -308,8 +360,8 @@ export default function App() {
                 )}
               </div>
               <div style={{ padding: "10px 18px", borderTop: "1.5px solid #f3f4f6", background: "#fafafa", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: C.textSub }}>{needPay.length} bills pending</span>
-                <button className="g-btn ghost sm" onClick={() => navigate("/purchase")}>View All →</button>
+                <span style={{ fontSize: 12, color: C.textSub }}>{needPay.length} distributors</span>
+                <button className="g-btn ghost sm" onClick={() => navigate("/distributors")}>View All →</button>
               </div>
             </div>
 
@@ -329,17 +381,16 @@ export default function App() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "#f8fafc" }}>
-                        {["Customer", "Invoice", "Date", "Balance"].map((h) => (
+                        {["Customer", "Invoices", "Balance"].map((h) => (
                           <th key={h} style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", borderBottom: "1.5px solid #f3f4f6", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {needColl.map((r, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: "pointer" }} onClick={() => navigate(`/addsales?id=${r.id}`)}>
+                        <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: "pointer" }} onClick={() => navigate("/customers")}>
                           <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{r.customer_name}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.invoice_no}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.invoice_date}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.invoice_count}</td>
                           <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 800, color: C.green }}>₹{asN(r.balance).toFixed(2)}</td>
                         </tr>
                       ))}
@@ -348,8 +399,8 @@ export default function App() {
                 )}
               </div>
               <div style={{ padding: "10px 18px", borderTop: "1.5px solid #f3f4f6", background: "#fafafa", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: C.textSub }}>{needColl.length} invoices pending</span>
-                <button className="g-btn ghost sm" onClick={() => navigate("/sales")}>View All →</button>
+                <span style={{ fontSize: 12, color: C.textSub }}>{needColl.length} customers</span>
+                <button className="g-btn ghost sm" onClick={() => navigate("/customers")}>View All →</button>
               </div>
             </div>
           </div>

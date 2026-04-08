@@ -3,6 +3,10 @@ import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown
 import { C, GLOBAL_CSS, API, Modal, fmt2, DATE_RANGES, applyDateRange } from "../ui.jsx";
 import { downloadExcel, generateExcelBlob } from "../excelExport.js";
 import { getShopSettings } from "../thermalPrint.js";
+import usePageMeta from "../usePageMeta.js";
+
+const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+const isAdmin = user?.role === "admin";
 
 /* ── Tiny bar chart ── */
 function BarChart({ data, labelKey, valueKey, color = C.brand, height = 200 }) {
@@ -60,6 +64,7 @@ const TABS = [
 ];
 
 export default function Reports() {
+  usePageMeta("Reports", "Sales, purchase, profit, GST and accounting reports");
   const [tab, setTab] = useState("sales");
   const [salesData, setSalesData] = useState(null);
   const [gstData, setGstData] = useState(null);
@@ -445,9 +450,9 @@ export default function Reports() {
         <input className="g-inp sm" type="date" style={{ width: 130 }} value={from} onChange={(e) => { setFrom(e.target.value); setDateRange("Custom"); }} />
         <input className="g-inp sm" type="date" style={{ width: 130 }} value={to} onChange={(e) => { setTo(e.target.value); setDateRange("Custom"); }} />
         <div style={{ flex: 1 }} />
-        <button className="g-btn ghost sm" onClick={onUpgradeClick} style={{ color: C.red, borderColor: "#fca5a5" }}>
+        {isAdmin && <button className="g-btn ghost sm" onClick={onUpgradeClick} style={{ color: C.red, borderColor: "#fca5a5" }}>
           <FiArrowUp size={13} /> Upgrade
-        </button>
+        </button>}
         {/* Send to CA dropdown */}
         <div style={{ position: "relative" }}>
           <button className="g-btn primary sm" disabled={sendingCA || loading} onClick={(e) => { e.stopPropagation(); setShowCAMenu((p) => !p); }}>

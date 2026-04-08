@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FiSearch, FiRefreshCw, FiPhone, FiUser, FiDollarSign, FiX, FiDownload } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO } from "../ui.jsx";
+import { FiSearch, FiRefreshCw, FiPhone, FiUser, FiDollarSign, FiX, FiDownload, FiCheck } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { downloadExcel } from "../excelExport.js";
+import usePageMeta from "../usePageMeta.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
 export default function Customers() {
+  usePageMeta("Customers", "Customer list, balances and payment history");
   const [rawSales, setRawSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState({ key: "name", direction: "asc" });
+  const [page, setPage] = useState(1);
 
   // Pay modal
   const [showPay, setShowPay] = useState(false);
@@ -18,6 +21,7 @@ export default function Customers() {
   const [payDate, setPayDate] = useState(todayISO());
   const [payLines, setPayLines] = useState([{ type: "Cash", amount: "", referenceNo: "", note: "" }]);
   const [paySaving, setPaySaving] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   const load = async () => {
     try {
@@ -114,6 +118,9 @@ export default function Customers() {
     });
   }, [data, q, sort]);
 
+  const paged = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
+  useEffect(() => setPage(1), [q, sort]);
+
   const totalCustomers = filtered.length;
   const totalRevenue = filtered.reduce((s, r) => s + r.totalAmount, 0);
   const totalBalance = filtered.reduce((s, r) => s + r.balance, 0);
@@ -200,11 +207,11 @@ export default function Customers() {
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
         <div style={{ position: "relative", flex: 1, minWidth: 160 }}>
           <FiSearch size={13} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: C.textSub, pointerEvents: "none" }} />
-          <input className="g-inp sm" style={{ paddingLeft: 28, width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer name or phone…" />
+          <input className="g-inp sm search" style={{ width: "100%" }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer name or phone…" />
         </div>
         <span style={{ fontSize: 11, color: C.textSub, whiteSpace: "nowrap" }}>{filtered.length} results</span>
-        <button className="g-btn ghost sm" title="Download Excel" onClick={() => downloadExcel(
-          [
+        <button className="g-btn ghost sm" title="Download Excel" onClick={() => {
+          downloadExcel([
             { key: "name", label: "Customer" },
             { key: "phone", label: "Phone" },
             { key: "invoiceCount", label: "Invoices", type: "int" },
@@ -212,8 +219,9 @@ export default function Customers() {
             { key: "balance", label: "Balance ₹", type: "number" },
             { key: "lastDate", label: "Last Date" },
             { key: "lastInvoice", label: "Last Invoice" },
-          ], filtered, "Customers"
-        )}><FiDownload size={14} /></button>
+          ], filtered, "Customers");
+          setDownloaded(true); setTimeout(() => setDownloaded(false), 2000);
+        }}>{downloaded ? <FiCheck size={14} /> : <FiDownload size={14} />}</button>
         <button className="g-btn ghost sm" onClick={() => { load(); loadBalances(); }} disabled={loading}><FiRefreshCw size={14} /></button>
       </div>
 
@@ -238,7 +246,7 @@ export default function Customers() {
                 <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: C.textSub }}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No customers found</td></tr>
-              ) : filtered.map((r, i) => (
+              ) : paged.map((r, i) => (
                 <tr key={i}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -268,6 +276,7 @@ export default function Customers() {
             </tbody>
           </table>
         </div>
+        <Pagination total={filtered.length} page={page} onPage={setPage} />
       </div>
 
       {/* Pay Modal */}
