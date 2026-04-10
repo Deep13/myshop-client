@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload } from "react-icons/fi";
 import * as XLSX from "xlsx";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -1588,7 +1588,12 @@ export default function AddPurchase() {
             </Field>
           </div>
           <Field label="Item Code" required hint="Short unique code">
-            <input className="g-inp lg" value={newItem.itemCode} onChange={(e) => setNewItem((p) => ({ ...p, itemCode: e.target.value }))} placeholder="e.g. PCM500" />
+            <div style={{ display: "flex", gap: 6 }}>
+              <input className="g-inp lg" style={{ flex: 1 }} value={newItem.itemCode} onChange={(e) => setNewItem((p) => ({ ...p, itemCode: e.target.value }))} placeholder="e.g. PCM500" />
+              <button type="button" className="g-btn ghost" style={{ whiteSpace: "nowrap", height: 42 }} onClick={() => setNewItem((p) => ({ ...p, itemCode: "ITM" + Date.now().toString(36).toUpperCase() }))}>
+                Generate
+              </button>
+            </div>
           </Field>
           <Field label="HSN Code" hint="For GST">
             <input className="g-inp lg" value={newItem.hsn} onChange={(e) => setNewItem((p) => ({ ...p, hsn: e.target.value }))} placeholder="Optional" />
@@ -1812,7 +1817,7 @@ export default function AddPurchase() {
                           <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.qty}</td>
                           <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.distributor_name}</td>
                           <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{p.bill_no}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{p.bill_date}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{fmtDate(p.bill_date)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1844,7 +1849,7 @@ export default function AddPurchase() {
                           <td style={{ padding: "8px 12px", fontSize: 13 }}>₹{m.purchase_price.toFixed(2)}</td>
                           <td style={{ padding: "8px 12px", fontSize: 13 }}>{m.distributor_name}</td>
                           <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{m.bill_no}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{m.bill_date}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{fmtDate(m.bill_date)}</td>
                         </tr>
                       ))}
                     </tbody>

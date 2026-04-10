@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, fmtDate, Pagination, PAGE_SIZE } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -198,7 +198,7 @@ export default function Inventory() {
                     <td style={{ textAlign: "right", color: C.textSub }}>{r.batchCount}</td>
                     <td style={{ textAlign: "right", fontWeight: 600 }}>{fmtINR(r.stockByPtr)}</td>
                     <td style={{ color: expColor, fontWeight: r.hasExpired || r.hasExpiring ? 700 : 400, fontSize: 13 }}>
-                      {r.nearestExpiry || "—"}
+                      {r.nearestExpiry ? fmtDate(r.nearestExpiry) : "—"}
                     </td>
                     <td style={{ textAlign: "right" }}>₹{r.mrp}</td>
                     <td style={{ textAlign: "right" }}>₹{r.salePrice}</td>

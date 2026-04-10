@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2 } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
 
@@ -234,10 +234,7 @@ export default function AddSales() {
       const u = { ...n[i] };
       // Find stock for this inventory record
       const invRec = u.invId ? inventory.find((inv) => inv.id === u.invId) : null;
-      const stock  = invRec ? asNum(invRec.current_qty) : Infinity;
       let qty = asNum(val);
-      // Cap qty at available stock
-      if (qty > stock) qty = stock;
       // Keep the typed string for display but floor to stock
       u.qty    = String(qty);
       u.amount = fmt2(calcRowAmount({ ...u, qty }));
@@ -258,10 +255,7 @@ export default function AddSales() {
         // Increment qty of existing row instead of filling a new one
         const n = [...prev];
         const existing = { ...n[existingIdx] };
-        // Cap at available stock
-        const invRec = inventory.find((it) => it.id === invId);
-        const stock = invRec ? asNum(invRec.current_qty) : Infinity;
-        const newQty = Math.min(asNum(existing.qty) + 1, stock);
+        const newQty = asNum(existing.qty) + 1;
         existing.qty = String(newQty);
         existing.amount = fmt2(calcRowAmount(existing));
         n[existingIdx] = existing;
@@ -635,14 +629,14 @@ export default function AddSales() {
                                 if (firstInStock < 0 && !isZero) firstInStock = si;
                                 const isFirst = si === firstInStock;
                                 return (
-                                  <div key={inv.id} onMouseDown={isZero ? undefined : () => pickBatch(idx, inv)}
+                                  <div key={inv.id} onMouseDown={() => pickBatch(idx, inv)}
                                     style={{
                                       display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0,
-                                      padding: "10px 16px", cursor: isZero ? "not-allowed" : "pointer",
+                                      padding: "10px 16px", cursor: "pointer",
                                       borderBottom: "1px solid #f3f4f6",
-                                      background: isFirst ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : isZero ? "#f8f8f8" : "#fff",
-                                      color: isFirst ? "#fff" : isZero ? C.textLight : C.text,
-                                      opacity: isZero ? 0.6 : 1,
+                                      background: isFirst ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
+                                      color: isFirst ? "#fff" : C.text,
+                                      opacity: 1,
                                       transition: "background 0.1s",
                                     }}
                                     onMouseEnter={(e) => { if (!isFirst && !isZero) e.currentTarget.style.background = "#f0f9ff"; }}
@@ -665,7 +659,7 @@ export default function AddSales() {
                                     <div style={{ fontSize: 12, display: "flex", alignItems: "center",
                                       color: isExp ? (isFirst ? "#fecaca" : C.red) : (isFirst ? "rgba(255,255,255,0.9)" : C.textSub),
                                       fontWeight: isExp ? 700 : 400 }}>
-                                      {inv.exp_date || "—"}
+                                      {inv.exp_date ? fmtDate(inv.exp_date) : "—"}
                                     </div>
                                     {/* MRP */}
                                     <div style={{ fontSize: 13, fontWeight: 700, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end",

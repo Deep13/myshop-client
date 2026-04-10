@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, todayISO } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
 import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
@@ -68,8 +68,7 @@ export default function MobileSale() {
       const existing = prev.findIndex((c) => c.invId === item.id);
       if (existing >= 0) {
         const n = [...prev];
-        const stock = asNum(item.current_qty);
-        if (n[existing].qty < stock) n[existing] = { ...n[existing], qty: n[existing].qty + 1 };
+        n[existing] = { ...n[existing], qty: n[existing].qty + 1 };
         return n;
       }
       return [...prev, {
@@ -101,13 +100,14 @@ export default function MobileSale() {
 
   const onScanResult = useCallback((code) => {
     const item = findByCode(code);
+    stopScanner();
     if (item) {
       addToCart(item);
-      stopScanner();
       if (navigator.vibrate) navigator.vibrate(100);
     } else {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
       const cleaned = code.replace(/[\s\r\n\t\x00-\x1f]/g, "");
-      toast(`Item not found: ${cleaned}\n${inventory.length} items loaded.`, "warn");
+      toast(`Item not found: ${cleaned}. Tap Scan to try again.`, "warn");
     }
   }, [findByCode, addToCart]);
 
@@ -160,7 +160,6 @@ export default function MobileSale() {
       const n = [...prev];
       const newQty = n[idx].qty + delta;
       if (newQty <= 0) return n.filter((_, i) => i !== idx);
-      if (newQty > n[idx].stock) return n;
       n[idx] = { ...n[idx], qty: newQty };
       return n;
     });

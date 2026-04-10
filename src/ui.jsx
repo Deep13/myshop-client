@@ -378,5 +378,6 @@ const pgBtn = { minWidth: 32, height: 32, border: "1.5px solid #d1d5db", borderR
 export const API = import.meta.env.VITE_API_URL || "http://localhost/myshop-backend";
 export const asNum = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
 export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+export const fmtDate = (d) => { if (!d) return "—"; const p = String(d).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d; };
 export const fmt2 = (n) => Number(n || 0).toFixed(2);
 export const fmtINR = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

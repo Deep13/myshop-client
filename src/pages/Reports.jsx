@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown, FiArrowUp, FiDownload, FiFileText, FiDollarSign, FiSend } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Modal, fmt2, DATE_RANGES, applyDateRange } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Modal, fmt2, fmtDate, DATE_RANGES, applyDateRange } from "../ui.jsx";
 import { downloadExcel, generateExcelBlob } from "../excelExport.js";
 import { getShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
@@ -425,7 +425,7 @@ export default function Reports() {
                 <tr key={i}>
                   {columns.map((c) => (
                     <td key={c.key} style={{ textAlign: c.type === "number" || c.type === "int" ? "right" : "left", fontWeight: c.bold ? 700 : undefined }}>
-                      {c.type === "number" ? `₹${fmt2(r[c.key])}` : r[c.key] ?? "—"}
+                      {c.type === "number" ? `₹${fmt2(r[c.key])}` : c.type === "date" ? fmtDate(r[c.key]) : r[c.key] ?? "—"}
                     </td>
                   ))}
                 </tr>
@@ -895,7 +895,7 @@ export default function Reports() {
               </div>
               <GSTTable columns={[
                 { key: "invoice_no", label: "Invoice No" },
-                { key: "invoice_date", label: "Date" },
+                { key: "invoice_date", label: "Date", type: "date" },
                 { key: "customer_name", label: "Customer" },
                 { key: "item_name", label: "Item" },
                 { key: "hsn", label: "HSN" },
@@ -919,7 +919,7 @@ export default function Reports() {
               </div>
               <GSTTable columns={[
                 { key: "bill_no", label: "Bill No" },
-                { key: "bill_date", label: "Date" },
+                { key: "bill_date", label: "Date", type: "date" },
                 { key: "distributor_name", label: "Distributor" },
                 { key: "gstin", label: "GSTIN" },
                 { key: "item_name", label: "Item" },
@@ -1175,7 +1175,7 @@ export default function Reports() {
                         <tbody>
                           {daily.map((d) => (
                             <tr key={d.date}>
-                              <td>{d.date}</td>
+                              <td>{fmtDate(d.date)}</td>
                               <td style={{ textAlign: "right", fontWeight: 600, color: C.green }}>₹{fmt2(d.sales_received)}</td>
                               <td style={{ textAlign: "right", fontWeight: 600, color: C.orange }}>₹{fmt2(d.purchase_paid)}</td>
                               <td style={{ textAlign: "right", fontWeight: 700, color: d.net >= 0 ? C.green : C.red }}>₹{fmt2(d.net)}</td>

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmt2 } from "../ui.jsx";
+import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX, FiPrinter } from "react-icons/fi";
+import { printLabel } from "../printLabel.js";
+import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -160,6 +161,11 @@ export default function ItemDetail() {
         </div>
         {hasExpired  && <span style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, background: C.redLight,    color: C.red,    fontWeight: 700, fontSize: 12 }}>⚠ Expired Stock</span>}
         {hasExpiring && <span style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, background: C.yellowLight, color: C.yellow, fontWeight: 700, fontSize: 12 }}>⚠ Expiring Soon</span>}
+        <div style={{ marginLeft: "auto" }}>
+          <button className="g-btn ghost sm" onClick={() => printLabel({ itemName: item.name, salePrice: item.salePrice || item.sale_price, itemCode: item.code })}>
+            <FiPrinter size={13} /> Print Label
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 20, alignItems: "start" }}>
@@ -273,7 +279,7 @@ export default function ItemDetail() {
                         <tr key={i} style={{ background: isExp ? "#fff5f5" : isExpNear ? "#fffbeb" : undefined }}>
                           <td style={{ fontWeight: 600 }}>{b.batch_no || "—"}</td>
                           <td style={{ color: isExp ? C.red : isExpNear ? C.yellow : C.text, fontWeight: isExp || isExpNear ? 700 : 400, fontSize: 13 }}>
-                            {b.exp_date || "—"}
+                            {b.exp_date ? fmtDate(b.exp_date) : "—"}
                             {isExp    && <div style={{ fontSize: 10, color: C.red,    fontWeight: 700 }}>EXPIRED</div>}
                             {isExpNear && !isExp && <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700 }}>EXPIRING</div>}
                           </td>
@@ -292,7 +298,7 @@ export default function ItemDetail() {
                             {b.purchase_bill_no
                               ? <span style={{ color: C.brand, cursor: "pointer", textDecoration: "underline" }} onClick={() => navigate(`/addpurchase?purchaseId=${b.purchase_bill_id}`)}>{b.purchase_bill_no}</span>
                               : "—"}
-                            {b.purchase_bill_date && <div style={{ fontSize: 11, color: C.textSub }}>{b.purchase_bill_date}</div>}
+                            {b.purchase_bill_date && <div style={{ fontSize: 11, color: C.textSub }}>{fmtDate(b.purchase_bill_date)}</div>}
                           </td>
                           <td style={{ fontSize: 12, color: C.textSub }}>{b.distributor_name || "—"}</td>
                         </tr>
@@ -327,7 +333,7 @@ export default function ItemDetail() {
                   <tbody>
                     {purchase_history.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontSize: 12 }}>{r.bill_date}</td>
+                        <td style={{ fontSize: 12 }}>{fmtDate(r.bill_date)}</td>
                         <td>
                           <span style={{ color: C.brand, cursor: "pointer", fontWeight: 600 }} onClick={() => navigate(`/addpurchase?purchaseId=${r.bill_id}`)}>
                             {r.bill_no}
@@ -335,7 +341,7 @@ export default function ItemDetail() {
                         </td>
                         <td style={{ fontSize: 12, color: C.textSub }}>{r.distributor_name}</td>
                         <td style={{ fontSize: 12 }}>{r.batch_no || "—"}</td>
-                        <td style={{ fontSize: 12, color: r.exp_date && r.exp_date < today ? C.red : C.text }}>{r.exp_date || "—"}</td>
+                        <td style={{ fontSize: 12, color: r.exp_date && r.exp_date < today ? C.red : C.text }}>{r.exp_date ? fmtDate(r.exp_date) : "—"}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{r.qty}</td>
                         <td style={{ textAlign: "right" }}>₹{fmt2(r.purchase_price)}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmt2(r.amount)}</td>
@@ -376,7 +382,7 @@ export default function ItemDetail() {
                   <tbody>
                     {sales_history.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontSize: 12 }}>{r.invoice_date}</td>
+                        <td style={{ fontSize: 12 }}>{fmtDate(r.invoice_date)}</td>
                         <td>
                           <span style={{ color: C.green, cursor: "pointer", fontWeight: 600 }} onClick={() => navigate(`/addsales?id=${r.invoice_id || r.id}`)}>
                             {r.invoice_no}

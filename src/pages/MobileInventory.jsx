@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, todayISO } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO } from "../ui.jsx";
+import { printLabel } from "../printLabel.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -22,9 +23,10 @@ export default function MobileInventory() {
   const [existingBatches, setExistingBatches] = useState([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
 
-  // Increase qty modal
-  const [incBatch, setIncBatch] = useState(null); // batch to increase
+  // Adjust qty modal
+  const [incBatch, setIncBatch] = useState(null); // batch to adjust
   const [incQty, setIncQty] = useState("1");
+  const [adjMode, setAdjMode] = useState("inc"); // "inc" or "dec"
 
   // New batch form
   const [showNewForm, setShowNewForm] = useState(false);
@@ -35,6 +37,10 @@ export default function MobileInventory() {
   const [purchasePrice, setPurchasePrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
   const [taxPct, setTaxPct] = useState("");
+
+  // Add item to master
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [newItem, setNewItem] = useState({ name: "", code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" });
 
   const [saving, setSaving] = useState(false);
   const [savedItems, setSavedItems] = useState([]);
@@ -100,12 +106,14 @@ export default function MobileInventory() {
 
   const onScanResult = useCallback((code) => {
     const item = findByCode(code);
+    stopScanner();
     if (item) {
       pickItem(item);
-      stopScanner();
       if (navigator.vibrate) navigator.vibrate(100);
     } else {
-      toast.warn(`Item not found: ${code.replace(/[\s\r\n\t\x00-\x1f]/g, "")}\n\n${items.length} items loaded. Please add this item to master first or check if item code matches.`);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      const cleaned = code.replace(/[\s\r\n\t\x00-\x1f]/g, "");
+      toast.warn(`Item not found: ${cleaned}. Add it to master or scan again.`);
     }
   }, [findByCode, pickItem]);
 
@@ -141,43 +149,82 @@ export default function MobileInventory() {
     ).slice(0, 8));
   }, [manualSearch, items]);
 
+  const generateCode = () => {
+    const code = "ITM" + Date.now().toString(36).toUpperCase();
+    setNewItem((p) => ({ ...p, code }));
+  };
+
+  const saveNewItem = async () => {
+    const name = newItem.name.trim(), code = newItem.code.trim();
+    if (!name) return toast.warn("Item name required");
+    if (!code) return toast.warn("Item code required");
+    setSaving(true);
+    try {
+      const r = await fetch(`${API}/add_item.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name, code, hsn: newItem.hsn.trim(),
+          mrp: asNum(newItem.mrp), salePrice: asNum(newItem.salePrice),
+          purchasePrice: asNum(newItem.purchasePrice), tax: asNum(newItem.tax),
+          is_primary: true, createdBy: user?.id || 1,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      const created = j.data;
+      setItems((p) => [created, ...p]);
+      // Auto-select the new item
+      pickItem({ id: created.id, name: created.name, code: created.code, mrp: created.mrp, purchase_price: created.purchasePrice, sale_price: created.salePrice, tax: created.tax });
+      setShowAddItem(false);
+      setNewItem({ name: "", code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" });
+      toast.success("Item added to master");
+    } catch (e) { toast.error(e.message || "Failed"); }
+    finally { setSaving(false); }
+  };
+
   const resetForm = () => {
     setSelItem(null); setExistingBatches([]); setShowNewForm(false);
-    setIncBatch(null); setBatchNo(""); setExpDate(""); setQty("1");
+    setIncBatch(null); setAdjMode("inc"); setBatchNo(""); setExpDate(""); setQty("1");
     setMrp(""); setPurchasePrice(""); setSalePrice(""); setTaxPct("");
     setManualSearch("");
   };
 
-  // Increase quantity of existing batch
-  const onIncreaseQty = async () => {
+  // Adjust quantity of existing batch (increase or decrease)
+  const onAdjustQty = async () => {
     if (!incBatch || !asNum(incQty)) return;
     setSaving(true);
     try {
-      const r = await fetch(`${API}/add_inventory.php`, {
+      const isInc = adjMode === "inc";
+      const url = isInc ? `${API}/add_inventory.php` : `${API}/reduce_inventory.php`;
+      const payload = isInc
+        ? {
+            itemId: asNum(incBatch.item_id),
+            batchNo: incBatch.batch_no || "",
+            expDate: incBatch.exp_date || "",
+            qty: asNum(incQty),
+            mrp: asNum(incBatch.mrp),
+            purchasePrice: asNum(incBatch.purchase_price),
+            salePrice: asNum(incBatch.sale_price),
+            taxPct: asNum(incBatch.tax_pct),
+            gstFlag: 1,
+            createdBy: user?.id || 1,
+          }
+        : { inventoryId: incBatch.id, qty: asNum(incQty) };
+      const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          itemId: asNum(incBatch.item_id),
-          batchNo: incBatch.batch_no || "",
-          expDate: incBatch.exp_date || "",
-          qty: asNum(incQty),
-          mrp: asNum(incBatch.mrp),
-          purchasePrice: asNum(incBatch.purchase_price),
-          salePrice: asNum(incBatch.sale_price),
-          taxPct: asNum(incBatch.tax_pct),
-          gstFlag: 1,
-          createdBy: user?.id || 1,
-        }),
+        body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
       setSavedItems((prev) => [{
         name: incBatch.item_name, code: incBatch.item_code,
         batchNo: incBatch.batch_no || "", qty: asNum(incQty),
+        type: adjMode,
         time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
       }, ...prev].slice(0, 20));
-      setIncBatch(null); setIncQty("1");
-      // Refresh batches
+      setIncBatch(null); setIncQty("1"); setAdjMode("inc");
       loadBatches(asNum(incBatch.item_id));
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     } catch (e) { toast.error(e.message || "Failed"); }
@@ -244,13 +291,22 @@ export default function MobileInventory() {
       <div style={{ padding: "12px 16px" }}>
 
         {/* Scanner */}
-        <button onClick={toggleScanner} style={{
-          width: "100%", padding: "14px", border: "none", borderRadius: 10,
-          background: scanning ? C.red : C.brand, color: "#fff",
-          fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 12,
-        }}>
-          {scanning ? "Stop Scanner" : "Scan Barcode"}
-        </button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button onClick={toggleScanner} style={{
+            flex: 1, padding: "14px", border: "none", borderRadius: 10,
+            background: scanning ? C.red : C.brand, color: "#fff",
+            fontSize: 15, fontWeight: 700, cursor: "pointer",
+          }}>
+            {scanning ? "Stop Scanner" : "Scan Barcode"}
+          </button>
+          <button onClick={() => { setShowAddItem(true); setNewItem({ name: "", code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" }); }} style={{
+            padding: "14px 16px", border: "none", borderRadius: 10,
+            background: C.green, color: "#fff",
+            fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+          }}>
+            + New Item
+          </button>
+        </div>
 
         <div id="inv-scanner" style={{
           display: scanning ? "block" : "none",
@@ -272,7 +328,7 @@ export default function MobileInventory() {
                 }
               }}
             />
-            {suggestions.length > 0 && (
+            {suggestions.length > 0 ? (
               <div style={{
                 position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
                 background: "#fff", border: "1.5px solid #d1d5db", borderRadius: 10,
@@ -286,6 +342,18 @@ export default function MobileInventory() {
                     <div style={{ fontSize: 12, color: C.sub }}>{it.code} · MRP: ₹{it.mrp}</div>
                   </div>
                 ))}
+              </div>
+            ) : manualSearch.trim().length > 1 && (
+              <div style={{
+                position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+                background: "#fff", border: "1.5px solid #d1d5db", borderRadius: 10,
+                boxShadow: "0 6px 20px rgba(0,0,0,0.12)", padding: "14px",
+              }}>
+                <div style={{ fontSize: 13, color: C.sub, marginBottom: 10 }}>No items found for "{manualSearch.trim()}"</div>
+                <button onClick={() => { setShowAddItem(true); setNewItem({ name: manualSearch.trim(), code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" }); }}
+                  style={{ width: "100%", padding: "10px", border: "none", borderRadius: 8, background: C.brand, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  + Add to Master
+                </button>
               </div>
             )}
           </div>
@@ -304,10 +372,16 @@ export default function MobileInventory() {
                   <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{selItem.name}</div>
                   <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{selItem.code}{selItem.hsn ? ` · HSN: ${selItem.hsn}` : ""}</div>
                 </div>
-                <button onClick={resetForm} style={{
-                  background: "none", border: "none", color: C.sub, cursor: "pointer",
-                  fontSize: 20, padding: "0 4px", lineHeight: 1,
-                }}>×</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                  <button onClick={() => printLabel({ itemName: selItem.name, salePrice: selItem.salePrice || selItem.sale_price || selItem.mrp, itemCode: selItem.code })}
+                    style={{ background: "none", border: "1.5px solid #d1d5db", borderRadius: 8, color: C.brand, cursor: "pointer", padding: "6px 10px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                    Print Label
+                  </button>
+                  <button onClick={resetForm} style={{
+                    background: "none", border: "none", color: C.sub, cursor: "pointer",
+                    fontSize: 20, padding: "0 4px", lineHeight: 1,
+                  }}>×</button>
+                </div>
               </div>
             </div>
 
@@ -346,7 +420,7 @@ export default function MobileInventory() {
                             <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
                               {b.batch_no || "No batch"}{" "}
                               <span style={{ fontSize: 11, fontWeight: 400, color: C.sub }}>
-                                · Exp: <span style={{ color: isExp ? C.red : C.sub, fontWeight: isExp ? 700 : 400 }}>{b.exp_date || "—"}</span>
+                                · Exp: <span style={{ color: isExp ? C.red : C.sub, fontWeight: isExp ? 700 : 400 }}>{b.exp_date ? fmtDate(b.exp_date) : "—"}</span>
                               </span>
                             </div>
                             <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
@@ -361,36 +435,45 @@ export default function MobileInventory() {
                             }}>
                               {b.current_qty}
                             </div>
-                            <button onClick={() => { setIncBatch(isSelected ? null : b); setIncQty("1"); setShowNewForm(false); }}
+                            <button onClick={() => { setIncBatch(isSelected && adjMode === "dec" ? null : b); setIncQty("1"); setAdjMode("dec"); setShowNewForm(false); }}
                               style={{
-                                width: 32, height: 32, border: `1.5px solid ${isSelected ? C.brand : "#d1d5db"}`,
-                                borderRadius: 8, background: isSelected ? C.brand : "#fff",
-                                color: isSelected ? "#fff" : C.brand,
+                                width: 32, height: 32, border: `1.5px solid ${isSelected && adjMode === "dec" ? C.red : "#d1d5db"}`,
+                                borderRadius: 8, background: isSelected && adjMode === "dec" ? C.red : "#fff",
+                                color: isSelected && adjMode === "dec" ? "#fff" : C.red,
+                                fontSize: 18, fontWeight: 700, cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                              }}>−</button>
+                            <button onClick={() => { setIncBatch(isSelected && adjMode === "inc" ? null : b); setIncQty("1"); setAdjMode("inc"); setShowNewForm(false); }}
+                              style={{
+                                width: 32, height: 32, border: `1.5px solid ${isSelected && adjMode === "inc" ? C.brand : "#d1d5db"}`,
+                                borderRadius: 8, background: isSelected && adjMode === "inc" ? C.brand : "#fff",
+                                color: isSelected && adjMode === "inc" ? "#fff" : C.brand,
                                 fontSize: 18, fontWeight: 700, cursor: "pointer",
                                 display: "flex", alignItems: "center", justifyContent: "center",
                               }}>+</button>
                           </div>
                         </div>
 
-                        {/* Inline increase qty */}
+                        {/* Inline adjust qty */}
                         {isSelected && (
-                          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>Add Qty:</span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 0, flex: 1 }}>
-                              <button onClick={() => setIncQty(String(Math.max(1, asNum(incQty) - 1)))} style={qtyBtn}>−</button>
-                              <input value={incQty} onChange={(e) => setIncQty(e.target.value)} inputMode="numeric"
-                                style={{ flex: 1, height: 36, border: "1.5px solid #d1d5db", borderLeft: "none", borderRight: "none",
-                                  textAlign: "center", fontSize: 16, fontWeight: 800, color: C.brand, outline: "none" }} />
-                              <button onClick={() => setIncQty(String(asNum(incQty) + 1))} style={{ ...qtyBtn, borderRadius: "0 8px 8px 0" }}>+</button>
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>{adjMode === "inc" ? "Add" : "Remove"}:</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 0, flex: 1 }}>
+                                <button onClick={() => setIncQty(String(Math.max(1, asNum(incQty) - 1)))} style={qtyBtn}>−</button>
+                                <input value={incQty} onChange={(e) => setIncQty(e.target.value)} inputMode="numeric"
+                                  style={{ flex: 1, height: 36, border: "1.5px solid #d1d5db", borderLeft: "none", borderRight: "none",
+                                    textAlign: "center", fontSize: 16, fontWeight: 800, color: adjMode === "inc" ? C.brand : C.red, outline: "none" }} />
+                                <button onClick={() => setIncQty(String(Math.min(asNum(incQty) + 1, adjMode === "dec" ? asNum(b.current_qty) : 9999)))} style={{ ...qtyBtn, borderRadius: "0 8px 8px 0" }}>+</button>
+                              </div>
                             </div>
-                            <button onClick={onIncreaseQty} disabled={saving}
+                            <button onClick={onAdjustQty} disabled={saving || (adjMode === "dec" && asNum(incQty) > asNum(b.current_qty))}
                               style={{
-                                padding: "8px 16px", border: "none", borderRadius: 8,
-                                background: saving ? C.sub : C.green, color: "#fff",
-                                fontSize: 14, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer",
-                                whiteSpace: "nowrap",
+                                width: "100%", padding: "10px", border: "none", borderRadius: 8,
+                                background: saving ? C.sub : adjMode === "inc" ? C.green : C.red, color: "#fff",
+                                fontSize: 15, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer",
                               }}>
-                              {saving ? "..." : `+${asNum(incQty)}`}
+                              {saving ? "Saving..." : `${adjMode === "inc" ? "+" : "−"}${asNum(incQty)} ${adjMode === "inc" ? "Add to Stock" : "Remove from Stock"}`}
                             </button>
                           </div>
                         )}
@@ -479,16 +562,79 @@ export default function MobileInventory() {
                   </div>
                 </div>
                 <div style={{
-                  background: "#dcfce7", color: C.green, fontWeight: 800, fontSize: 14,
+                  background: s.type === "dec" ? "#fee2e2" : "#dcfce7",
+                  color: s.type === "dec" ? C.red : C.green,
+                  fontWeight: 800, fontSize: 14,
                   padding: "4px 12px", borderRadius: 6,
                 }}>
-                  +{s.qty}
+                  {s.type === "dec" ? "−" : "+"}{s.qty}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* ── Add Item to Master Modal ── */}
+      {showAddItem && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ width: "100%", maxWidth: 480, margin: "0 auto", background: "#fff", borderRadius: "16px 16px 0 0", padding: "20px 16px", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: C.text }}>Add Item to Master</span>
+              <button onClick={() => setShowAddItem(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Item Name *</label>
+              <input value={newItem.name} onChange={(e) => setNewItem(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Paracetamol 500mg" style={inputStyle} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Item Code *</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input value={newItem.code} onChange={(e) => setNewItem(p => ({ ...p, code: e.target.value }))} placeholder="e.g. PCM500" style={{ ...inputStyle, flex: 1 }} />
+                <button onClick={generateCode} style={{ padding: "10px 12px", border: "1.5px solid #d1d5db", borderRadius: 8, background: "#f8fafc", fontSize: 12, fontWeight: 700, cursor: "pointer", color: C.brand, whiteSpace: "nowrap" }}>
+                  Generate
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div>
+                <label style={labelStyle}>HSN Code</label>
+                <input value={newItem.hsn} onChange={(e) => setNewItem(p => ({ ...p, hsn: e.target.value }))} placeholder="Optional" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Tax %</label>
+                <input value={newItem.tax} onChange={(e) => setNewItem(p => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" style={inputStyle} />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+              <div>
+                <label style={labelStyle}>MRP ₹</label>
+                <input value={newItem.mrp} onChange={(e) => setNewItem(p => ({ ...p, mrp: e.target.value }))} inputMode="decimal" placeholder="0" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Buy Price ₹</label>
+                <input value={newItem.purchasePrice} onChange={(e) => setNewItem(p => ({ ...p, purchasePrice: e.target.value }))} inputMode="decimal" placeholder="0" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Sale Price ₹</label>
+                <input value={newItem.salePrice} onChange={(e) => setNewItem(p => ({ ...p, salePrice: e.target.value }))} inputMode="decimal" placeholder="0" style={inputStyle} />
+              </div>
+            </div>
+
+            <button onClick={saveNewItem} disabled={saving} style={{
+              width: "100%", padding: "14px", border: "none", borderRadius: 10,
+              background: saving ? C.sub : C.brand, color: "#fff",
+              fontSize: 16, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer",
+            }}>
+              {saving ? "Saving..." : "Save & Select Item"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

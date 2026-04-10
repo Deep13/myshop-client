@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX, FiClock } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -205,7 +205,7 @@ export default function Purchase() {
                 const overdue = r.due_date && r.due_date < todayISO() && r.payment_status !== "Paid";
                 return (
                   <tr key={r.id} onClick={() => navigate(`/addpurchase?purchaseId=${r.id}`)} style={{ cursor: "pointer" }}>
-                    <td>{r.bill_date}</td>
+                    <td>{fmtDate(r.bill_date)}</td>
                     <td style={{ fontWeight: 600 }}>{r.bill_no}</td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{r.distributor_name}</div>
@@ -214,7 +214,7 @@ export default function Purchase() {
                     <td><StatusBadge status={r.bill_type || "GST"} /></td>
                     <td>
                       <span style={{ color: overdue ? C.red : C.text, fontWeight: overdue ? 700 : 400 }}>
-                        {r.due_date || "—"}
+                        {r.due_date ? fmtDate(r.due_date) : "—"}
                       </span>
                     </td>
                     <td style={{ fontWeight: 700 }}>₹{fmt2(total)}</td>
@@ -261,7 +261,7 @@ export default function Purchase() {
               <tbody>
                 {payHistory.map((p) => (
                   <tr key={p.id}>
-                    <td style={{ color: C.textSub }}>{p.pay_date}</td>
+                    <td style={{ color: C.textSub }}>{fmtDate(p.pay_date)}</td>
                     <td style={{ fontWeight: 600 }}>{p.mode}</td>
                     <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmt2(p.amount)}</td>
                     <td><button className="g-btn danger sm" onClick={() => deletePayment(p.id)}><FiX size={11} /></button></td>
@@ -311,7 +311,7 @@ export default function Purchase() {
             <div style={{ background: C.redLight, border: `1.5px solid #fca5a5`, borderRadius: 10, padding: "10px 14px", fontSize: 13 }}>
               <div><strong>Bill No:</strong> {delRow.bill_no}</div>
               <div><strong>Distributor:</strong> {delRow.distributor_name}</div>
-              <div><strong>Date:</strong> {delRow.bill_date}</div>
+              <div><strong>Date:</strong> {fmtDate(delRow.bill_date)}</div>
               <div><strong>Total:</strong> ₹{fmt2(delRow.grand_total)}</div>
             </div>
           </div>

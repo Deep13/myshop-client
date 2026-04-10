@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiRefreshCw, FiPrinter, FiDownload, FiDollarSign, FiX } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { printReceipt } from "../thermalPrint.js";
 import { downloadExcel } from "../excelExport.js";
 import toast from "../toast.js";
@@ -300,7 +300,7 @@ export default function Sales() {
                 <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No records found</td></tr>
               ) : paged.map((r) => (
                 <tr key={r.id} onClick={() => navigate(`/addsales?id=${r.id}`)} style={{ cursor: "pointer" }}>
-                  <td>{r.date}</td>
+                  <td>{fmtDate(r.date)}</td>
                   <td style={{ fontWeight: 600 }}>{r.invoice}</td>
                   <td>
                     <div style={{ fontWeight: 600 }}>{r.party || "Cash"}</div>
@@ -338,7 +338,7 @@ export default function Sales() {
             <div style={{ background: C.redLight, border: "1.5px solid #fca5a5", borderRadius: 9, padding: "10px 14px", fontSize: 13 }}>
               <div><strong>Invoice:</strong> {delRow.invoice}</div>
               <div><strong>Customer:</strong> {delRow.party}</div>
-              <div><strong>Date:</strong> {delRow.date}</div>
+              <div><strong>Date:</strong> {fmtDate(delRow.date)}</div>
               <div><strong>Amount:</strong> ₹{fmt2(delRow.amount)}</div>
             </div>
           </div>

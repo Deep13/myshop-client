@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FiSearch, FiRefreshCw, FiTruck, FiDollarSign, FiX, FiDownload, FiCheck } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, fmt2, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, fmt2, fmtDate, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import { downloadExcel } from "../excelExport.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -247,7 +247,7 @@ export default function Distributors() {
                     <td style={{ fontWeight: 700 }}>₹{fmt2(r.totalAmount)}</td>
                     <td>₹{fmt2(r.paidAmount)}</td>
                     <td style={{ fontWeight: 700, color: bal > 0 ? C.orange : C.green }}>₹{fmt2(bal)}</td>
-                    <td style={{ fontSize: 13 }}>{r.lastDate}</td>
+                    <td style={{ fontSize: 13 }}>{fmtDate(r.lastDate)}</td>
                     <td style={{ fontSize: 13, color: C.brand, fontWeight: 600 }}>{r.lastBillNo}</td>
                     <td>
                       {bal > 0 && (
@@ -298,8 +298,8 @@ export default function Distributors() {
                       return (
                         <tr key={b.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                           <td style={{ padding: "5px 10px", fontWeight: 600, color: C.brand }}>{b.bill_no}</td>
-                          <td style={{ padding: "5px 10px", color: C.textSub }}>{b.bill_date}</td>
-                          <td style={{ padding: "5px 10px", color: overdue ? C.red : C.textSub, fontWeight: overdue ? 700 : 400 }}>{b.due_date || "—"}{overdue && <span style={{ fontSize: 10, marginLeft: 4 }}>OVERDUE</span>}</td>
+                          <td style={{ padding: "5px 10px", color: C.textSub }}>{fmtDate(b.bill_date)}</td>
+                          <td style={{ padding: "5px 10px", color: overdue ? C.red : C.textSub, fontWeight: overdue ? 700 : 400 }}>{b.due_date ? fmtDate(b.due_date) : "—"}{overdue && <span style={{ fontSize: 10, marginLeft: 4 }}>OVERDUE</span>}</td>
                           <td style={{ padding: "5px 10px", textAlign: "right" }}>₹{fmt2(b.total)}</td>
                           <td style={{ padding: "5px 10px", textAlign: "right", fontWeight: 700, color: C.orange }}>₹{fmt2(b.balance)}</td>
                         </tr>
@@ -354,7 +354,7 @@ export default function Distributors() {
                     <div style={{ fontWeight: 700, color: C.green, marginBottom: 4 }}>Payment will be applied to:</div>
                     {allocs.map((a) => (
                       <div key={a.id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                        <span>{a.bill_no} ({a.bill_date})</span>
+                        <span>{a.bill_no} ({fmtDate(a.bill_date)})</span>
                         <span style={{ fontWeight: 700 }}>₹{fmt2(a.allocated)}</span>
                       </div>
                     ))}

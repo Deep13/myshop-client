@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { C, GLOBAL_CSS, API, fmtINR, todayISO } from "./ui.jsx";
+import { C, GLOBAL_CSS, API, fmtINR, todayISO, fmtDate } from "./ui.jsx";
 import {
   FiShoppingCart, FiTruck, FiPackage, FiAlertTriangle,
   FiClock, FiDollarSign, FiRefreshCw, FiTrendingUp, FiTrendingDown,
@@ -212,7 +212,7 @@ export default function App() {
                             </td>
                             <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.batch_no || "—"}</td>
                             <td style={{ padding: "8px 12px", fontSize: 12 }}>
-                              <span style={{ color: daysLeft <= 30 ? C.red : C.yellow, fontWeight: 700 }}>{r.exp_date}</span>
+                              <span style={{ color: daysLeft <= 30 ? C.red : C.yellow, fontWeight: 700 }}>{fmtDate(r.exp_date)}</span>
                               <div style={{ fontSize: 11, color: C.textLight }}>{daysLeft}d left</div>
                             </td>
                             <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{r.current_qty}</td>
@@ -255,7 +255,7 @@ export default function App() {
                             <div style={{ fontSize: 11, color: C.textSub }}>{r.item_code}</div>
                           </td>
                           <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.batch_no || "—"}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.red, fontWeight: 700 }}>{r.exp_date}</td>
+                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.red, fontWeight: 700 }}>{fmtDate(r.exp_date)}</td>
                           <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{r.current_qty}</td>
                           <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>₹{(asN(r.current_qty) * asN(r.purchase_price)).toFixed(0)}</td>
                         </tr>
@@ -348,7 +348,7 @@ export default function App() {
                             <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{r.distributor_name}</td>
                             <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{r.bill_count}</td>
                             <td style={{ padding: "8px 12px", fontSize: 12 }}>
-                              <span style={{ color: overdue ? C.red : C.text, fontWeight: overdue ? 700 : 400 }}>{r.earliest_due || "—"}</span>
+                              <span style={{ color: overdue ? C.red : C.text, fontWeight: overdue ? 700 : 400 }}>{r.earliest_due ? fmtDate(r.earliest_due) : "—"}</span>
                               {overdue && <div style={{ fontSize: 10, color: C.red }}>OVERDUE</div>}
                             </td>
                             <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 800, color: C.orange }}>₹{asN(r.balance).toFixed(2)}</td>
