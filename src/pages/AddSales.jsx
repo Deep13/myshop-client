@@ -76,6 +76,7 @@ export default function AddSales() {
 
   const [rows, setRows]           = useState([blankRow(), blankRow()]);
   const [activeSug, setActiveSug] = useState(null);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const [searchText, setSearchText] = useState({});
   const qtyRefs = useRef({});
   const searchRefs = useRef({});
@@ -289,6 +290,7 @@ export default function AddSales() {
   const handleSearchChange = (idx, val) => {
     setSearchText((p) => ({ ...p, [idx]: val }));
     setActiveSug(idx);
+    setHighlightIdx(-1);
     // Check if exactly one batch matches this code
     const q = val.trim().toLowerCase();
     if (!q) return;
@@ -603,8 +605,14 @@ export default function AddSales() {
                             <FiSearch size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: C.textLight, pointerEvents: "none" }} />
                             <input ref={(el) => (searchRefs.current[idx] = el)} className="g-td-inp item-search" value={st}
                               onChange={(e) => handleSearchChange(idx, e.target.value)}
-                              onFocus={() => setActiveSug(idx)}
+                              onFocus={() => { setActiveSug(idx); setHighlightIdx(-1); }}
                               onBlur={() => { if (!r.itemName.trim()) setTimeout(() => setSearchText((p) => ({ ...p, [idx]: "" })), 150); }}
+                              onKeyDown={(e) => {
+                                if (e.key === "ArrowDown") { e.preventDefault(); setHighlightIdx((h) => Math.min(h + 1, sug.length - 1)); }
+                                else if (e.key === "ArrowUp") { e.preventDefault(); setHighlightIdx((h) => Math.max(h - 1, 0)); }
+                                else if (e.key === "Enter" && highlightIdx >= 0 && sug[highlightIdx]) { e.preventDefault(); pickBatch(idx, sug[highlightIdx]); setHighlightIdx(-1); }
+                                else if (e.key === "Escape") { setActiveSug(null); setHighlightIdx(-1); }
+                              }}
                               placeholder={idx === 0 ? "Search or scan code…" : ""}
                               autoComplete="off" />
                           </div>
@@ -622,55 +630,54 @@ export default function AddSales() {
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "center" }}>Qty</span>
                               </div>
                               <div style={{ maxHeight: 340, overflowY: "auto" }}>
-                              {(() => { let firstInStock = -1; return sug.map((inv, si) => {
+                              {(() => { return sug.map((inv, si) => {
                                 const isExp  = inv.exp_date && inv.exp_date < today;
                                 const qty    = asNum(inv.current_qty);
                                 const isZero = qty <= 0;
-                                if (firstInStock < 0 && !isZero) firstInStock = si;
-                                const isFirst = si === firstInStock;
+                                const isHl = si === highlightIdx;
                                 return (
                                   <div key={inv.id} onMouseDown={() => pickBatch(idx, inv)}
                                     style={{
                                       display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0,
                                       padding: "10px 16px", cursor: "pointer",
                                       borderBottom: "1px solid #f3f4f6",
-                                      background: isFirst ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
-                                      color: isFirst ? "#fff" : C.text,
+                                      background: isHl ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
+                                      color: isHl ? "#fff" : C.text,
                                       opacity: 1,
                                       transition: "background 0.1s",
                                     }}
-                                    onMouseEnter={(e) => { if (!isFirst && !isZero) e.currentTarget.style.background = "#f0f9ff"; }}
-                                    onMouseLeave={(e) => { if (!isFirst && !isZero) e.currentTarget.style.background = "#fff"; }}>
+                                    onMouseEnter={(e) => { if (!isHl) e.currentTarget.style.background = "#f0f9ff"; }}
+                                    onMouseLeave={(e) => { if (!isHl) e.currentTarget.style.background = "#fff"; }}>
                                     {/* Item name + code */}
                                     <div style={{ minWidth: 0 }}>
                                       <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                        color: isFirst ? "#fff" : isZero ? C.textLight : C.text }}>
+                                        color: isHl ? "#fff" : isZero ? C.textLight : C.text }}>
                                         {inv.item_name}
                                       </div>
-                                      <div style={{ fontSize: 11, marginTop: 1, color: isFirst ? "rgba(255,255,255,0.75)" : C.textSub }}>
+                                      <div style={{ fontSize: 11, marginTop: 1, color: isHl ? "rgba(255,255,255,0.75)" : C.textSub }}>
                                         {inv.item_code}
                                       </div>
                                     </div>
                                     {/* Batch */}
-                                    <div style={{ fontSize: 12, color: isFirst ? "rgba(255,255,255,0.9)" : C.textSub, display: "flex", alignItems: "center" }}>
+                                    <div style={{ fontSize: 12, color: isHl ? "rgba(255,255,255,0.9)" : C.textSub, display: "flex", alignItems: "center" }}>
                                       {inv.batch_no || "—"}
                                     </div>
                                     {/* Expiry */}
                                     <div style={{ fontSize: 12, display: "flex", alignItems: "center",
-                                      color: isExp ? (isFirst ? "#fecaca" : C.red) : (isFirst ? "rgba(255,255,255,0.9)" : C.textSub),
+                                      color: isExp ? (isHl ? "#fecaca" : C.red) : (isHl ? "rgba(255,255,255,0.9)" : C.textSub),
                                       fontWeight: isExp ? 700 : 400 }}>
                                       {inv.exp_date ? fmtDate(inv.exp_date) : "—"}
                                     </div>
                                     {/* MRP */}
                                     <div style={{ fontSize: 13, fontWeight: 700, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end",
-                                      color: isFirst ? "#fff" : C.text }}>
+                                      color: isHl ? "#fff" : C.text }}>
                                       ₹{inv.mrp}
                                     </div>
                                     {/* Stock */}
                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                                       <span style={{
                                         fontWeight: 800, fontSize: 13,
-                                        color: isFirst ? "#fff" : isZero ? C.red : C.text,
+                                        color: isHl ? "#fff" : isZero ? C.red : C.text,
                                       }}>
                                         {isZero ? "0" : qty}
                                       </span>

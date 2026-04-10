@@ -93,6 +93,7 @@ export default function AddPurchase() {
   const itemRefs = useRef({});
   const batchRefs = useRef({});
   const [activeSug, setActiveSug] = useState(null);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const [itemSearch, setItemSearch] = useState({}); // per-row search text
 
   /* payment */
@@ -1097,13 +1098,20 @@ export default function AddPurchase() {
                                 const val = e.target.value;
                                 setItemSearch((p) => ({ ...p, [idx]: val }));
                                 setActiveSug(idx);
+                                setHighlightIdx(-1);
                                 const q = val.trim().toLowerCase();
                                 if (q) {
                                   const exact = itemMaster.filter((it) => it.code.toLowerCase() === q || it.name.toLowerCase() === q);
                                   if (exact.length === 1) pickItem(idx, exact[0]);
                                 }
                               }}
-                              onFocus={() => setActiveSug(idx)}
+                              onFocus={() => { setActiveSug(idx); setHighlightIdx(-1); }}
+                              onKeyDown={(e) => {
+                                if (e.key === "ArrowDown") { e.preventDefault(); setHighlightIdx((h) => Math.min(h + 1, sug.length - 1)); }
+                                else if (e.key === "ArrowUp") { e.preventDefault(); setHighlightIdx((h) => Math.max(h - 1, 0)); }
+                                else if (e.key === "Enter" && highlightIdx >= 0 && sug[highlightIdx]) { e.preventDefault(); pickItem(idx, sug[highlightIdx]); setHighlightIdx(-1); }
+                                else if (e.key === "Escape") { setActiveSug(null); setHighlightIdx(-1); }
+                              }}
                               placeholder={idx === 0 ? "Search or scan code…" : ""}
                               autoComplete="off"
                             />
@@ -1135,7 +1143,7 @@ export default function AddPurchase() {
                               </div>
                               <div style={{ maxHeight: 340, overflowY: "auto" }}>
                                 {sug.map((it, si) => {
-                                  const isFirst = si === 0;
+                                  const isHl = si === highlightIdx;
                                   return (
                                     <div
                                       key={it.id}
@@ -1147,22 +1155,22 @@ export default function AddPurchase() {
                                         padding: "10px 16px",
                                         cursor: "pointer",
                                         borderBottom: "1px solid #f3f4f6",
-                                        background: isFirst ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
-                                        color: isFirst ? "#fff" : C.text,
+                                        background: isHl ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
+                                        color: isHl ? "#fff" : C.text,
                                         transition: "background 0.1s",
                                       }}
                                       onMouseEnter={(e) => {
-                                        if (!isFirst) e.currentTarget.style.background = "#f0f9ff";
+                                        if (!isHl) e.currentTarget.style.background = "#f0f9ff";
                                       }}
                                       onMouseLeave={(e) => {
-                                        if (!isFirst) e.currentTarget.style.background = "#fff";
+                                        if (!isHl) e.currentTarget.style.background = "#fff";
                                       }}
                                     >
                                       <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isFirst ? "#fff" : C.text }}>
+                                        <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isHl ? "#fff" : C.text }}>
                                           {it.name}
                                         </div>
-                                        <div style={{ fontSize: 11, marginTop: 1, color: isFirst ? "rgba(255,255,255,0.75)" : C.textSub }}>
+                                        <div style={{ fontSize: 11, marginTop: 1, color: isHl ? "rgba(255,255,255,0.75)" : C.textSub }}>
                                           {it.code}
                                           {it.hsn ? ` · HSN: ${it.hsn}` : ""}
                                         </div>
@@ -1175,7 +1183,7 @@ export default function AddPurchase() {
                                           display: "flex",
                                           alignItems: "center",
                                           justifyContent: "flex-end",
-                                          color: isFirst ? "#fff" : C.text,
+                                          color: isHl ? "#fff" : C.text,
                                         }}
                                       >
                                         ₹{it.mrp}
@@ -1188,7 +1196,7 @@ export default function AddPurchase() {
                                           display: "flex",
                                           alignItems: "center",
                                           justifyContent: "flex-end",
-                                          color: isFirst ? "rgba(255,255,255,0.9)" : C.textSub,
+                                          color: isHl ? "rgba(255,255,255,0.9)" : C.textSub,
                                         }}
                                       >
                                         ₹{it.purchasePrice}
@@ -1201,7 +1209,7 @@ export default function AddPurchase() {
                                           display: "flex",
                                           alignItems: "center",
                                           justifyContent: "center",
-                                          color: isFirst ? "rgba(255,255,255,0.9)" : C.brand,
+                                          color: isHl ? "rgba(255,255,255,0.9)" : C.brand,
                                         }}
                                       >
                                         {it.tax}%
