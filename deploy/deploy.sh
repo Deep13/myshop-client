@@ -17,6 +17,7 @@ npx vite build --mode production
 
 echo "=== Uploading frontend ==="
 $SCP dist/index.html "$WEBROOT"
+$SCP dist/logo_icon.png "$WEBROOT"
 scp -o StrictHostKeyChecking=no -i $SSH_KEY -P $PORT -r dist/assets "$WEBROOT"
 $SCP deploy/.htaccess "$WEBROOT"
 
