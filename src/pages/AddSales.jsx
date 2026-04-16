@@ -700,7 +700,7 @@ export default function AddSales() {
 
                     {/* Expiry */}
                     <td style={{ fontSize: 12, color: isExpired ? C.red : C.textSub, fontWeight: isExpired ? 700 : 400, textAlign: "right", paddingRight: 8 }}>
-                      {r.expDate || "—"}
+                      {r.expDate ? r.expDate.split("-").reverse().join("/") : "—"}
                     </td>
 
                     {/* MRP */}

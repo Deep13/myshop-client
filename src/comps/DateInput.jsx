@@ -19,7 +19,7 @@ export default function DateInput({ value, onChange, style, className, ...rest }
   };
 
   return (
-    <div style={{ position: "relative", display: "inline-block" }}>
+    <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
       {/* visible text input */}
       <input
         type="text"
