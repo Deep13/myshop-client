@@ -3,11 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
 /* ── helpers ── */
-const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
+const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
 const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => {
@@ -168,6 +169,7 @@ export default function AddPurchase() {
             expDate: r.exp_date || "",
             mrp: r.mrp,
             qty: r.qty,
+            freeQty: r.free_qty || "",
             purchasePrice: r.purchase_price,
             salePrice: r.sale_price,
             discount: r.discount,
@@ -359,6 +361,7 @@ export default function AddPurchase() {
     { key: "expDate", label: "Expiry Date" },
     { key: "mrp", label: "MRP" },
     { key: "qty", label: "Qty", required: true },
+    { key: "freeQty", label: "Free Qty" },
     { key: "purchasePrice", label: "Purchase Price", required: true },
     { key: "discount", label: "Discount %" },
     { key: "salePrice", label: "Sale Price" },
@@ -691,6 +694,7 @@ export default function AddPurchase() {
         expDate: r.expDate || "",
         mrp: asNum(r.mrp),
         qty: asNum(r.qty),
+        freeQty: asNum(r.freeQty),
         purchasePrice: asNum(r.purchasePrice),
         salePrice: asNum(r.salePrice),
         discount: String(r.discount || "").trim(),
@@ -834,8 +838,7 @@ export default function AddPurchase() {
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.brand, borderRadius: 9, padding: "6px 14px", color: "#fff" }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.8, textTransform: "uppercase" }}>Bill Date</div>
-            <input
-              type="date"
+            <DateInput
               value={billDate}
               onChange={(e) => setBillDate(e.target.value)}
               style={{ background: "none", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: 0, cursor: "pointer", width: 120 }}
@@ -852,7 +855,7 @@ export default function AddPurchase() {
         {/* Due Date */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 110 }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Due Date</span>
-          <input className="g-inp sm" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={{ height: 30, fontSize: 13 }} />
+          <DateInput className="g-inp sm" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={{ height: 30, fontSize: 13 }} />
         </div>
 
         <div style={{ width: 1, height: 32, background: "#e5e7eb" }} />
@@ -1033,7 +1036,8 @@ export default function AddPurchase() {
                 <th style={{ minWidth: 100, textAlign: "right" }}>Batch</th>
                 <th style={{ minWidth: 100, textAlign: "right" }}>Expiry</th>
                 <th style={{ minWidth: 100, textAlign: "right" }}>MRP</th>
-                <th style={{ minWidth: 100, textAlign: "right" }}>Qty</th>
+                <th style={{ minWidth: 70, textAlign: "right" }}>Qty</th>
+                <th style={{ minWidth: 60, textAlign: "right" }}>Free</th>
                 <th style={{ minWidth: 100, textAlign: "right" }}>Buy ₹</th>
                 <th style={{ minWidth: 100, textAlign: "right" }}>Disc</th>
                 <th style={{ minWidth: 100, textAlign: "right" }}>Sale ₹</th>
@@ -1265,13 +1269,16 @@ export default function AddPurchase() {
                       />
                     </td>
                     <td>
-                      <input className="g-td-inp num" type="date" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })} style={{ fontSize: 11, textAlign: "left" }} />
+                      <DateInput className="g-td-inp num" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })} style={{ fontSize: 11, textAlign: "left" }} />
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.mrp} onChange={(e) => updRow(idx, { mrp: e.target.value })} inputMode="decimal" placeholder="0" />
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} />
+                    </td>
+                    <td>
+                      <input className="g-td-inp num" value={r.freeQty} onChange={(e) => updRow(idx, { freeQty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} />
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.purchasePrice} onChange={(e) => updRow(idx, { purchasePrice: e.target.value })} inputMode="decimal" placeholder="0" />

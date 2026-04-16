@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX, FiClock } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -160,8 +161,8 @@ export default function Purchase() {
         <select className="g-sel sm" style={{ width: 130 }} value={filters.dateRange} onChange={(e) => fc("dateRange", e.target.value)}>
           {DATE_RANGES.map((r) => <option key={r}>{r}</option>)}
         </select>
-        <input className="g-inp sm" type="date" style={{ width: 130 }} value={filters.from} onChange={(e) => fc("from", e.target.value)} />
-        <input className="g-inp sm" type="date" style={{ width: 130 }} value={filters.to} onChange={(e) => fc("to", e.target.value)} />
+        <DateInput className="g-inp sm" style={{ width: 130 }} value={filters.from} onChange={(e) => fc("from", e.target.value)} />
+        <DateInput className="g-inp sm" style={{ width: 130 }} value={filters.to} onChange={(e) => fc("to", e.target.value)} />
         <select className="g-sel sm" style={{ width: 120 }} value={filters.status} onChange={(e) => fc("status", e.target.value)}>
           <option value="">All Status</option>
           <option value="Unpaid">Unpaid</option>
@@ -272,7 +273,7 @@ export default function Purchase() {
           </div>
         )}
 
-        <Field label="Payment Date"><input className="g-inp" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></Field>
+        <Field label="Payment Date"><DateInput className="g-inp" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></Field>
         <div style={{ marginTop: 14 }}>
           {payLines.map((p, i) => (
             <div key={i} style={{ display: "grid", gridTemplateColumns: "160px 1fr 36px", gap: 10, alignItems: "end", marginBottom: 12 }}>

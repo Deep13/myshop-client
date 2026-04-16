@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiRefreshCw, FiPrinter, FiDownload, FiDollarSign, FiX } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import { printReceipt } from "../thermalPrint.js";
 import { downloadExcel } from "../excelExport.js";
 import toast from "../toast.js";
@@ -250,8 +251,8 @@ export default function Sales() {
         <select className="g-sel sm" style={{ width: 130 }} value={filters.dateRange} onChange={(e) => fc("dateRange", e.target.value)}>
           {DATE_RANGES.map((r) => <option key={r}>{r}</option>)}
         </select>
-        <input className="g-inp sm" type="date" style={{ width: 130 }} value={filters.from} onChange={(e) => fc("from", e.target.value)} />
-        <input className="g-inp sm" type="date" style={{ width: 130 }} value={filters.to} onChange={(e) => fc("to", e.target.value)} />
+        <DateInput className="g-inp sm" style={{ width: 130 }} value={filters.from} onChange={(e) => fc("from", e.target.value)} />
+        <DateInput className="g-inp sm" style={{ width: 130 }} value={filters.to} onChange={(e) => fc("to", e.target.value)} />
         <button className="g-btn ghost sm" onClick={fetch_} disabled={loading}><FiRefreshCw size={14} /></button>
         {/* Download dropdown */}
         <div style={{ position: "relative" }}>

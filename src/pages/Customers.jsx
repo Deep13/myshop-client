@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FiSearch, FiRefreshCw, FiPhone, FiUser, FiDollarSign, FiX, FiDownload, FiCheck } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, fmt2, fmtDate, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import { downloadExcel } from "../excelExport.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -318,7 +319,7 @@ export default function Customers() {
               </div>
             </div>
 
-            <Field label="Payment Date"><input className="g-inp" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></Field>
+            <Field label="Payment Date"><DateInput className="g-inp" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></Field>
             <div style={{ marginTop: 14 }}>
               {payLines.map((p, i) => (
                 <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 1fr 36px", gap: 10, alignItems: "end", marginBottom: 10 }}>

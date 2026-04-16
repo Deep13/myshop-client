@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown, FiArrowUp, FiDownload, FiFileText, FiDollarSign, FiSend } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Modal, fmt2, fmtDate, DATE_RANGES, applyDateRange } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import { downloadExcel, generateExcelBlob } from "../excelExport.js";
 import { getShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
@@ -448,8 +449,8 @@ export default function Reports() {
         <select className="g-sel sm" style={{ width: 140 }} value={dateRange} onChange={(e) => setDateRange(e.target.value)}>
           {DATE_RANGES.map((r) => <option key={r}>{r}</option>)}
         </select>
-        <input className="g-inp sm" type="date" style={{ width: 130 }} value={from} onChange={(e) => { setFrom(e.target.value); setDateRange("Custom"); }} />
-        <input className="g-inp sm" type="date" style={{ width: 130 }} value={to} onChange={(e) => { setTo(e.target.value); setDateRange("Custom"); }} />
+        <DateInput className="g-inp sm" style={{ width: 130 }} value={from} onChange={(e) => { setFrom(e.target.value); setDateRange("Custom"); }} />
+        <DateInput className="g-inp sm" style={{ width: 130 }} value={to} onChange={(e) => { setTo(e.target.value); setDateRange("Custom"); }} />
         <div style={{ flex: 1 }} />
         {isAdmin && <button className="g-btn ghost sm" onClick={onUpgradeClick} style={{ color: C.red, borderColor: "#fca5a5" }}>
           <FiArrowUp size={13} /> Upgrade

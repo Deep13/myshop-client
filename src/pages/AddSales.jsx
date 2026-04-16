@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
 
@@ -493,7 +494,7 @@ export default function AddSales() {
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.brand, borderRadius: 9, padding: "6px 14px", color: "#fff" }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.8, textTransform: "uppercase" }}>Bill Date</div>
-            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)}
+            <DateInput value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)}
               style={{ background: "none", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: 0, cursor: "pointer", width: 120 }} />
           </div>
         </div>

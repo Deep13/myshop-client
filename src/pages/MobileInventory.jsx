@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { API, asNum, fmt2, fmtDate, todayISO } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import { printLabel } from "../printLabel.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -500,7 +501,7 @@ export default function MobileInventory() {
                   </div>
                   <div>
                     <label style={labelStyle}>Expiry Date</label>
-                    <input type="date" value={expDate} onChange={(e) => setExpDate(e.target.value)} style={inputStyle} />
+                    <DateInput value={expDate} onChange={(e) => setExpDate(e.target.value)} style={inputStyle} />
                   </div>
                 </div>
 
