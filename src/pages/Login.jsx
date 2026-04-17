@@ -27,9 +27,12 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
 
+  const mobileLandingFor = (user) => (user?.role === "admin" ? "/m/dashboard" : "/m/sale");
+
   useEffect(() => {
     if (isLoggedIn) {
-      navigate(isMobile ? "/m/sale" : "/");
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      navigate(isMobile ? mobileLandingFor(user) : "/");
     }
     userRef.current?.focus();
   }, []);
@@ -51,7 +54,7 @@ export default function Login() {
       if (data.status === "success") {
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.setItem("auth", "true");
-        window.location.href = isMobile ? "/m/sale" : "/";
+        window.location.href = isMobile ? mobileLandingFor(data.user) : "/";
       } else {
         setResponseMsg(data.message || "Invalid credentials");
       }

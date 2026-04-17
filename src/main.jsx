@@ -16,6 +16,7 @@ import Settings from "./pages/Settings.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import MobileSale from "./pages/MobileSale.jsx";
 import MobileInventory from "./pages/MobileInventory.jsx";
+import MobileDashboard from "./pages/MobileDashboard.jsx";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./Layout";
 import ProtectedRoute from "./ProtectedRoute.jsx";
@@ -35,9 +36,18 @@ function MobileGuard({ children }) {
   return children;
 }
 
+function AdminMobileGuard({ children }) {
+  const isLoggedIn = localStorage.getItem("auth");
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+  if (user?.role !== "admin") return <Navigate to="/m/sale" replace />;
+  return children;
+}
+
 function DesktopRedirect({ children }) {
   if (isMobile() && localStorage.getItem("auth")) {
-    return <Navigate to="/m/sale" replace />;
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    return <Navigate to={user?.role === "admin" ? "/m/dashboard" : "/m/sale"} replace />;
   }
   return children;
 }
@@ -50,6 +60,7 @@ createRoot(document.getElementById("root")).render(
       {/* Mobile route — no header, no layout */}
       <Route path="/m/sale" element={<MobileGuard><MobileSale /></MobileGuard>} />
       <Route path="/m/inventory" element={<MobileGuard><MobileInventory /></MobileGuard>} />
+      <Route path="/m/dashboard" element={<AdminMobileGuard><MobileDashboard /></AdminMobileGuard>} />
 
       {/* Desktop routes — redirect mobile users to /m/sale */}
       <Route element={<ProtectedRoute><DesktopRedirect><Layout /></DesktopRedirect></ProtectedRoute>}>
