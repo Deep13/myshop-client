@@ -282,7 +282,13 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   @page { size: 50mm 23mm; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 50mm; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+  body {
+    font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+    color: #000;
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+    text-rendering: geometricPrecision;
+  }
   .label {
     width: 50mm;
     height: 23mm;
@@ -297,7 +303,7 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   .label:last-child { page-break-after: auto; }
   .name {
     font-size: 7.5pt;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.1;
     text-align: center;
     word-wrap: break-word;
@@ -309,9 +315,10 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   }
   .price {
     font-size: 13pt;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1;
     margin-bottom: 0.8mm;
+    letter-spacing: 0.01em;
   }
   .barcode {
     line-height: 0;
@@ -320,8 +327,8 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   .barcode svg { display: block; margin: 0 auto; }
   .code {
     font-size: 7.5pt;
-    font-weight: 700;
-    letter-spacing: 0.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     line-height: 1;
     margin-top: 0.3mm;
   }
