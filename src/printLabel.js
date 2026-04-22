@@ -192,11 +192,11 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
     width: 50mm;
     height: 23mm;
     margin: 0 auto;
-    padding: 1mm 1.5mm;
+    padding: 0.8mm 1.5mm;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     page-break-after: always;
     overflow: hidden;
   }
