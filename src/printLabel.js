@@ -257,7 +257,7 @@ function barcodeSVG(enc) {
     }
   }
   const widthMm = (total * 0.375).toFixed(3);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="${widthMm}mm" height="9mm" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="${widthMm}mm" height="8mm" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
 }
 
 export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
@@ -270,7 +270,7 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
     labelsHTML += `
       <div class="label">
         <div class="name">${itemName}</div>
-        <div class="price">Rs.${Number(salePrice || 0).toFixed(2)}</div>
+        <div class="price">&#8377;${Number(salePrice || 0).toFixed(2)}</div>
         <div class="barcode">${barcodeStr}</div>
         <div class="code">${codeText}</div>
       </div>
@@ -296,10 +296,9 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   }
   .label:last-child { page-break-after: auto; }
   .name {
-    font-size: 8pt;
+    font-size: 7.5pt;
     font-weight: 700;
     line-height: 1.1;
-    max-height: 6mm;
     text-align: center;
     word-wrap: break-word;
     overflow: hidden;
@@ -312,7 +311,7 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
     font-size: 13pt;
     font-weight: 800;
     line-height: 1;
-    margin-bottom: 1mm;
+    margin-bottom: 0.8mm;
   }
   .barcode {
     line-height: 0;
