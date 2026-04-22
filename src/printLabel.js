@@ -286,7 +286,7 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   .label {
     width: 50mm;
     height: 23mm;
-    padding: 0.3mm 0;
+    padding: 0.3mm 1.5mm;
     display: flex;
     flex-direction: column;
     align-items: center;
