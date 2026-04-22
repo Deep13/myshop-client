@@ -162,7 +162,12 @@ export default function ItemDetail() {
         {hasExpired  && <span style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, background: C.redLight,    color: C.red,    fontWeight: 700, fontSize: 12 }}>⚠ Expired Stock</span>}
         {hasExpiring && <span style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, background: C.yellowLight, color: C.yellow, fontWeight: 700, fontSize: 12 }}>⚠ Expiring Soon</span>}
         <div style={{ marginLeft: "auto" }}>
-          <button className="g-btn ghost sm" onClick={() => printLabel({ itemName: item.name, salePrice: item.salePrice || item.sale_price, itemCode: item.code })}>
+          <button className="g-btn ghost sm" onClick={() => {
+            const input = window.prompt("How many copies?", "1");
+            if (input === null) return;
+            const copies = Math.max(1, Math.min(99, parseInt(input, 10) || 1));
+            printLabel({ itemName: item.name, salePrice: item.salePrice || item.sale_price, itemCode: item.code, copies });
+          }}>
             <FiPrinter size={13} /> Print Label
           </button>
         </div>

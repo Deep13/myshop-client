@@ -374,7 +374,12 @@ export default function MobileInventory() {
                   <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{selItem.code}{selItem.hsn ? ` · HSN: ${selItem.hsn}` : ""}</div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                  <button onClick={() => printLabel({ itemName: selItem.name, salePrice: selItem.salePrice || selItem.sale_price || selItem.mrp, itemCode: selItem.code })}
+                  <button onClick={() => {
+                    const input = window.prompt("How many copies?", "1");
+                    if (input === null) return;
+                    const copies = Math.max(1, Math.min(99, parseInt(input, 10) || 1));
+                    printLabel({ itemName: selItem.name, salePrice: selItem.salePrice || selItem.sale_price || selItem.mrp, itemCode: selItem.code, copies });
+                  }}
                     style={{ background: "none", border: "1.5px solid #d1d5db", borderRadius: 8, color: C.brand, cursor: "pointer", padding: "6px 10px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                     Print Label
                   </button>
