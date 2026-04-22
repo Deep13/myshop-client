@@ -141,11 +141,14 @@ function encodeBarcode(raw) {
   return code128(clean);
 }
 
-/* ── Render barcode as SVG (with quiet zones) ── */
+/* ── Render barcode as SVG (with quiet zones) ──
+   Width is pixel-aligned for P58D (203 DPI / 8 dots/mm):
+   3 dots per module = 0.375mm, so bars snap to integer dot boundaries.
+*/
 function barcodeSVG(enc) {
   const bits = enc.bits;
   const n = bits.length;
-  const quiet = 10; // modules of silent margin each side
+  const quiet = 10;
   const total = n + 2 * quiet;
   let rects = "";
   let i = 0;
@@ -158,7 +161,8 @@ function barcodeSVG(enc) {
       i++;
     }
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
+  const widthMm = (total * 0.375).toFixed(3);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="${widthMm}mm" height="8mm" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
 }
 
 export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
@@ -198,10 +202,10 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   }
   .label:last-child { page-break-after: auto; }
   .name {
-    font-size: 8.5pt;
+    font-size: 7pt;
     font-weight: 700;
-    line-height: 1.05;
-    max-height: 4.5mm;
+    line-height: 1.1;
+    max-height: 5.5mm;
     text-align: center;
     word-wrap: break-word;
     overflow: hidden;
@@ -211,23 +215,19 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
     width: 100%;
   }
   .price {
-    font-size: 11pt;
+    font-size: 10pt;
     font-weight: 800;
     line-height: 1;
     margin-top: 0.3mm;
   }
   .barcode {
     margin-top: 0.3mm;
-    width: 100%;
     line-height: 0;
+    text-align: center;
   }
-  .barcode svg {
-    width: 100%;
-    height: 8.5mm;
-    display: block;
-  }
+  .barcode svg { display: block; margin: 0 auto; }
   .code {
-    font-size: 7pt;
+    font-size: 6.5pt;
     font-weight: 600;
     letter-spacing: 0.5px;
     line-height: 1;
