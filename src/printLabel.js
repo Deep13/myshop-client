@@ -162,7 +162,7 @@ function barcodeSVG(enc) {
     }
   }
   const widthMm = (total * 0.375).toFixed(3);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="${widthMm}mm" height="8mm" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="${widthMm}mm" height="9mm" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
 }
 
 export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
@@ -192,20 +192,20 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
     width: 50mm;
     height: 23mm;
     margin: 0 auto;
-    padding: 0.8mm 1.5mm;
+    padding: 0.5mm 0.5mm;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     page-break-after: always;
     overflow: hidden;
   }
   .label:last-child { page-break-after: auto; }
   .name {
-    font-size: 7pt;
+    font-size: 8pt;
     font-weight: 700;
     line-height: 1.1;
-    max-height: 5.5mm;
+    max-height: 6mm;
     text-align: center;
     word-wrap: break-word;
     overflow: hidden;
@@ -215,20 +215,19 @@ export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
     width: 100%;
   }
   .price {
-    font-size: 10pt;
+    font-size: 13pt;
     font-weight: 800;
     line-height: 1;
-    margin-top: 0.3mm;
+    margin-bottom: 1mm;
   }
   .barcode {
-    margin-top: 0.3mm;
     line-height: 0;
     text-align: center;
   }
   .barcode svg { display: block; margin: 0 auto; }
   .code {
-    font-size: 6.5pt;
-    font-weight: 600;
+    font-size: 7.5pt;
+    font-weight: 700;
     letter-spacing: 0.5px;
     line-height: 1;
     margin-top: 0.3mm;
