@@ -1598,7 +1598,7 @@ export default function AddPurchase() {
         show={showAddItem}
         title="Add Item to Master"
         onClose={() => setShowAddItem(false)}
-        width={580}
+        width={900}
         footer={
           <>
             <button className="g-btn ghost" onClick={() => setShowAddItem(false)}>
