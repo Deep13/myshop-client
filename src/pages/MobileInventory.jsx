@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { API, asNum, fmt2, fmtDate, todayISO } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
+import HsnInput from "../comps/HsnInput.jsx";
 import { printLabel } from "../printLabel.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -614,7 +615,7 @@ export default function MobileInventory() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div>
                 <label style={labelStyle}>HSN Code</label>
-                <input value={newItem.hsn} onChange={(e) => setNewItem(p => ({ ...p, hsn: e.target.value }))} placeholder="Optional" style={inputStyle} />
+                <HsnInput value={newItem.hsn} onChange={(v) => setNewItem(p => ({ ...p, hsn: v }))} placeholder="Type or select" inputStyle={inputStyle} />
               </div>
               <div>
                 <label style={labelStyle}>Tax %</label>

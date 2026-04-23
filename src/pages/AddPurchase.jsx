@@ -4,6 +4,7 @@ import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditC
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
+import HsnInput from "../comps/HsnInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 import { printLabel } from "../printLabel.js";
@@ -1631,8 +1632,9 @@ export default function AddPurchase() {
               </button>
             </div>
           </Field>
-          <Field label="HSN Code" hint="For GST">
-            <input className="g-inp lg" value={newItem.hsn} onChange={(e) => setNewItem((p) => ({ ...p, hsn: e.target.value }))} placeholder="Optional" />
+          <Field label="HSN Code" hint="For GST — type or pick from list">
+            <HsnInput className="g-inp lg" value={newItem.hsn} onChange={(v) => setNewItem((p) => ({ ...p, hsn: v }))} placeholder="Optional — type or select HSN"
+              inputStyle={{ width: "100%" }} />
           </Field>
           <Field label="MRP (₹)">
             <input className="g-inp lg" value={newItem.mrp} onChange={(e) => setNewItem((p) => ({ ...p, mrp: e.target.value }))} inputMode="decimal" placeholder="0.00" />
