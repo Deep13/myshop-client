@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload } from "react-icons/fi";
+import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
+import { printLabel } from "../printLabel.js";
 
 /* ── helpers ── */
 const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
@@ -1080,6 +1081,18 @@ export default function AddPurchase() {
                             <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.itemName}</div>
                             <div style={{ fontSize: 11, color: C.textSub }}>{r.code}</div>
                           </div>
+                          <button
+                            onClick={() => {
+                              const input = window.prompt("How many copies?", "1");
+                              if (input === null) return;
+                              const copies = Math.max(1, Math.min(99, parseInt(input, 10) || 1));
+                              printLabel({ itemName: r.itemName, salePrice: r.salePrice || r.mrp, itemCode: r.code, copies });
+                            }}
+                            title="Print label"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: C.brand, padding: 3, borderRadius: 4, display: "flex", flexShrink: 0 }}
+                          >
+                            <FiPrinter size={13} />
+                          </button>
                           <button
                             onClick={() => {
                               updRow(idx, { ...blankRow() });
