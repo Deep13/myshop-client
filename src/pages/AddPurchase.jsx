@@ -1605,7 +1605,11 @@ export default function AddPurchase() {
           <Field label="Item Code" required hint="Short unique code">
             <div style={{ display: "flex", gap: 6 }}>
               <input className="g-inp lg" style={{ flex: 1 }} value={newItem.itemCode} onChange={(e) => setNewItem((p) => ({ ...p, itemCode: e.target.value }))} placeholder="e.g. PCM500" />
-              <button type="button" className="g-btn ghost" style={{ whiteSpace: "nowrap", height: 42 }} onClick={() => setNewItem((p) => ({ ...p, itemCode: "ITM" + Date.now().toString(36).toUpperCase() }))}>
+              <button type="button" className="g-btn ghost" style={{ whiteSpace: "nowrap", height: 42 }} onClick={() => {
+                const t = Date.now().toString().slice(-10);
+                const r = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+                setNewItem((p) => ({ ...p, itemCode: t + r }));
+              }}>
                 Generate
               </button>
             </div>

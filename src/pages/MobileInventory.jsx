@@ -151,8 +151,10 @@ export default function MobileInventory() {
   }, [manualSearch, items]);
 
   const generateCode = () => {
-    const code = "ITM" + Date.now().toString(36).toUpperCase();
-    setNewItem((p) => ({ ...p, code }));
+    // 13-digit numeric: last 10 digits of ms-timestamp (unique per ms) + 3 random digits
+    const t = Date.now().toString().slice(-10);
+    const r = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+    setNewItem((p) => ({ ...p, code: t + r }));
   };
 
   const saveNewItem = async () => {
