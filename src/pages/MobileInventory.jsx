@@ -151,10 +151,14 @@ export default function MobileInventory() {
   }, [manualSearch, items]);
 
   const generateCode = () => {
-    // 13-digit numeric: last 10 digits of ms-timestamp (unique per ms) + 3 random digits
+    // 12 digits (10 from ms-timestamp + 2 random) + EAN-13 check digit
     const t = Date.now().toString().slice(-10);
-    const r = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-    setNewItem((p) => ({ ...p, code: t + r }));
+    const r = Math.floor(Math.random() * 100).toString().padStart(2, "0");
+    const d = t + r;
+    let s = 0;
+    for (let i = 0; i < 12; i++) s += parseInt(d[i], 10) * (i % 2 === 0 ? 1 : 3);
+    const check = (10 - (s % 10)) % 10;
+    setNewItem((p) => ({ ...p, code: d + check }));
   };
 
   const saveNewItem = async () => {
