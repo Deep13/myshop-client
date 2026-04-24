@@ -79,6 +79,7 @@ export const CATEGORIES = [
   { name: "Milk",                   hsn: "04012000", tax: 0  },
   { name: "Ice cream",              hsn: "21050000", tax: 18 },
   { name: "Honey",                  hsn: "04090000", tax: 0  },
+  { name: "Dry fruits / Nuts",      hsn: "08130000", tax: 5  },
 
   // ── Processed / packaged food ─────────────────────────
   { name: "Biscuits",               hsn: "19053100", tax: 18 },
