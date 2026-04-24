@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent } from "react-icons/fi";
+import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent, FiTag, FiX } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, fmtDate, Pagination, PAGE_SIZE } from "../ui.jsx";
+import CategorySelect from "../comps/CategorySelect.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -26,6 +27,12 @@ export default function Inventory() {
   const [bulkGstRate, setBulkGstRate] = useState("18");
   const [bulkApplyTo, setBulkApplyTo] = useState("filtered"); // "filtered" | "all"
   const [bulkSaving, setBulkSaving] = useState(false);
+
+  // Row selection + bulk category
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showBulkCat, setShowBulkCat] = useState(false);
+  const [bulkCatChoice, setBulkCatChoice] = useState(null);   // { name, hsn, tax } | null
+  const [bulkCatSaving, setBulkCatSaving] = useState(false);
 
   const load = async () => {
     try {
@@ -99,6 +106,51 @@ export default function Inventory() {
     }
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [items]);
+
+  // ── Selection helpers ────────────────────────────────────────
+  const toggleRow = (id) => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const pageIds = useMemo(() => paged.map((r) => r.id), [paged]);
+  const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const togglePage = () => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    if (allPageSelected) pageIds.forEach((id) => next.delete(id));
+    else pageIds.forEach((id) => next.add(id));
+    return next;
+  });
+  const selectAllFiltered = () => setSelectedIds(new Set(filteredIds));
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // ── Bulk category update ─────────────────────────────────────
+  const bulkUpdateCategory = async () => {
+    if (!bulkCatChoice) return toast.warn("Pick a category first");
+    if (selectedIds.size === 0) return toast.warn("No items selected");
+    setBulkCatSaving(true);
+    try {
+      const r = await fetch(`${API}/bulk_update_category.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemIds: [...selectedIds],
+          category: bulkCatChoice.name,
+          hsn: bulkCatChoice.hsn || "",
+          tax: bulkCatChoice.tax,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      toast.success(`Updated ${j.itemsUpdated} items to "${bulkCatChoice.name}"`);
+      setShowBulkCat(false);
+      setBulkCatChoice(null);
+      setSelectedIds(new Set());
+      load();
+    } catch (e) { toast.error(e.message || "Failed"); }
+    finally { setBulkCatSaving(false); }
+  };
 
   const bulkUpdateGst = async () => {
     const target = bulkApplyTo === "filtered" ? filtered : itemRows;
@@ -178,6 +230,11 @@ export default function Inventory() {
           <table className="g-table">
             <thead>
               <tr>
+                <th style={{ width: 32, paddingRight: 0 }}>
+                  <input type="checkbox" checked={allPageSelected} onChange={togglePage}
+                    title={allPageSelected ? "Unselect this page" : "Select this page"}
+                    style={{ cursor: "pointer", width: 15, height: 15 }} />
+                </th>
                 <th>Item Name</th>
                 <th>Code</th>
                 <th>HSN</th>
@@ -193,15 +250,22 @@ export default function Inventory() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} style={{ textAlign: "center", padding: 32, color: C.textSub }}>Loading…</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", padding: 32, color: C.textSub }}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={11} style={{ textAlign: "center", padding: 32, color: C.textSub }}>No items found</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", padding: 32, color: C.textSub }}>No items found</td></tr>
               ) : paged.map((r) => {
                 const expColor  = r.hasExpired ? C.red : r.hasExpiring ? C.yellow : C.textSub;
                 const stockColor = r.totalStock <= 0 ? C.red : r.totalStock < 10 ? C.orange : C.green;
+                const isSel = selectedIds.has(r.id);
                 return (
                   <tr key={r.id} onClick={() => navigate(`/inventory/${r.id}`)}
-                    style={{ cursor: "pointer" }}>
+                    style={{ cursor: "pointer", background: isSel ? C.brandLighter : undefined }}>
+                    <td onClick={(e) => { e.stopPropagation(); toggleRow(r.id); }}
+                        style={{ paddingRight: 0, cursor: "pointer" }}>
+                      <input type="checkbox" checked={isSel} onChange={() => {}}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ cursor: "pointer", width: 15, height: 15 }} />
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{r.name}</div>
                       {r.category && (
@@ -295,6 +359,62 @@ export default function Inventory() {
             <strong>{(bulkApplyTo === "filtered" ? filtered : itemRows).length} items</strong>{" "}
             in both the items master and all their inventory batches.
           </div>
+        </div>
+      </Modal>
+
+      {/* ── Floating bulk-action toolbar ───────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          background: C.text, color: "#fff", borderRadius: 12,
+          padding: "10px 14px", display: "flex", alignItems: "center", gap: 12,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25)", zIndex: 200,
+          fontSize: 13, fontWeight: 600,
+        }}>
+          <span>{selectedIds.size} selected</span>
+          {selectedIds.size < filteredIds.length && (
+            <button onClick={selectAllFiltered} style={{ background: "transparent", border: `1px solid rgba(255,255,255,0.3)`, color: "#fff", padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              Select all {filteredIds.length} filtered
+            </button>
+          )}
+          <button onClick={() => { setBulkCatChoice(null); setShowBulkCat(true); }}
+            style={{ background: C.brand, border: "none", color: "#fff", padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <FiTag size={13} /> Change Category
+          </button>
+          <button onClick={clearSelection} title="Clear selection"
+            style={{ background: "transparent", border: "none", color: "#fff", padding: 4, borderRadius: 6, cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
+            <FiX size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* ── Bulk Category Modal ───────────────────────── */}
+      <Modal show={showBulkCat} title={`Change Category — ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"}`}
+        onClose={() => setShowBulkCat(false)} width={500}
+        footer={<>
+          <button className="g-btn ghost" onClick={() => setShowBulkCat(false)}>Cancel</button>
+          <button className="g-btn primary" onClick={bulkUpdateCategory} disabled={bulkCatSaving || !bulkCatChoice}>
+            {bulkCatSaving ? "Updating…" : `Apply to ${selectedIds.size} Items`}
+          </button>
+        </>}>
+        <div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 700, color: C.text, display: "block", marginBottom: 8 }}>New Category</label>
+            <CategorySelect className="g-inp"
+              value={bulkCatChoice?.name || ""}
+              onChange={(v) => setBulkCatChoice((prev) => prev?.name === v ? prev : { name: v, hsn: "", tax: 18 })}
+              onPick={(c) => setBulkCatChoice(c)}
+              placeholder="Search or pick a category" />
+          </div>
+          {bulkCatChoice && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, fontSize: 13,
+              background: "#eff6ff", border: "1.5px solid #bfdbfe", color: "#1e3a8a" }}>
+              Setting <strong>Category = {bulkCatChoice.name}</strong>
+              {bulkCatChoice.hsn ? <>, <strong>HSN = {bulkCatChoice.hsn}</strong></> : null}
+              , <strong>Tax = {bulkCatChoice.tax}%</strong>{" "}
+              on <strong>{selectedIds.size}</strong> items (item master + inventory tax).
+            </div>
+          )}
         </div>
       </Modal>
     </div>

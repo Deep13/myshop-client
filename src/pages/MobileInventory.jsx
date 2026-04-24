@@ -623,7 +623,10 @@ export default function MobileInventory() {
               </div>
               <div>
                 <label style={labelStyle}>HSN Code</label>
-                <HsnInput value={newItem.hsn} onChange={(v) => setNewItem(p => ({ ...p, hsn: v }))} placeholder="Type or select" inputStyle={inputStyle} />
+                <HsnInput value={newItem.hsn}
+                  onChange={(v) => setNewItem(p => ({ ...p, hsn: v }))}
+                  onPick={(h) => setNewItem(p => ({ ...p, hsn: h.hsn, tax: String(h.gst ?? p.tax) }))}
+                  placeholder="Type or select" inputStyle={inputStyle} />
               </div>
               <div>
                 <label style={labelStyle}>Tax %</label>

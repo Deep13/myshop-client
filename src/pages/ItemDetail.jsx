@@ -221,7 +221,10 @@ export default function ItemDetail() {
                     placeholder="Select category" />
                 </Field>
                 <Field label="HSN Code">
-                  <HsnInput className="g-inp" value={editForm.hsn} onChange={(v) => ef("hsn", v)} placeholder="HSN code" />
+                  <HsnInput className="g-inp" value={editForm.hsn}
+                    onChange={(v) => ef("hsn", v)}
+                    onPick={(h) => setEditForm((p) => ({ ...p, hsn: h.hsn, tax: String(h.gst ?? p.tax) }))}
+                    placeholder="HSN code" />
                 </Field>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Field label="MRP (₹)">

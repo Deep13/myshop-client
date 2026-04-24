@@ -8,7 +8,7 @@ import { HSN_CODES } from "../data/hsnCodes.js";
 
    Props: value, onChange, placeholder, className, style
 */
-export default function HsnInput({ value, onChange, placeholder, className, style, inputStyle }) {
+export default function HsnInput({ value, onChange, onPick, placeholder, className, style, inputStyle }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
   const wrapRef = useRef();
@@ -33,6 +33,7 @@ export default function HsnInput({ value, onChange, placeholder, className, styl
 
   const pick = (h) => {
     onChange(h.hsn);
+    onPick?.(h);
     setOpen(false);
     setHighlight(-1);
   };

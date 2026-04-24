@@ -1641,7 +1641,10 @@ export default function AddPurchase() {
               placeholder="Select category" />
           </Field>
           <Field label="HSN Code" hint="For GST — type or pick from list">
-            <HsnInput className="g-inp lg" value={newItem.hsn} onChange={(v) => setNewItem((p) => ({ ...p, hsn: v }))} placeholder="Optional — type or select HSN"
+            <HsnInput className="g-inp lg" value={newItem.hsn}
+              onChange={(v) => setNewItem((p) => ({ ...p, hsn: v }))}
+              onPick={(h) => setNewItem((p) => ({ ...p, hsn: h.hsn, tax: String(h.gst ?? p.tax) }))}
+              placeholder="Optional — type or select HSN"
               inputStyle={{ width: "100%" }} />
           </Field>
           <Field label="MRP (₹)">
