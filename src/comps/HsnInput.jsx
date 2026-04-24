@@ -38,7 +38,11 @@ export default function HsnInput({ value, onChange, placeholder, className, styl
   };
 
   return (
-    <div ref={wrapRef} style={{ position: "relative", ...style }}>
+    <div
+      ref={wrapRef}
+      style={{ position: "relative", ...style }}
+      onClick={(e) => e.stopPropagation()}
+    >
       <input
         type="text"
         className={className}
@@ -49,6 +53,7 @@ export default function HsnInput({ value, onChange, placeholder, className, styl
           setHighlight(-1);
         }}
         onFocus={() => setOpen(true)}
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         onKeyDown={(e) => {
           if (!open) return;
           if (e.key === "ArrowDown") {
@@ -68,17 +73,21 @@ export default function HsnInput({ value, onChange, placeholder, className, styl
         style={{ width: "100%", boxSizing: "border-box", ...inputStyle }}
       />
       {open && filtered.length > 0 && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0,
-          zIndex: 50, background: "#fff",
-          border: "1.5px solid #e2e8f0", borderRadius: 8,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
-          maxHeight: 260, overflowY: "auto",
-        }}>
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0,
+            zIndex: 100001, background: "#fff",
+            border: "1.5px solid #e2e8f0", borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
+            maxHeight: 260, overflowY: "auto",
+          }}
+        >
           {filtered.map((h, i) => (
             <div
               key={h.hsn + i}
-              onMouseDown={(e) => { e.preventDefault(); pick(h); }}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); pick(h); }}
               onMouseEnter={() => setHighlight(i)}
               style={{
                 padding: "8px 10px", cursor: "pointer",

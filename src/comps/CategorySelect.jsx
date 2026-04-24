@@ -37,14 +37,25 @@ export default function CategorySelect({ value, onChange, onPick, className, inp
     setHighlight(-1);
   };
 
+  const openDropdown = () => {
+    setSearch("");
+    setOpen(true);
+    setHighlight(-1);
+  };
+
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
+    <div
+      ref={wrapRef}
+      style={{ position: "relative" }}
+      onClick={(e) => e.stopPropagation()}
+    >
       <input
         type="text"
         className={className}
         value={open ? search : (value || "")}
         onChange={(e) => { setSearch(e.target.value); setOpen(true); setHighlight(-1); }}
-        onFocus={() => { setSearch(""); setOpen(true); }}
+        onFocus={openDropdown}
+        onClick={(e) => { e.stopPropagation(); if (!open) openDropdown(); }}
         onKeyDown={(e) => {
           if (!open) return;
           if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, filtered.length - 1)); }
@@ -56,17 +67,29 @@ export default function CategorySelect({ value, onChange, onPick, className, inp
         style={{ width: "100%", boxSizing: "border-box", cursor: "pointer", ...inputStyle }}
       />
       {open && filtered.length > 0 && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0,
-          zIndex: 50, background: "#fff",
-          border: "1.5px solid #e2e8f0", borderRadius: 8,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
-          maxHeight: 260, overflowY: "auto",
-        }}>
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0,
+            zIndex: 100001, background: "#fff",
+            border: "1.5px solid #e2e8f0", borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
+            maxHeight: 260, overflowY: "auto",
+          }}
+        >
           {filtered.map((c, i) => (
             <div
               key={c.name}
-              onMouseDown={(e) => { e.preventDefault(); pick(c); }}
+              onMouseDown={(e) => {
+                // preventDefault keeps focus on the input, stopPropagation stops outer click handlers
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                pick(c);
+              }}
               onMouseEnter={() => setHighlight(i)}
               style={{
                 padding: "8px 10px", cursor: "pointer",
