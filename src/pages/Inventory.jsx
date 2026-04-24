@@ -390,14 +390,16 @@ export default function Inventory() {
 
       {/* ── Bulk Category Modal ───────────────────────── */}
       <Modal show={showBulkCat} title={`Change Category — ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"}`}
-        onClose={() => setShowBulkCat(false)} width={500}
+        onClose={() => setShowBulkCat(false)} width={640}
         footer={<>
           <button className="g-btn ghost" onClick={() => setShowBulkCat(false)}>Cancel</button>
           <button className="g-btn primary" onClick={bulkUpdateCategory} disabled={bulkCatSaving || !bulkCatChoice}>
             {bulkCatSaving ? "Updating…" : `Apply to ${selectedIds.size} Items`}
           </button>
         </>}>
-        <div>
+        {/* minHeight reserves room below the category input for the dropdown.
+            The dropdown itself has maxHeight: 260, so ~340px keeps it fully visible. */}
+        <div style={{ minHeight: 340 }}>
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 13, fontWeight: 700, color: C.text, display: "block", marginBottom: 8 }}>New Category</label>
             <CategorySelect className="g-inp"
