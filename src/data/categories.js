@@ -40,6 +40,7 @@ export const CATEGORIES = [
   { name: "Nail polish",            hsn: "33043000", tax: 18 },
   { name: "Make-up",                hsn: "33049990", tax: 18 },
   { name: "Combs / hair accessories", hsn: "96151900", tax: 18 },
+  { name: "Cosmetic / skincare",    hsn: "33049990", tax: 18 },
 
   // ── Cleaning / household ──────────────────────────────
   { name: "Detergent",              hsn: "34022090", tax: 18 },
