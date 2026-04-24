@@ -3,6 +3,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import { API, asNum, fmt2, fmtDate, todayISO } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
+import CategorySelect from "../comps/CategorySelect.jsx";
 import { printLabel } from "../printLabel.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -42,7 +43,7 @@ export default function MobileInventory() {
 
   // Add item to master
   const [showAddItem, setShowAddItem] = useState(false);
-  const [newItem, setNewItem] = useState({ name: "", code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" });
+  const [newItem, setNewItem] = useState({ name: "", code: "", hsn: "", category: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" });
 
   const [saving, setSaving] = useState(false);
   const [savedItems, setSavedItems] = useState([]);
@@ -172,7 +173,7 @@ export default function MobileInventory() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name, code, hsn: newItem.hsn.trim(),
+          name, code, hsn: newItem.hsn.trim(), category: (newItem.category || "").trim(),
           mrp: asNum(newItem.mrp), salePrice: asNum(newItem.salePrice),
           purchasePrice: asNum(newItem.purchasePrice), tax: asNum(newItem.tax),
           is_primary: true, createdBy: user?.id || 1,
@@ -185,7 +186,7 @@ export default function MobileInventory() {
       // Auto-select the new item
       pickItem({ id: created.id, name: created.name, code: created.code, mrp: created.mrp, purchase_price: created.purchasePrice, sale_price: created.salePrice, tax: created.tax });
       setShowAddItem(false);
-      setNewItem({ name: "", code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" });
+      setNewItem({ name: "", code: "", hsn: "", category: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" });
       toast.success("Item added to master");
     } catch (e) { toast.error(e.message || "Failed"); }
     finally { setSaving(false); }
@@ -307,7 +308,7 @@ export default function MobileInventory() {
           }}>
             {scanning ? "Stop Scanner" : "Scan Barcode"}
           </button>
-          <button onClick={() => { setShowAddItem(true); setNewItem({ name: "", code: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" }); }} style={{
+          <button onClick={() => { setShowAddItem(true); setNewItem({ name: "", code: "", hsn: "", category: "", mrp: "", salePrice: "", purchasePrice: "", tax: "" }); }} style={{
             padding: "14px 16px", border: "none", borderRadius: 10,
             background: C.green, color: "#fff",
             fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
@@ -613,6 +614,13 @@ export default function MobileInventory() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div>
+                <label style={labelStyle}>Category</label>
+                <CategorySelect value={newItem.category}
+                  onChange={(v) => setNewItem(p => ({ ...p, category: v }))}
+                  onPick={(c) => setNewItem(p => ({ ...p, category: c.name, hsn: c.hsn || p.hsn, tax: String(c.tax) }))}
+                  placeholder="Select category" inputStyle={inputStyle} />
+              </div>
               <div>
                 <label style={labelStyle}>HSN Code</label>
                 <HsnInput value={newItem.hsn} onChange={(v) => setNewItem(p => ({ ...p, hsn: v }))} placeholder="Type or select" inputStyle={inputStyle} />

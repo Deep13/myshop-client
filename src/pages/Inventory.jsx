@@ -18,6 +18,7 @@ export default function Inventory() {
   const [q,          setQ]          = useState("");
   const [filterExp,  setFilterExp]  = useState("all");   // all | expiring | expired | instock | outofstock
   const [filterTax,  setFilterTax]  = useState("");       // "" | "0" | "5" | "12" | "18" | "28"
+  const [filterCat,  setFilterCat]  = useState("");       // "" | category name | "__none__"
   const [page, setPage] = useState(1);
 
   // Bulk GST update
@@ -68,11 +69,13 @@ export default function Inventory() {
     if (filterExp === "instock")     rows = rows.filter((r) => r.totalStock > 0);
     if (filterExp === "outofstock")  rows = rows.filter((r) => r.totalStock <= 0);
     if (filterTax !== "")            rows = rows.filter((r) => String(asNum(r.tax)) === filterTax);
+    if (filterCat === "__none__")    rows = rows.filter((r) => !r.category || r.category === "Uncategorized");
+    else if (filterCat !== "")       rows = rows.filter((r) => (r.category || "") === filterCat);
     return rows;
-  }, [itemRows, q, filterExp, filterTax]);
+  }, [itemRows, q, filterExp, filterTax, filterCat]);
 
   const paged = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
-  useEffect(() => setPage(1), [q, filterExp, filterTax]);
+  useEffect(() => setPage(1), [q, filterExp, filterTax, filterCat]);
 
   /* Summary stats */
   const stats = useMemo(() => ({
@@ -86,6 +89,16 @@ export default function Inventory() {
 
   /* Unique tax rates for filter */
   const taxRates = useMemo(() => [...new Set(items.map((i) => String(asNum(i.tax))))].sort((a, b) => Number(a) - Number(b)), [items]);
+
+  /* Unique categories (with counts) for filter */
+  const categoryOptions = useMemo(() => {
+    const counts = new Map();
+    for (const it of items) {
+      const c = (it.category || "").trim();
+      counts.set(c || "Uncategorized", (counts.get(c || "Uncategorized") || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [items]);
 
   const bulkUpdateGst = async () => {
     const target = bulkApplyTo === "filtered" ? filtered : itemRows;
@@ -142,8 +155,15 @@ export default function Inventory() {
           <option value="">All Tax %</option>
           {taxRates.map((t) => <option key={t} value={t}>{t}% GST</option>)}
         </select>
-        {(q || filterExp !== "all" || filterTax) && (
-          <button className="g-btn ghost sm" onClick={() => { setQ(""); setFilterExp("all"); setFilterTax(""); }}>Clear</button>
+        <select className="g-sel sm" style={{ width: 180 }} value={filterCat} onChange={(e) => setFilterCat(e.target.value)}>
+          <option value="">All Categories</option>
+          <option value="__none__">— Uncategorized —</option>
+          {categoryOptions.map(([name, count]) => (
+            <option key={name} value={name}>{name} ({count})</option>
+          ))}
+        </select>
+        {(q || filterExp !== "all" || filterTax || filterCat) && (
+          <button className="g-btn ghost sm" onClick={() => { setQ(""); setFilterExp("all"); setFilterTax(""); setFilterCat(""); }}>Clear</button>
         )}
         <span style={{ fontSize: 11, color: C.textSub, whiteSpace: "nowrap" }}>{filtered.length} results</span>
         <button className="g-btn ghost sm" onClick={() => setShowBulkGst(true)} title="Bulk GST% Update">
@@ -184,6 +204,9 @@ export default function Inventory() {
                     style={{ cursor: "pointer" }}>
                     <td>
                       <div style={{ fontWeight: 600 }}>{r.name}</div>
+                      {r.category && (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: C.textSub, background: "#f1f5f9", borderRadius: 4, padding: "1px 6px", marginTop: 2, marginRight: 4, display: "inline-block" }}>{r.category}</span>
+                      )}
                       {r.hasExpired  && <span style={{ fontSize: 10, fontWeight: 700, color: C.red,    background: C.redLight,    borderRadius: 4, padding: "1px 6px", marginTop: 2, display: "inline-block" }}>EXPIRED</span>}
                       {!r.hasExpired && r.hasExpiring && <span style={{ fontSize: 10, fontWeight: 700, color: C.yellow, background: C.yellowLight, borderRadius: 4, padding: "1px 6px", marginTop: 2, display: "inline-block" }}>EXPIRING</span>}
                     </td>

@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX, FiPrinter } from "react-icons/fi";
 import { printLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
+import CategorySelect from "../comps/CategorySelect.jsx";
+import HsnInput from "../comps/HsnInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
@@ -49,6 +51,7 @@ export default function ItemDetail() {
       name: it.name || "",
       code: it.code || "",
       hsn: it.hsn || "",
+      category: it.category || "",
       mrp: String(it.mrp || ""),
       salePrice: String(it.salePrice || it.sale_price || ""),
       purchasePrice: String(it.purchasePrice || it.purchase_price || ""),
@@ -72,6 +75,7 @@ export default function ItemDetail() {
           name: editForm.name.trim(),
           code: editForm.code.trim(),
           hsn: editForm.hsn.trim(),
+          category: (editForm.category || "").trim(),
           mrp: asNum(editForm.mrp),
           salePrice: asNum(editForm.salePrice),
           purchasePrice: asNum(editForm.purchasePrice),
@@ -90,6 +94,7 @@ export default function ItemDetail() {
           name: editForm.name.trim(),
           code: editForm.code.trim(),
           hsn: editForm.hsn.trim(),
+          category: (editForm.category || "").trim(),
           mrp: asNum(editForm.mrp),
           sale_price: asNum(editForm.salePrice),
           salePrice: asNum(editForm.salePrice),
@@ -194,6 +199,7 @@ export default function ItemDetail() {
               <div style={{ padding: "0 18px 4px" }}>
                 <InfoRow label="Name"           value={item.name} bold />
                 <InfoRow label="Code"           value={item.code} bold />
+                <InfoRow label="Category"       value={item.category || "—"} />
                 <InfoRow label="HSN"            value={item.hsn || "—"} />
                 <InfoRow label="MRP"            value={`₹${item.mrp}`} bold />
                 <InfoRow label="Sale Price"     value={`₹${item.salePrice || item.sale_price}`} />
@@ -208,8 +214,14 @@ export default function ItemDetail() {
                 <Field label="Item Code" required>
                   <input className="g-inp" value={editForm.code} onChange={(e) => ef("code", e.target.value)} />
                 </Field>
+                <Field label="Category" hint="Picking a category auto-fills HSN and tax">
+                  <CategorySelect className="g-inp" value={editForm.category}
+                    onChange={(v) => ef("category", v)}
+                    onPick={(c) => setEditForm((p) => ({ ...p, category: c.name, hsn: c.hsn || p.hsn, tax: String(c.tax) }))}
+                    placeholder="Select category" />
+                </Field>
                 <Field label="HSN Code">
-                  <input className="g-inp" value={editForm.hsn} onChange={(e) => ef("hsn", e.target.value)} />
+                  <HsnInput className="g-inp" value={editForm.hsn} onChange={(v) => ef("hsn", v)} placeholder="HSN code" />
                 </Field>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Field label="MRP (₹)">

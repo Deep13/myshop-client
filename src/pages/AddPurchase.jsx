@@ -5,13 +5,14 @@ import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
+import CategorySelect from "../comps/CategorySelect.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 import { printLabel } from "../printLabel.js";
 
 /* ── helpers ── */
 const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
-const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
+const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", category: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => {
   try {
@@ -330,6 +331,7 @@ export default function AddPurchase() {
           name,
           code,
           hsn: newItem.hsn.trim(),
+          category: (newItem.category || "").trim(),
           mrp: asNum(newItem.mrp),
           salePrice: asNum(newItem.salePrice),
           purchasePrice: asNum(newItem.purchasePrice),
@@ -1631,6 +1633,12 @@ export default function AddPurchase() {
                 Generate
               </button>
             </div>
+          </Field>
+          <Field label="Category" hint="Picking a category auto-fills HSN and tax">
+            <CategorySelect className="g-inp lg" value={newItem.category}
+              onChange={(v) => setNewItem((p) => ({ ...p, category: v }))}
+              onPick={(c) => setNewItem((p) => ({ ...p, category: c.name, hsn: c.hsn || p.hsn, tax: String(c.tax) }))}
+              placeholder="Select category" />
           </Field>
           <Field label="HSN Code" hint="For GST — type or pick from list">
             <HsnInput className="g-inp lg" value={newItem.hsn} onChange={(v) => setNewItem((p) => ({ ...p, hsn: v }))} placeholder="Optional — type or select HSN"
