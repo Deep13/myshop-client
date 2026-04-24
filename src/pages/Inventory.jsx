@@ -260,10 +260,10 @@ export default function Inventory() {
                 return (
                   <tr key={r.id} onClick={() => navigate(`/inventory/${r.id}`)}
                     style={{ cursor: "pointer", background: isSel ? C.brandLighter : undefined }}>
-                    <td onClick={(e) => { e.stopPropagation(); toggleRow(r.id); }}
-                        style={{ paddingRight: 0, cursor: "pointer" }}>
-                      <input type="checkbox" checked={isSel} onChange={() => {}}
-                        onClick={(e) => e.stopPropagation()}
+                    <td onClick={(e) => e.stopPropagation()}
+                        style={{ paddingRight: 0 }}>
+                      <input type="checkbox" checked={isSel}
+                        onChange={() => toggleRow(r.id)}
                         style={{ cursor: "pointer", width: 15, height: 15 }} />
                     </td>
                     <td>
