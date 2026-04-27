@@ -47,7 +47,9 @@ function AdminMobileGuard({ children }) {
 function DesktopRedirect({ children }) {
   if (isMobile() && localStorage.getItem("auth")) {
     const user = JSON.parse(localStorage.getItem("user") || "null");
-    return <Navigate to={user?.role === "admin" ? "/m/dashboard" : "/m/sale"} replace />;
+    // Admins on mobile keep access to every desktop page
+    if (user?.role === "admin") return children;
+    return <Navigate to="/m/sale" replace />;
   }
   return children;
 }
