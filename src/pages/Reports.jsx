@@ -505,14 +505,16 @@ export default function Reports() {
           {tab === "sales" && (
             <>
               {/* KPI */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 18 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
                 {[
-                  { label: "Total Revenue", value: `₹${fmt2(s.total_revenue)}`, color: C.brand },
-                  { label: "Bills", value: s.total_bills || 0, color: C.brand },
-                  { label: "Avg Bill", value: `₹${fmt2(s.avg_bill_value)}`, color: C.text },
-                  { label: "Items Sold", value: Math.round(s.total_qty_sold || 0), color: C.green },
-                  { label: "Unique Items", value: s.unique_items_sold || 0, color: C.text },
-                  { label: "Customers", value: s.unique_customers || 0, color: C.brand },
+                  { label: "Total Sales",    value: `₹${fmt2(s.total_revenue)}`,  color: C.brand },
+                  { label: "Total Received", value: `₹${fmt2(s.total_received)}`, color: C.green },
+                  { label: "Total Due",      value: `₹${fmt2(s.total_due)}`,      color: (s.total_due || 0) > 0 ? C.red : C.textSub },
+                  { label: "Bills",          value: s.total_bills || 0,           color: C.brand },
+                  { label: "Avg Bill",       value: `₹${fmt2(s.avg_bill_value)}`, color: C.text },
+                  { label: "Items Sold",     value: Math.round(s.total_qty_sold || 0), color: C.green },
+                  { label: "Unique Items",   value: s.unique_items_sold || 0,     color: C.text },
+                  { label: "Customers",      value: s.unique_customers || 0,      color: C.brand },
                 ].map(({ label, value, color }) => (
                   <div key={label} style={{ background: "#fff", borderRadius: 10, border: "1.5px solid #e5e7eb", padding: "12px 14px" }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
