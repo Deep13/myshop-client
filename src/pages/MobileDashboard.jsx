@@ -8,6 +8,7 @@ import {
 import { BsCash } from "react-icons/bs";
 import { API, fmtINR, todayISO, fmtDate } from "../ui.jsx";
 import { getShopSettings } from "../thermalPrint.js";
+import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 
 const C = {
@@ -22,7 +23,7 @@ const C = {
 };
 
 const asN = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
-const PERIODS = ["Today", "Yesterday", "7 Days", "30 Days"];
+const PERIODS = ["Today", "Yesterday", "7 Days", "30 Days", "Custom"];
 
 /* ── compact stat card for mobile ── */
 function Stat({ label, value, sub, color, icon, bg }) {
@@ -83,12 +84,22 @@ export default function MobileDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("Today");
+  // Custom date range — default to last 7 days
+  const t = todayISO();
+  const sevenAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  const [customFrom, setCustomFrom] = useState(sevenAgo);
+  const [customTo, setCustomTo] = useState(t);
   const lowStockLimit = getShopSettings().lowStockLimit || 5;
 
-  const load = async () => {
+  const load = async (rangeFrom, rangeTo) => {
     try {
       setLoading(true);
-      const res = await fetch(`${API}/get_dashboard.php?low_stock_limit=${lowStockLimit}`);
+      const params = new URLSearchParams({ low_stock_limit: String(lowStockLimit) });
+      if (rangeFrom && rangeTo) {
+        params.set("from", rangeFrom);
+        params.set("to", rangeTo);
+      }
+      const res = await fetch(`${API}/get_dashboard.php?${params.toString()}`);
       const j = await res.json();
       if (j.status === "success") setData(j.data);
     } catch (e) { console.error(e); }
@@ -96,6 +107,12 @@ export default function MobileDashboard() {
   };
 
   useEffect(() => { load(); }, []);
+  // Refetch when custom range changes (only while Custom is active)
+  useEffect(() => {
+    if (period === "Custom" && customFrom && customTo && customFrom <= customTo) {
+      load(customFrom, customTo);
+    }
+  }, [period, customFrom, customTo]);
 
   const logout = () => {
     localStorage.removeItem("user");
@@ -103,7 +120,7 @@ export default function MobileDashboard() {
     window.location.href = "/login";
   };
 
-  const periodKey = { "Today": "today", "Yesterday": "yesterday", "7 Days": "days7", "30 Days": "days30" }[period];
+  const periodKey = { "Today": "today", "Yesterday": "yesterday", "7 Days": "days7", "30 Days": "days30", "Custom": "custom" }[period];
   const sales = data?.sales?.[periodKey] || { total: 0, count: 0 };
   const purchase = data?.purchase?.[periodKey] || { total: 0, count: 0 };
   const modes = data?.sales_by_mode?.[periodKey] || {};
@@ -135,7 +152,9 @@ export default function MobileDashboard() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={load} disabled={loading}
+            <button
+              onClick={() => period === "Custom" ? load(customFrom, customTo) : load()}
+              disabled={loading}
               style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", padding: 8, borderRadius: 8, cursor: "pointer" }}>
               <FiRefreshCw size={16} style={{ animation: loading ? "mdspin 1s linear infinite" : "none" }} />
             </button>
@@ -158,6 +177,17 @@ export default function MobileDashboard() {
               }}>{p}</button>
           ))}
         </div>
+
+        {/* Custom date range pickers */}
+        {period === "Custom" && (
+          <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+            <DateInput value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+              style={{ background: "rgba(255,255,255,0.95)", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, color: C.text, width: "100%" }} />
+            <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.85 }}>to</span>
+            <DateInput value={customTo} onChange={(e) => setCustomTo(e.target.value)}
+              style={{ background: "rgba(255,255,255,0.95)", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, color: C.text, width: "100%" }} />
+          </div>
+        )}
       </header>
 
       {loading && !data ? (
