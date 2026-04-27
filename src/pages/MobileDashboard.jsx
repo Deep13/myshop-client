@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   FiShoppingCart, FiTruck, FiPackage, FiAlertTriangle,
   FiClock, FiDollarSign, FiRefreshCw, FiTrendingUp, FiTrendingDown,
-  FiCreditCard, FiSmartphone, FiLogOut, FiChevronDown, FiChevronUp,
+  FiCreditCard, FiSmartphone, FiLogOut,
 } from "react-icons/fi";
 import { BsCash } from "react-icons/bs";
 import { API, fmtINR, todayISO, fmtDate } from "../ui.jsx";
@@ -12,68 +12,50 @@ import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 
 const C = {
-  brand: "#034C9D", brandLight: "#e0ecfa",
-  green: "#16a34a", greenLight: "#dcfce7",
-  red: "#dc2626", redLight: "#fee2e2",
-  orange: "#ea580c", orangeLight: "#ffedd5",
-  yellow: "#ca8a04", yellowLight: "#fef9c3",
-  bg: "#f0f4f8", card: "#fff",
+  brand:       "#16a34a",  // header / primary green
+  brandDark:   "#15803d",
+  green:       "#16a34a", greenLight: "#dcfce7",
+  blue:        "#2563eb", blueLight:  "#dbeafe",
+  red:         "#dc2626", redLight:   "#fee2e2",
+  orange:      "#ea580c", orangeLight:"#ffedd5",
+  yellow:      "#ca8a04", yellowLight:"#fef9c3",
+  purple:      "#7c3aed", purpleLight:"#f5f3ff",
+  cyan:        "#0891b2", cyanLight:  "#ecfeff",
+  bg: "#f1f5f9", card: "#fff",
   text: "#0f172a", textSub: "#64748b", textLight: "#94a3b8",
-  border: "#e2e8f0",
+  border: "#e2e8f0", borderLight: "#f1f5f9",
 };
 
 const asN = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
 const PERIODS = ["Today", "Yesterday", "7 Days", "30 Days", "Custom"];
 
-/* ── compact stat card for mobile ── */
-function Stat({ label, value, sub, color, icon, bg }) {
+/* ── Tile for the 2x2 Sales & Purchase grid and similar grids ── */
+function Tile({ label, value, color, bg, icon }) {
   return (
     <div style={{
-      background: "#fff", borderRadius: 12, border: `1px solid ${C.border}`,
-      padding: 12, display: "flex", alignItems: "center", gap: 10,
+      background: bg, borderRadius: 10, padding: "14px 14px",
+      display: "flex", flexDirection: "column", justifyContent: "space-between",
+      minHeight: 78, position: "relative",
     }}>
-      {icon && (
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, background: bg,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color, flexShrink: 0,
-        }}>{icon}</div>
-      )}
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: 0.04, marginBottom: 2 }}>{label}</div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: color || C.text, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
-        {sub && <div style={{ fontSize: 11, color: C.textLight, marginTop: 1 }}>{sub}</div>}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color, textTransform: "uppercase", letterSpacing: 0.04 }}>{label}</span>
+        {icon && <span style={{ color, opacity: 0.85 }}>{icon}</span>}
       </div>
+      <div style={{ fontSize: 22, fontWeight: 900, color: C.text, marginTop: 8, letterSpacing: "-0.02em", lineHeight: 1 }}>{value}</div>
     </div>
   );
 }
 
-/* ── collapsible section ── */
-function Section({ title, icon, color, bg, count, children, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen);
+/* ── Card wrapper with title ── */
+function Card({ title, children, style }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden", marginBottom: 12 }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          width: "100%", border: "none", cursor: "pointer",
-          padding: "10px 14px", background: bg || "#f8fafc",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          borderBottom: open ? `1px solid ${C.border}` : "none",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", color }}>
-            {icon}
-          </div>
-          <span style={{ fontWeight: 800, fontSize: 13, color: C.text, textAlign: "left" }}>{title}</span>
-          {count !== undefined && (
-            <span style={{ fontSize: 11, fontWeight: 800, color, background: "#fff", padding: "1px 8px", borderRadius: 12 }}>{count}</span>
-          )}
+    <div style={{ background: "#fff", borderRadius: 14, padding: "14px 14px", marginBottom: 12, ...style }}>
+      {title && (
+        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, textTransform: "uppercase", letterSpacing: 0.06, marginBottom: 10 }}>
+          {title}
         </div>
-        {open ? <FiChevronUp size={16} color={C.textSub} /> : <FiChevronDown size={16} color={C.textSub} />}
-      </button>
-      {open && <div>{children}</div>}
+      )}
+      {children}
     </div>
   );
 }
@@ -84,12 +66,16 @@ export default function MobileDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("Today");
+
   // Custom date range — default to last 7 days
-  const t = todayISO();
+  const t0 = todayISO();
   const sevenAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
   const [customFrom, setCustomFrom] = useState(sevenAgo);
-  const [customTo, setCustomTo] = useState(t);
+  const [customTo, setCustomTo] = useState(t0);
+
   const lowStockLimit = getShopSettings().lowStockLimit || 5;
+  const shop = getShopSettings();
+  const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 
   const load = async (rangeFrom, rangeTo) => {
     try {
@@ -107,7 +93,6 @@ export default function MobileDashboard() {
   };
 
   useEffect(() => { load(); }, []);
-  // Refetch when custom range changes (only while Custom is active)
   useEffect(() => {
     if (period === "Custom" && customFrom && customTo && customFrom <= customTo) {
       load(customFrom, customTo);
@@ -121,237 +106,167 @@ export default function MobileDashboard() {
   };
 
   const periodKey = { "Today": "today", "Yesterday": "yesterday", "7 Days": "days7", "30 Days": "days30", "Custom": "custom" }[period];
-  const sales = data?.sales?.[periodKey] || { total: 0, count: 0 };
+  const sales    = data?.sales?.[periodKey]    || { total: 0, count: 0 };
   const purchase = data?.purchase?.[periodKey] || { total: 0, count: 0 };
-  const modes = data?.sales_by_mode?.[periodKey] || {};
+  const modes    = data?.sales_by_mode?.[periodKey] || {};
   const cashTotal = asN(modes.cash);
-  const upiTotal = asN(modes.upi);
+  const upiTotal  = asN(modes.upi);
   const cardTotal = asN(modes.card);
-  const inv = data?.inventory || {};
-  const expiring = data?.expiring_items || [];
-  const expired = data?.expired_items || [];
-  const lowStock = data?.low_stock_items || [];
-  const needPay = data?.need_to_pay || [];
-  const needColl = data?.need_to_collect || [];
-  const today = todayISO();
+  const inv       = data?.inventory || {};
+  const lowStock  = data?.low_stock_items || [];
+  const expiring  = data?.expiring_items  || [];
+  const expired   = data?.expired_items   || [];
+  const needColl  = data?.need_to_collect || [];
+  const needPay   = data?.need_to_pay     || [];
+  const today     = todayISO();
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, paddingBottom: 80, fontFamily: "'Noto Sans', 'Inter', system-ui, sans-serif" }}>
-      {/* ── Sticky header ── */}
+    <div style={{ minHeight: "100vh", background: C.bg, paddingBottom: 30, fontFamily: "'Noto Sans', 'Inter', system-ui, sans-serif" }}>
+      {/* ── Header ── */}
       <header style={{
-        background: `linear-gradient(135deg, ${C.brand} 0%, #0369a1 100%)`,
-        color: "#fff", padding: "12px 14px",
+        background: C.brand, color: "#fff",
+        padding: "14px 16px 16px",
         position: "sticky", top: 0, zIndex: 10,
-        boxShadow: "0 2px 8px rgba(3,76,157,0.25)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 900, letterSpacing: "-0.02em" }}>Dashboard</div>
-            <div style={{ fontSize: 11, opacity: 0.85 }}>
-              {new Date().toLocaleDateString("en-IN", { weekday: "short", year: "numeric", month: "short", day: "numeric" })}
+            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.01em", lineHeight: 1.1 }}>
+              {(shop.name || "Dashboard").toUpperCase()}
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.9, marginTop: 4 }}>
+              Hi, {user?.name || "Admin"}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <button
               onClick={() => period === "Custom" ? load(customFrom, customTo) : load()}
               disabled={loading}
-              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", padding: 8, borderRadius: 8, cursor: "pointer" }}>
+              style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", width: 36, height: 36, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <FiRefreshCw size={16} style={{ animation: loading ? "mdspin 1s linear infinite" : "none" }} />
             </button>
-            <button onClick={logout}
-              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", padding: 8, borderRadius: 8, cursor: "pointer" }}>
+            <button onClick={logout} title="Logout"
+              style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", width: 36, height: 36, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <FiLogOut size={16} />
             </button>
           </div>
         </div>
+      </header>
 
-        {/* Period tabs */}
-        <div style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto", paddingBottom: 2 }}>
+      <div style={{ padding: 12 }}>
+        {/* ── Big action buttons ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+          <button onClick={() => navigate("/m/sale")}
+            style={{ background: C.green, color: "#fff", border: "none", padding: "22px 12px", borderRadius: 14, fontSize: 17, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", boxShadow: "0 2px 6px rgba(22,163,74,0.18)" }}>
+            <FiShoppingCart size={26} />
+            New Sale
+          </button>
+          <button onClick={() => navigate("/m/inventory")}
+            style={{ background: C.orange, color: "#fff", border: "none", padding: "22px 12px", borderRadius: 14, fontSize: 17, fontWeight: 800, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", boxShadow: "0 2px 6px rgba(234,88,12,0.18)" }}>
+            <FiPackage size={26} />
+            Inventory
+          </button>
+        </div>
+
+        {/* ── Period tabs ── */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: 6, marginBottom: 12, display: "flex", gap: 4, overflowX: "auto" }}>
           {PERIODS.map((p) => (
             <button key={p} onClick={() => setPeriod(p)}
               style={{
-                flexShrink: 0, padding: "6px 14px", fontSize: 12, fontWeight: 700,
-                borderRadius: 20, border: "none", cursor: "pointer",
-                background: period === p ? "#fff" : "rgba(255,255,255,0.15)",
-                color: period === p ? C.brand : "#fff",
+                flex: 1, flexShrink: 0, padding: "10px 8px", fontSize: 13, fontWeight: 700,
+                borderRadius: 10, border: "none", cursor: "pointer", whiteSpace: "nowrap",
+                background: period === p ? C.brand : "transparent",
+                color: period === p ? "#fff" : C.textSub,
+                transition: "background 0.15s",
               }}>{p}</button>
           ))}
         </div>
 
-        {/* Custom date range pickers */}
+        {/* Custom date range */}
         {period === "Custom" && (
-          <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-            <DateInput value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-              style={{ background: "rgba(255,255,255,0.95)", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, color: C.text, width: "100%" }} />
-            <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.85 }}>to</span>
-            <DateInput value={customTo} onChange={(e) => setCustomTo(e.target.value)}
-              style={{ background: "rgba(255,255,255,0.95)", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, color: C.text, width: "100%" }} />
-          </div>
+          <Card>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <DateInput value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+                className="g-inp" style={{ flex: 1, fontSize: 13, padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 8 }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.textSub }}>to</span>
+              <DateInput value={customTo} onChange={(e) => setCustomTo(e.target.value)}
+                className="g-inp" style={{ flex: 1, fontSize: 13, padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 8 }} />
+            </div>
+          </Card>
         )}
-      </header>
 
-      {loading && !data ? (
-        <div style={{ textAlign: "center", padding: 50, color: C.textSub, fontSize: 14 }}>Loading…</div>
-      ) : (
-        <div style={{ padding: 12 }}>
-          {/* ── Quick nav ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-            <button onClick={() => navigate("/m/sale")}
-              style={{ background: `linear-gradient(135deg, ${C.brand}, #0369a1)`, color: "#fff", border: "none", padding: "14px 10px", borderRadius: 12, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", boxShadow: "0 2px 8px rgba(3,76,157,0.25)" }}>
-              <FiShoppingCart size={16} /> Quick Sale
-            </button>
-            <button onClick={() => navigate("/m/inventory")}
-              style={{ background: `linear-gradient(135deg, ${C.green}, #15803d)`, color: "#fff", border: "none", padding: "14px 10px", borderRadius: 12, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,0.25)" }}>
-              <FiPackage size={16} /> Inventory
-            </button>
-          </div>
-
-          {/* ── Sales & Purchase ── */}
-          <Section title="Sales & Purchase" icon={<FiTrendingUp size={14} />} color={C.brand} bg={C.brandLight}>
-            <div style={{ padding: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <Stat label="Sales Bills" value={sales.count} color={C.brand} icon={<FiShoppingCart size={16} />} bg={C.brandLight} />
-              <Stat label="Sales Amt" value={fmtINR(sales.total)} color={C.brand} icon={<FiTrendingUp size={16} />} bg={C.brandLight} />
-              <Stat label="Purchase Bills" value={purchase.count} color={C.orange} icon={<FiTruck size={16} />} bg={C.orangeLight} />
-              <Stat label="Purchase Amt" value={fmtINR(purchase.total)} color={C.orange} icon={<FiTrendingDown size={16} />} bg={C.orangeLight} />
-            </div>
-          </Section>
-
-          {/* ── Payment Modes ── */}
-          <Section title={`Payments (${period})`} icon={<FiDollarSign size={14} />} color={C.green} bg={C.greenLight}>
-            <div style={{ padding: 12, display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-              <Stat label="Cash" value={fmtINR(cashTotal)} sub={sales.total ? `${((cashTotal / sales.total) * 100).toFixed(1)}%` : "0%"}
-                color={C.green} icon={<BsCash size={16} />} bg={C.greenLight} />
-              <Stat label="UPI" value={fmtINR(upiTotal)} sub={sales.total ? `${((upiTotal / sales.total) * 100).toFixed(1)}%` : "0%"}
-                color="#7c3aed" icon={<FiSmartphone size={16} />} bg="#f5f3ff" />
-              <Stat label="Card" value={fmtINR(cardTotal)} sub={sales.total ? `${((cardTotal / sales.total) * 100).toFixed(1)}%` : "0%"}
-                color="#0891b2" icon={<FiCreditCard size={16} />} bg="#ecfeff" />
-            </div>
-          </Section>
-
-          {/* ── Inventory value ── */}
-          <Section title="Inventory Value" icon={<FiPackage size={14} />} color={C.green} bg={C.greenLight} defaultOpen={false}>
-            <div style={{ padding: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <Stat label="Stock (PTR)" value={fmtINR(inv.stock_by_ptr || 0)} color={C.green} icon={<FiPackage size={16} />} bg={C.greenLight} />
-              <Stat label="Stock (MRP)" value={fmtINR(inv.stock_by_mrp || 0)} color={C.green} icon={<FiPackage size={16} />} bg={C.greenLight} />
-              <Stat label="Expired (PTR)" value={fmtINR(inv.expired_by_ptr || 0)} color={C.red} icon={<FiAlertTriangle size={16} />} bg={C.redLight} />
-              <Stat label="Expired (MRP)" value={fmtINR(inv.expired_by_mrp || 0)} color={C.red} icon={<FiAlertTriangle size={16} />} bg={C.redLight} />
-            </div>
-          </Section>
-
-          {/* ── Expiring soon ── */}
-          <Section title="Expiring Soon (90d)" icon={<FiClock size={14} />} color={C.yellow} bg="#fffbeb" count={expiring.length} defaultOpen={false}>
-            {expiring.length === 0 ? (
-              <div style={{ padding: 16, textAlign: "center", color: C.textLight, fontSize: 12 }}>No items expiring soon</div>
-            ) : (
-              <div>
-                {expiring.slice(0, 10).map((r, i) => {
-                  const daysLeft = Math.ceil((new Date(r.exp_date) - new Date(today)) / 86400000);
-                  return (
-                    <div key={i} style={{ padding: "10px 12px", borderBottom: i < Math.min(expiring.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.item_name}</div>
-                        <div style={{ fontSize: 11, color: C.textSub }}>{r.batch_no || "—"} · Qty {r.current_qty}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: daysLeft <= 30 ? C.red : C.yellow }}>{fmtDate(r.exp_date)}</div>
-                        <div style={{ fontSize: 10, color: C.textLight }}>{daysLeft}d left</div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {expiring.length > 10 && <div style={{ padding: 8, textAlign: "center", fontSize: 11, color: C.textSub }}>+{expiring.length - 10} more</div>}
+        {loading && !data ? (
+          <div style={{ textAlign: "center", padding: 50, color: C.textSub, fontSize: 14 }}>Loading…</div>
+        ) : (
+          <>
+            {/* ── Sales & Purchase ── */}
+            <Card title="Sales & Purchase">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Tile label="SALES" value={fmtINR(sales.total)} color={C.green} bg={C.greenLight}
+                  icon={<FiTrendingUp size={18} />} />
+                <Tile label="PURCHASE" value={fmtINR(purchase.total)} color={C.orange} bg={C.orangeLight}
+                  icon={<FiTrendingDown size={18} />} />
+                <Tile label="BILLS (SALE)" value={sales.count} color={C.textSub} bg="#f1f5f9"
+                  icon={<FiShoppingCart size={18} />} />
+                <Tile label="BILLS (BUY)" value={purchase.count} color={C.textSub} bg="#f1f5f9"
+                  icon={<FiTruck size={18} />} />
               </div>
-            )}
-          </Section>
+            </Card>
 
-          {/* ── Expired ── */}
-          <Section title="Expired (in stock)" icon={<FiAlertTriangle size={14} />} color={C.red} bg="#fff5f5" count={expired.length} defaultOpen={false}>
-            {expired.length === 0 ? (
-              <div style={{ padding: 16, textAlign: "center", color: C.textLight, fontSize: 12 }}>No expired stock</div>
-            ) : (
-              <div>
-                {expired.slice(0, 10).map((r, i) => (
-                  <div key={i} style={{ padding: "10px 12px", borderBottom: i < Math.min(expired.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.item_name}</div>
-                      <div style={{ fontSize: 11, color: C.textSub }}>{r.batch_no || "—"} · Qty {r.current_qty}</div>
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: C.red }}>{fmtDate(r.exp_date)}</div>
-                  </div>
-                ))}
-                {expired.length > 10 && <div style={{ padding: 8, textAlign: "center", fontSize: 11, color: C.textSub }}>+{expired.length - 10} more</div>}
+            {/* ── Payment Mode ── */}
+            <Card title={`Payment Mode (${period})`}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <Tile label="CASH" value={fmtINR(cashTotal)} color={C.green} bg={C.greenLight} />
+                <Tile label="UPI"  value={fmtINR(upiTotal)}  color={C.blue}  bg={C.blueLight} />
+                <Tile label="CARD" value={fmtINR(cardTotal)} color={C.yellow} bg={C.yellowLight} />
               </div>
-            )}
-          </Section>
+            </Card>
 
-          {/* ── Low Stock ── */}
-          {lowStock.length > 0 && (
-            <Section title={`Low Stock (≤ ${lowStockLimit})`} icon={<FiPackage size={14} />} color={C.orange} bg="#fff7ed" count={lowStock.length} defaultOpen={false}>
-              <div>
-                {lowStock.slice(0, 10).map((r, i) => (
-                  <div key={i} style={{ padding: "10px 12px", borderBottom: i < Math.min(lowStock.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.item_name}</div>
-                      <div style={{ fontSize: 11, color: C.textSub }}>{r.item_code}</div>
-                    </div>
-                    <span style={{
-                      fontWeight: 800, fontSize: 12,
-                      color: asN(r.total_qty) <= 2 ? C.red : C.orange,
-                      background: asN(r.total_qty) <= 2 ? C.redLight : C.orangeLight,
-                      padding: "2px 10px", borderRadius: 6, alignSelf: "center",
-                    }}>{r.total_qty}</span>
-                  </div>
-                ))}
+            {/* ── Inventory ── */}
+            <Card title="Inventory">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Tile label="STOCK VALUE (MRP)" value={fmtINR(inv.stock_by_mrp || 0)} color={C.green} bg={C.greenLight}
+                  icon={<FiPackage size={18} />} />
+                <Tile label="EXPIRED STOCK" value={fmtINR(inv.expired_by_mrp || 0)} color={C.red} bg={C.redLight}
+                  icon={<FiAlertTriangle size={18} />} />
               </div>
-            </Section>
-          )}
+              <div style={{ marginTop: 10, fontSize: 12, color: C.textSub, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <span>Low stock: <strong style={{ color: C.orange }}>{lowStock.length}</strong></span>
+                <span>Expiring: <strong style={{ color: C.yellow }}>{expiring.length}</strong></span>
+                <span>Expired: <strong style={{ color: C.red }}>{expired.length}</strong></span>
+              </div>
+            </Card>
 
-          {/* ── Need to pay ── */}
-          <Section title="Need to Pay" icon={<FiTruck size={14} />} color={C.orange} bg="#fff7ed"
-            count={fmtINR(data?.need_to_pay_total || 0)} defaultOpen={false}>
-            {needPay.length === 0 ? (
-              <div style={{ padding: 16, textAlign: "center", color: C.textLight, fontSize: 12 }}>All payments cleared</div>
-            ) : (
-              <div>
-                {needPay.slice(0, 10).map((r, i) => {
-                  const overdue = r.earliest_due && r.earliest_due < today;
-                  return (
-                    <div key={i} style={{ padding: "10px 12px", borderBottom: i < Math.min(needPay.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.distributor_name}</div>
-                        <div style={{ fontSize: 11, color: overdue ? C.red : C.textSub }}>
-                          {r.bill_count} bills {r.earliest_due ? `· due ${fmtDate(r.earliest_due)}` : ""} {overdue && "· OVERDUE"}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: C.orange, alignSelf: "center" }}>₹{asN(r.balance).toFixed(0)}</div>
-                    </div>
-                  );
-                })}
+            {/* ── Need to Collect (single line, like screenshot) ── */}
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: C.green, textTransform: "uppercase", letterSpacing: 0.06 }}>Need to Collect</span>
+                <span style={{ fontSize: 18, fontWeight: 900, color: C.green }}>{fmtINR(data?.need_to_collect_total || 0)}</span>
               </div>
-            )}
-          </Section>
+              {needColl.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: C.textSub }}>
+                  From {needColl.length} customer{needColl.length === 1 ? "" : "s"}
+                </div>
+              )}
+            </Card>
 
-          {/* ── Need to collect ── */}
-          <Section title="Need to Collect" icon={<FiDollarSign size={14} />} color={C.green} bg="#f0fdf4"
-            count={fmtINR(data?.need_to_collect_total || 0)} defaultOpen={false}>
-            {needColl.length === 0 ? (
-              <div style={{ padding: 16, textAlign: "center", color: C.textLight, fontSize: 12 }}>All payments collected</div>
-            ) : (
-              <div>
-                {needColl.slice(0, 10).map((r, i) => (
-                  <div key={i} style={{ padding: "10px 12px", borderBottom: i < Math.min(needColl.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.customer_name}</div>
-                      <div style={{ fontSize: 11, color: C.textSub }}>{r.invoice_count} invoices</div>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: C.green, alignSelf: "center" }}>₹{asN(r.balance).toFixed(0)}</div>
-                  </div>
-                ))}
+            {/* ── Need to Pay (similar) ── */}
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: C.orange, textTransform: "uppercase", letterSpacing: 0.06 }}>Need to Pay</span>
+                <span style={{ fontSize: 18, fontWeight: 900, color: C.orange }}>{fmtINR(data?.need_to_pay_total || 0)}</span>
               </div>
-            )}
-          </Section>
-        </div>
-      )}
+              {needPay.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: C.textSub }}>
+                  To {needPay.length} distributor{needPay.length === 1 ? "" : "s"}
+                  {needPay.some((p) => p.earliest_due && p.earliest_due < today) && (
+                    <span style={{ color: C.red, fontWeight: 700, marginLeft: 8 }}>· some overdue</span>
+                  )}
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+      </div>
 
       <style>{`@keyframes mdspin { to { transform: rotate(360deg); } }`}</style>
     </div>
