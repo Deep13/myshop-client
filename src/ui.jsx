@@ -239,6 +239,73 @@ html.dark div[style*="#fafafa"] { background-color: #1e293b !important; }
 html.dark [style*="color: #111827"],
 html.dark [style*="color:#111827"],
 html.dark [style*="color: #0f172a"] { color: #e2e8f0 !important; }
+
+/* Default desktop visibility helpers */
+.g-hide-mobile { display: inherit; }
+.g-show-mobile { display: none !important; }
+
+/* ── Mobile responsive layer ──
+   Applies on phones / narrow tablets. Targets the inline-style heavy
+   desktop pages so admins on mobile get a usable layout without each
+   page being rewritten. */
+@media (max-width: 768px) {
+  .g-hide-mobile { display: none !important; }
+  .g-show-mobile { display: flex !important; }
+
+  /* Header tightens up on mobile */
+  header[style*="background: linear-gradient"] { padding: 0 12px !important; }
+
+  #g-root { padding: 10px 10px !important; }
+  #g-root .g-card-body { padding: 12px !important; }
+  #g-root .g-card-head { padding: 10px 12px !important; }
+  #g-root .g-card-title { font-size: 13px !important; }
+  #g-root .g-grid-2,
+  #g-root .g-grid-3,
+  #g-root .g-grid-4 { grid-template-columns: 1fr !important; gap: 10px !important; }
+
+  /* Inputs feel smaller on mobile by default */
+  #g-root .g-inp.lg, #g-root .g-sel.lg { height: 40px !important; font-size: 14px !important; }
+  #g-root .g-btn.lg { height: 40px !important; font-size: 14px !important; padding: 0 16px !important; }
+
+  /* Filter rows that use inline flex-wrap: nowrap — force wrap so they stack */
+  #g-root [style*="flex-wrap: nowrap"],
+  #g-root [style*="flex-wrap:nowrap"] { flex-wrap: wrap !important; }
+
+  /* Wide explicit-width inputs — let them grow to row width */
+  #g-root .g-inp[style*="width: 130px"],
+  #g-root .g-inp[style*="width: 120px"],
+  #g-root .g-inp[style*="width: 140px"],
+  #g-root .g-sel[style*="width: 110px"],
+  #g-root .g-sel[style*="width: 120px"],
+  #g-root .g-sel[style*="width: 130px"],
+  #g-root .g-sel[style*="width: 140px"],
+  #g-root .g-sel[style*="width: 180px"] { width: auto !important; min-width: 110px !important; flex: 1 0 110px !important; }
+
+  /* Fixed pixel widths on plain inputs — let them shrink */
+  #g-root input[style*="width: 220px"],
+  #g-root input[style*="minWidth: 220px"] { min-width: 0 !important; flex: 1 1 100% !important; }
+
+  /* Table cells become tighter; the parent should already overflow-x */
+  #g-root .g-table thead th,
+  #g-root .g-table tbody td { padding: 8px 8px !important; font-size: 12px !important; white-space: nowrap; }
+
+  /* Modals fill the screen */
+  #g-root + div[style*="position: fixed"][style*="inset: 0"] > div { width: calc(100vw - 16px) !important; max-width: 100vw !important; max-height: 90vh !important; }
+
+  /* Page top bars / KPI grids that use rep(N, 1fr) inline → wrap */
+  #g-root [style*="grid-template-columns: repeat(6"],
+  #g-root [style*="grid-template-columns: repeat(5"],
+  #g-root [style*="grid-template-columns: repeat(4"],
+  #g-root [style*="grid-template-columns:repeat(6"],
+  #g-root [style*="grid-template-columns:repeat(5"],
+  #g-root [style*="grid-template-columns:repeat(4"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  #g-root [style*="grid-template-columns: 320px 1fr"],
+  #g-root [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+
+  /* h2 page titles smaller */
+  #g-root h2 { font-size: 18px !important; }
+}
 `;
 
 import React, { useEffect } from "react";

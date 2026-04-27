@@ -76,7 +76,7 @@ export default function Header() {
           }}>
             <FiPackage size={18} color="#fff" />
           </div>
-          <span style={{
+          <span className="g-hide-mobile" style={{
             color: "#fff", fontWeight: 800, fontSize: 17,
             letterSpacing: "-0.02em",
           }}>
@@ -86,6 +86,7 @@ export default function Header() {
 
         {/* Navigation */}
         <nav style={{ display: "flex", gap: 2, alignItems: "center" }}>
+          <div className="g-hide-mobile" style={{ display: "flex", gap: 2, alignItems: "center" }}>
           {LINKS.map(({ to, label, icon }) => {
             const active = pathname === to || (to !== "/" && pathname.startsWith(to));
             return (
@@ -104,6 +105,7 @@ export default function Header() {
               </Link>
             );
           })}
+          </div>
 
           {/* More dropdown */}
           <div ref={moreRef} style={{ position: "relative" }}>
@@ -127,6 +129,28 @@ export default function Header() {
                 boxShadow: "0 12px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)",
                 minWidth: 220, padding: "6px 0", zIndex: 200,
               }}>
+                {/* On mobile, primary nav links live inside this dropdown too */}
+                {LINKS.map((item) => {
+                  const active = pathname === item.to || (item.to !== "/" && pathname.startsWith(item.to));
+                  return (
+                    <button key={"primary-" + item.label}
+                      className="g-show-mobile"
+                      onClick={() => { setMoreOpen(false); navigate(item.to); }}
+                      style={{
+                        alignItems: "center", gap: 11, width: "100%",
+                        padding: "11px 18px", border: "none", cursor: "pointer",
+                        background: active ? C.brandLighter : "transparent",
+                        color: active ? C.brand : C.text,
+                        fontSize: 14, fontWeight: active ? 700 : 500,
+                        fontFamily: "inherit", textAlign: "left",
+                        transition: "background 0.1s",
+                        borderLeft: active ? `3px solid ${C.brand}` : "3px solid transparent",
+                      }}>
+                      <span style={{ color: active ? C.brand : C.textSub, display: "flex" }}>{item.icon}</span>
+                      {item.label}
+                    </button>
+                  );
+                })}
                 {MORE_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => {
                   const isLink = !!item.to;
                   const active = isLink && pathname.startsWith(item.to);
@@ -176,6 +200,7 @@ export default function Header() {
 
           {/* New Sale quick button */}
           <button onClick={() => navigate("/addsales")} title="New Sale (Ctrl+Shift+S)"
+            className="g-hide-mobile"
             style={{
               background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)",
               cursor: "pointer", color: "#fff", height: 34, padding: "0 14px",
