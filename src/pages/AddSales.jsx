@@ -103,6 +103,13 @@ export default function AddSales() {
   const [showShopSettings, setShowShopSettings] = useState(false);
   const [shopForm, setShopForm] = useState(getShopSettings);
 
+  /* ── Focus the first row's item search input on mount ── */
+  useEffect(() => {
+    // Defer until after render so the ref is wired up
+    const t = setTimeout(() => searchRefs.current[0]?.focus(), 50);
+    return () => clearTimeout(t);
+  }, []);
+
   /* ── Load inventory with include_zero=1 so all batches show ── */
   useEffect(() => {
     (async () => {
