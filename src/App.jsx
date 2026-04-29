@@ -205,7 +205,8 @@ export default function App() {
                       {expiring.map((r, i) => {
                         const daysLeft = Math.ceil((new Date(r.exp_date) - new Date(today)) / 86400000);
                         return (
-                          <tr key={i} style={{ borderBottom: "1px solid #f9fafb" }}>
+                          <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: r.item_id ? "pointer" : "default" }}
+                            onClick={() => r.item_id && navigate(`/inventory/${r.item_id}`)}>
                             <td style={{ padding: "8px 12px", fontSize: 13 }}>
                               <div style={{ fontWeight: 600 }}>{r.item_name}</div>
                               <div style={{ fontSize: 11, color: C.textSub }}>{r.item_code}</div>
@@ -249,7 +250,8 @@ export default function App() {
                     </thead>
                     <tbody>
                       {expired.map((r, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #f9fafb" }}>
+                        <tr key={i} style={{ borderBottom: "1px solid #f9fafb", cursor: r.item_id ? "pointer" : "default" }}
+                          onClick={() => r.item_id && navigate(`/inventory/${r.item_id}`)}>
                           <td style={{ padding: "8px 12px", fontSize: 13 }}>
                             <div style={{ fontWeight: 600 }}>{r.item_name}</div>
                             <div style={{ fontSize: 11, color: C.textSub }}>{r.item_code}</div>

@@ -294,7 +294,9 @@ export default function MobileDashboard() {
                   {expiring.slice(0, 10).map((r, i) => {
                     const daysLeft = Math.ceil((new Date(r.exp_date) - new Date(today)) / 86400000);
                     return (
-                      <div key={i} style={{ padding: "9px 12px", borderBottom: i < Math.min(expiring.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <div key={i}
+                        onClick={() => r.item_id && navigate(`/inventory/${r.item_id}`)}
+                        style={{ padding: "9px 12px", borderBottom: i < Math.min(expiring.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8, cursor: r.item_id ? "pointer" : "default" }}>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.item_name}</div>
                           <div style={{ fontSize: 10, color: C.textSub }}>{r.batch_no || "—"} · Qty {r.current_qty}</div>
@@ -318,7 +320,9 @@ export default function MobileDashboard() {
               ) : (
                 <div>
                   {expired.slice(0, 10).map((r, i) => (
-                    <div key={i} style={{ padding: "9px 12px", borderBottom: i < Math.min(expired.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div key={i}
+                      onClick={() => r.item_id && navigate(`/inventory/${r.item_id}`)}
+                      style={{ padding: "9px 12px", borderBottom: i < Math.min(expired.length, 10) - 1 ? `1px solid ${C.border}` : "none", display: "flex", justifyContent: "space-between", gap: 8, cursor: r.item_id ? "pointer" : "default" }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.item_name}</div>
                         <div style={{ fontSize: 10, color: C.textSub }}>{r.batch_no || "—"} · Qty {r.current_qty}</div>
