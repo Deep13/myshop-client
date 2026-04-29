@@ -1,0 +1,113 @@
+Section,Category,HSN,Current Rate %,Proposed GST 2.0 Rate %
+Beverages,Soft drinks,22021010,28,40
+Beverages,Energy drinks,22021090,28,40
+Beverages,Fruit juice,20098990,12,5
+Beverages,Bottled water,22011010,18,5
+Beverages,Tea,9021090,5,5
+Beverages,Coffee,9012110,5,5
+Beverages,Instant coffee,21011110,18,5
+Beverages,Health drinks,19019090,18,5
+Tobacco,Cigarettes,24022090,28,40
+Tobacco,Other tobacco,24039910,28,40
+Personal care,Sanitary napkins,96190020,12,0
+Personal care,Diapers,96190010,12,5
+Personal care,Shampoo,33051090,18,18
+Personal care,Hair oil,33059019,18,18
+Personal care,Hair dye,33059040,18,18
+Personal care,Toothpaste,33061020,18,18
+Personal care,Toothbrush,96032100,18,18
+Personal care,Mouthwash,33069000,18,18
+Personal care,Deodorant,33072000,18,18
+Personal care,Perfume,33030020,18,18
+Personal care,Shaving prep,33071000,18,18
+Personal care,Razor / blade,82121000,18,18
+Personal care,Talcum powder,33073000,18,18
+Personal care,Bath soap,34011190,18,18
+Personal care,Face wash,33049920,18,18
+Personal care,Face / body cream,33049910,18,18
+Personal care,Lip preparations,33041000,18,18
+Personal care,Eye make-up,33042000,18,18
+Personal care,Nail polish,33043000,18,18
+Personal care,Make-up,33049990,18,18
+Personal care,Combs / hair accessories,96151900,18,18
+Household,Detergent,34022090,18,18
+Household,Dishwash,34022090,18,18
+Household,Floor / toilet cleaner,38089400,18,18
+Household,Air freshener,33074900,18,18
+Household,Insecticide,38089100,18,18
+Household,Bleach / stain remover,34022090,18,18
+Household,Polish,34051000,18,18
+Household,Agarbatti,33074100,5,5
+Household,Candles,34060010,12,12
+Household,Matches,36050090,12,18
+Household,Lighter,96131000,18,18
+Household,Broom / mop,96031000,12,18
+Household,Garbage bag,39232990,18,18
+Household,Battery,85061000,28,18
+Groceries,Atta (packed),11010000,5,5
+Groceries,Flours,11022000,5,5
+Groceries,Rice,10063090,0,0
+Groceries,Rice (branded),10063020,5,5
+Groceries,Pulses,7139010,0,0
+Groceries,Sugar,17019990,5,5
+Groceries,Jaggery,17019100,0,0
+Groceries,Salt,25010020,5,0
+Groceries,Soyabean oil,15079010,5,5
+Groceries,Mustard oil,15141920,5,5
+Groceries,Sunflower oil,15121190,5,5
+Groceries,Groundnut oil,15081000,5,5
+Groceries,Edible oil,15159091,5,5
+Groceries,Ghee,4051000,12,5
+Groceries,Butter,4051000,12,5
+Groceries,Cheese / paneer,4069000,5,5
+Groceries,Curd,4039010,0,5
+Groceries,Milk powder,4022910,5,5
+Groceries,Milk,4012000,0,0
+Groceries,Ice cream,21050000,18,5
+Groceries,Honey,4090000,0,5
+Packaged food,Biscuits,19053100,18,5
+Packaged food,Bread / rusk,19059090,5,5
+Packaged food,Cake / pastry,19059090,18,18
+Packaged food,Chocolate,18063210,18,18
+Packaged food,Candy / toffee,17049090,18,18
+Packaged food,Chewing gum,17041000,18,18
+Packaged food,Chips,19059090,18,12
+Packaged food,Namkeen,21069099,12,5
+Packaged food,Papad,19059040,0,0
+Packaged food,Pickle,20019000,12,5
+Packaged food,Noodles,19023010,12,5
+Packaged food,Pasta,19023010,12,5
+Packaged food,Ketchup,21032000,12,5
+Packaged food,Sauce,21039090,12,5
+Packaged food,Mayonnaise,21039090,12,5
+Packaged food,Jam,20079990,12,5
+Packaged food,Baby food,19011090,18,5
+Packaged food,Breakfast cereals,11041200,18,5
+Packaged food,Ready-to-eat,21069099,18,5
+Packaged food,Sweets / mithai,21069099,5,5
+Spices,Masala,9109929,5,5
+Spices,Turmeric,9103020,5,5
+Spices,Chilli powder,9042110,5,5
+Spices,Cumin,9093119,5,5
+Spices,Coriander,9092190,5,5
+Spices,Pepper,9041110,5,5
+Spices,Cardamom,9083110,5,5
+Spices,Cloves,9071010,5,5
+Spices,Cinnamon,9061910,5,5
+Pharma / OTC,Pain / balm,30049099,12,5
+Pharma / OTC,Digestive,30049099,12,5
+Pharma / OTC,Pain relief,30049099,12,5
+Pharma / OTC,First aid,30051090,12,5
+Pharma / OTC,Condom,40141000,12,0
+Pharma / OTC,Medicament,30049099,12,5
+Stationery,Pen,96081019,12,18
+Stationery,Pencil,96091000,12,0
+Stationery,Notebook,48201090,12,0
+Stationery,Envelope,48173000,18,18
+Stationery,Eraser / sharpener,40160000,18,0
+Stationery,Crayon / marker,96101000,12,5
+Apparel,T-shirt,61091000,5,5
+Apparel,Apparel,62034200,5,5
+Apparel,Socks,61151000,5,5
+Apparel,Household linen,63026000,5,5
+Fallback,Uncategorized,,18,18
