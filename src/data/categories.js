@@ -62,6 +62,7 @@ export const CATEGORIES = [
   { name: "LED bulbs / lamps",      hsn: "85395000", tax: 5  },
   { name: "Electric appliances",    hsn: "85437099", tax: 18 },
   { name: "Toys / plastic / cars",  hsn: "95030090", tax: 5  },
+  { name: "Electronic toys",        hsn: "95049000", tax: 18 },
 
   // ── Groceries / food ──────────────────────────────────
   { name: "Atta (packed)",          hsn: "11010000", tax: 5  },
