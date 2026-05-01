@@ -1300,10 +1300,10 @@ export default function AddPurchase() {
                       <input className="g-td-inp num" value={r.mrp} onChange={(e) => updRow(idx, { mrp: e.target.value })} inputMode="decimal" placeholder="0" />
                     </td>
                     <td>
-                      <input className="g-td-inp num" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} />
+                      <input className="g-td-inp num" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="decimal" placeholder="0" style={{ textAlign: "center" }} />
                     </td>
                     <td>
-                      <input className="g-td-inp num" value={r.freeQty} onChange={(e) => updRow(idx, { freeQty: e.target.value })} inputMode="numeric" placeholder="0" style={{ textAlign: "center" }} />
+                      <input className="g-td-inp num" value={r.freeQty} onChange={(e) => updRow(idx, { freeQty: e.target.value })} inputMode="decimal" placeholder="0" style={{ textAlign: "center" }} />
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.purchasePrice} onChange={(e) => updRow(idx, { purchasePrice: e.target.value })} inputMode="decimal" placeholder="0" />

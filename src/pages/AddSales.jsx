@@ -243,12 +243,9 @@ export default function AddSales() {
     setRows((prev) => {
       const n = [...prev];
       const u = { ...n[i] };
-      // Find stock for this inventory record
-      const invRec = u.invId ? inventory.find((inv) => inv.id === u.invId) : null;
-      let qty = asNum(val);
-      // Keep the typed string for display but floor to stock
-      u.qty    = String(qty);
-      u.amount = fmt2(calcRowAmount({ ...u, qty }));
+      // Keep raw typed string so users can type "0." or "0.5" without it being clobbered.
+      u.qty    = val;
+      u.amount = fmt2(calcRowAmount({ ...u, qty: asNum(val) }));
       n[i] = u;
       return n;
     });
@@ -776,7 +773,7 @@ export default function AddSales() {
                         value={r.qty}
                         onChange={(e) => onQtyChange(idx, e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const next = idx + 1; setTimeout(() => searchRefs.current[next]?.focus(), 0); } }}
-                        inputMode="numeric" placeholder="0"
+                        inputMode="decimal" placeholder="0"
                         style={{ textAlign: "center", fontWeight: 600 }}
                       />
                       {filled && stockQty !== null && (
