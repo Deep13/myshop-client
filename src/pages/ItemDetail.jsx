@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX, FiPrinter } from "react-icons/fi";
+import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
 import { printLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
@@ -115,6 +115,48 @@ export default function ItemDetail() {
 
   const ef = (key, val) => setEditForm((p) => ({ ...p, [key]: val }));
 
+  /* ── Delete item (master) ────────────────────────────────────── */
+  const deleteItem = async () => {
+    const it = data.item;
+    if (!window.confirm(`Delete item "${it.name}"?\n\nThis removes the item from master and all its inventory batches. Historical sales/purchases stay intact.`)) return;
+    setSaving(true);
+    try {
+      let r = await fetch(`${API}/delete_item.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: Number(itemId), deletedBy: user?.id || 1 }),
+      });
+      let j = await r.json().catch(() => ({}));
+      if (j.status === "needs_confirm") {
+        if (!window.confirm(`${j.message}\n\nProceed anyway?`)) { setSaving(false); return; }
+        r = await fetch(`${API}/delete_item.php`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemId: Number(itemId), force: true, deletedBy: user?.id || 1 }),
+        });
+        j = await r.json().catch(() => ({}));
+      }
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      toast.success("Item deleted");
+      navigate("/inventory");
+    } catch (e) { toast.error(e.message || "Failed to delete"); }
+    finally { setSaving(false); }
+  };
+
+  /* ── Delete a single inventory batch ─────────────────────────── */
+  const deleteBatch = async (batchId, label) => {
+    if (!window.confirm(`Delete batch "${label}"?\n\nThis removes the inventory record. Historical sales/purchases are unaffected.`)) return;
+    try {
+      const r = await fetch(`${API}/delete_inventory.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inventoryId: batchId, deletedBy: user?.id || 1 }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      // Remove from local state
+      setData((prev) => ({ ...prev, batches: prev.batches.filter((b) => Number(b.id) !== Number(batchId)) }));
+      toast.success("Batch deleted");
+    } catch (e) { toast.error(e.message || "Failed to delete"); }
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -166,7 +208,7 @@ export default function ItemDetail() {
         </div>
         {hasExpired  && <span style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, background: C.redLight,    color: C.red,    fontWeight: 700, fontSize: 12 }}>⚠ Expired Stock</span>}
         {hasExpiring && <span style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, background: C.yellowLight, color: C.yellow, fontWeight: 700, fontSize: 12 }}>⚠ Expiring Soon</span>}
-        <div style={{ marginLeft: "auto" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button className="g-btn ghost sm" onClick={() => {
             const input = window.prompt("How many copies?", "1");
             if (input === null) return;
@@ -174,6 +216,9 @@ export default function ItemDetail() {
             printLabel({ itemName: item.name, salePrice: item.salePrice || item.sale_price, itemCode: item.code, copies });
           }}>
             <FiPrinter size={13} /> Print Label
+          </button>
+          <button className="g-btn danger sm" disabled={saving} onClick={deleteItem} title="Delete this item from master">
+            <FiTrash2 size={13} /> Delete Item
           </button>
         </div>
       </div>
@@ -288,6 +333,7 @@ export default function ItemDetail() {
                       <th>Type</th>
                       <th>Purchase Bill</th>
                       <th>Distributor</th>
+                      <th style={{ width: 36 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -321,6 +367,13 @@ export default function ItemDetail() {
                             {b.purchase_bill_date && <div style={{ fontSize: 11, color: C.textSub }}>{fmtDate(b.purchase_bill_date)}</div>}
                           </td>
                           <td style={{ fontSize: 12, color: C.textSub }}>{b.distributor_name || "—"}</td>
+                          <td style={{ textAlign: "center" }}>
+                            <button title="Delete this batch"
+                              onClick={() => deleteBatch(b.id, `${b.batch_no || "no batch"} · ${b.exp_date ? fmtDate(b.exp_date) : "no exp"}`)}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: C.red, padding: 4, borderRadius: 4, display: "inline-flex" }}>
+                              <FiTrash2 size={14} />
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
