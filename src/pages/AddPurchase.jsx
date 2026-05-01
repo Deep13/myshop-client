@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter } from "react-icons/fi";
+import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
@@ -130,20 +130,23 @@ export default function AddPurchase() {
   const [pendingSaveData, setPendingSaveData] = useState(null);
 
   /* ── Load item master from DB ── */
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API}/get_items_all.php?limit=10000`);
-        const j = await r.json();
-        if (j.status === "success") {
-          setItemMaster(j.data || []);
-          setMasterLoaded(true);
-        }
-      } catch {
+  const [loadingMaster, setLoadingMaster] = useState(false);
+  const loadItemMaster = async () => {
+    try {
+      setLoadingMaster(true);
+      const r = await fetch(`${API}/get_items_all.php?limit=10000`);
+      const j = await r.json();
+      if (j.status === "success") {
+        setItemMaster(j.data || []);
         setMasterLoaded(true);
       }
-    })();
-  }, []);
+    } catch {
+      setMasterLoaded(true);
+    } finally {
+      setLoadingMaster(false);
+    }
+  };
+  useEffect(() => { loadItemMaster(); }, []);
 
   /* ── Load for edit ── */
   useEffect(() => {
@@ -855,6 +858,12 @@ export default function AddPurchase() {
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Bill No</span>
           <input className="g-inp sm" value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="INV-001" style={{ height: 30, fontSize: 13, fontWeight: 700 }} />
         </div>
+
+        {/* Refresh suggestions (re-fetch item master only — form state preserved) */}
+        <button className="g-btn ghost sm" onClick={loadItemMaster} disabled={loadingMaster}
+          title="Refresh item suggestions from latest item master" style={{ height: 30 }}>
+          <FiRefreshCw size={13} style={{ animation: loadingMaster ? "spin 1s linear infinite" : "none" }} />
+        </button>
 
         {/* Due Date */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 110 }}>

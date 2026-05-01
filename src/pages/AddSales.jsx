@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings } from "react-icons/fi";
+import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
@@ -111,15 +111,17 @@ export default function AddSales() {
   }, []);
 
   /* ── Load inventory with include_zero=1 so all batches show ── */
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API}/get_inventory.php?include_zero=1`);
-        const j = await r.json();
-        if (j.status === "success") setInventory(j.data || []);
-      } catch { }
-    })();
-  }, []);
+  const [loadingInv, setLoadingInv] = useState(false);
+  const loadInventory = async () => {
+    try {
+      setLoadingInv(true);
+      const r = await fetch(`${API}/get_inventory.php?include_zero=1`);
+      const j = await r.json();
+      if (j.status === "success") setInventory(j.data || []);
+    } catch { }
+    finally { setLoadingInv(false); }
+  };
+  useEffect(() => { loadInventory(); }, []);
 
   /* ── Load invoice for edit ── */
   useEffect(() => {
@@ -511,6 +513,12 @@ export default function AddSales() {
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Invoice No</span>
           <input className="g-inp sm" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="Auto" style={{ height: 30, fontSize: 13, fontWeight: 700 }} />
         </div>
+
+        {/* Refresh suggestions (re-fetch inventory only — form state preserved) */}
+        <button className="g-btn ghost sm" onClick={loadInventory} disabled={loadingInv}
+          title="Refresh item suggestions from latest inventory" style={{ height: 30 }}>
+          <FiRefreshCw size={13} style={{ animation: loadingInv ? "spin 1s linear infinite" : "none" }} />
+        </button>
 
         <div style={{ width: 1, height: 32, background: "#e5e7eb" }} />
 
