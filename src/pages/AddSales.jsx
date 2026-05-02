@@ -344,17 +344,19 @@ export default function AddSales() {
       // No duplicate — fill the current row
       const mrp  = asNum(inv.mrp);
       const sp   = asNum(inv.sale_price);
-      const disc = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
       const ps  = inv.pack_size      != null ? Number(inv.pack_size)      : null;
       const bsp = inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null;
       // For bag-pack items: show per-kg MRP by default (bag MRP / pack size, rounded up).
       // salePrice is per-kg loose rate; it'll flip to bag-per-kg when qty hits pack size.
-      const mrpDisplay = ps && ps > 0 ? String(Math.ceil(mrp / ps)) : String(mrp);
+      const mrpDisplay = ps && ps > 0 ? Math.ceil(mrp / ps) : mrp;
+      // Discount must be computed against the DISPLAYED MRP, not the raw bag MRP —
+      // otherwise rice items show a huge negative-looking discount (bagMrp − loose-sale).
+      const disc = mrpDisplay > 0 ? fmt2(Math.max(0, mrpDisplay - sp)) : "";
       const fill = {
         invId: invId, itemId: asNum(inv.item_id),
         itemName: inv.item_name, code: inv.item_code,
         hsn: inv.hsn || "", batchNo: inv.batch_no || "",
-        expDate: inv.exp_date || "", mrp: mrpDisplay,
+        expDate: inv.exp_date || "", mrp: String(mrpDisplay),
         salePrice: fmt2(sp), discount: disc,
         tax: String(inv.tax_pct || ""), qty: "1",
         packSize: ps,
