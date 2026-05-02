@@ -318,6 +318,9 @@ export default function AddSales() {
         } else if (u.looseSalePrice != null && u.looseSalePrice !== "") {
           u.salePrice = u.looseSalePrice;
         }
+        // Refresh the discount to reflect the new sale price
+        const mrpN = asNum(u.mrp), spN = asNum(u.salePrice);
+        u.discount = mrpN > 0 ? fmt2(Math.max(0, mrpN - spN)) : "";
       }
       u.amount = fmt2(calcRowAmount({ ...u, qty }));
       n[i] = u;
