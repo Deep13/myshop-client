@@ -125,6 +125,24 @@ export default function AddPurchase() {
   const [showAddDist, setShowAddDist] = useState(false);
   const [newDist, setNewDist] = useState({ name: "", gstin: "", phone: "" });
   const [newItem, setNewItem] = useState(blankNewItem());
+  // Bag-pricing helper constants (used in the Add-to-Master modal when Pack Size is set)
+  const [pricingHelper, setPricingHelper] = useState({ delivery: "13", kgMarkup: "5", bagMarkup: "50" });
+  // Compute loose + bag sale prices from purchase price + pack size + helper constants
+  const computeBagPrices = (purchasePrice, packSize, helper) => {
+    const pp = asNum(purchasePrice), ps = asNum(packSize);
+    const dl = asNum(helper.delivery), km = asNum(helper.kgMarkup), bm = asNum(helper.bagMarkup);
+    if (pp <= 0 || ps <= 0) return null;
+    return {
+      salePrice:    fmt2(((pp + dl) / ps) + km),
+      bagSalePrice: fmt2(pp + dl + bm),
+    };
+  };
+  // Apply auto-calc whenever purchase price / pack size / helper change (only when both are valid)
+  const applyBagPricing = (next, helper = pricingHelper) => {
+    const calc = computeBagPrices(next.purchasePrice, next.packSize, helper);
+    if (calc) return { ...next, salePrice: calc.salePrice, bagSalePrice: calc.bagSalePrice };
+    return next;
+  };
   const [showPriceWarning, setShowPriceWarning] = useState(false);
   const [priceWarnings, setPriceWarnings] = useState([]);
   const [pendingSaveData, setPendingSaveData] = useState(null);
@@ -1679,17 +1697,51 @@ export default function AddPurchase() {
             <input className="g-inp lg" value={newItem.salePrice} onChange={(e) => setNewItem((p) => ({ ...p, salePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
           </Field>
           <Field label="Purchase Price (₹)">
-            <input className="g-inp lg" value={newItem.purchasePrice} onChange={(e) => setNewItem((p) => ({ ...p, purchasePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
+            <input className="g-inp lg" value={newItem.purchasePrice}
+              onChange={(e) => setNewItem((p) => applyBagPricing({ ...p, purchasePrice: e.target.value }))}
+              inputMode="decimal" placeholder="0.00" />
           </Field>
           <Field label="Tax %">
             <input className="g-inp lg" value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" />
           </Field>
           <Field label="Pack Size (kg)" hint="For loose-vs-bag pricing — leave blank for normal items">
-            <input className="g-inp lg" value={newItem.packSize} onChange={(e) => setNewItem((p) => ({ ...p, packSize: e.target.value }))} inputMode="decimal" placeholder="e.g. 26" />
+            <input className="g-inp lg" value={newItem.packSize}
+              onChange={(e) => setNewItem((p) => applyBagPricing({ ...p, packSize: e.target.value }))}
+              inputMode="decimal" placeholder="e.g. 26" />
           </Field>
           <Field label="Bag Sale Price (₹)" hint="Total price when sold as one whole bag (qty matches Pack Size)">
             <input className="g-inp lg" value={newItem.bagSalePrice} onChange={(e) => setNewItem((p) => ({ ...p, bagSalePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
           </Field>
+
+          {/* Bag pricing helper — visible when Pack Size is set */}
+          {asNum(newItem.packSize) > 0 && (
+            <div className="g-span-2" style={{ background: C.brandLighter, border: `1.5px solid ${C.brand}33`, borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.04 }}>
+                Bag Pricing Helper
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <Field label="Delivery (₹)">
+                  <input className="g-inp" value={pricingHelper.delivery}
+                    onChange={(e) => { const h = { ...pricingHelper, delivery: e.target.value }; setPricingHelper(h); setNewItem((p) => applyBagPricing(p, h)); }}
+                    inputMode="decimal" />
+                </Field>
+                <Field label="Per-kg Markup (₹)">
+                  <input className="g-inp" value={pricingHelper.kgMarkup}
+                    onChange={(e) => { const h = { ...pricingHelper, kgMarkup: e.target.value }; setPricingHelper(h); setNewItem((p) => applyBagPricing(p, h)); }}
+                    inputMode="decimal" />
+                </Field>
+                <Field label="Per-bag Markup (₹)">
+                  <input className="g-inp" value={pricingHelper.bagMarkup}
+                    onChange={(e) => { const h = { ...pricingHelper, bagMarkup: e.target.value }; setPricingHelper(h); setNewItem((p) => applyBagPricing(p, h)); }}
+                    inputMode="decimal" />
+                </Field>
+              </div>
+              <div style={{ fontSize: 11, color: C.textSub, marginTop: 8, lineHeight: 1.4 }}>
+                Sale Price = ((Purchase + Delivery) / Pack Size) + Per-kg Markup<br />
+                Bag Sale Price = Purchase + Delivery + Per-bag Markup
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
