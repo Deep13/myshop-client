@@ -686,7 +686,9 @@ export default function AddSales() {
                                 const isZero = qty <= 0;
                                 const isHl = si === highlightIdx;
                                 return (
-                                  <div key={inv.id} onMouseDown={() => pickBatch(idx, inv)}
+                                  <div key={inv.id}
+                                    ref={(el) => { if (isHl && el) el.scrollIntoView({ block: "nearest" }); }}
+                                    onMouseDown={() => pickBatch(idx, inv)}
                                     style={{
                                       display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0,
                                       padding: "10px 16px", cursor: "pointer",

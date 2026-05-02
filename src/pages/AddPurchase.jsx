@@ -1189,6 +1189,7 @@ export default function AddPurchase() {
                                   return (
                                     <div
                                       key={it.id}
+                                      ref={(el) => { if (isHl && el) el.scrollIntoView({ block: "nearest" }); }}
                                       onMouseDown={() => pickItem(idx, it)}
                                       style={{
                                         display: "grid",
