@@ -127,14 +127,15 @@ export default function AddPurchase() {
   const [newItem, setNewItem] = useState(blankNewItem());
   // Bag-pricing helper constants (used in the Add-to-Master modal when Pack Size is set)
   const [pricingHelper, setPricingHelper] = useState({ delivery: "13", kgMarkup: "5", bagMarkup: "50" });
-  // Compute loose + bag sale prices from purchase price + pack size + helper constants
+  // Compute loose + bag sale prices from purchase price + pack size + helper constants.
+  // Both prices round UP to the next whole rupee (Math.ceil).
   const computeBagPrices = (purchasePrice, packSize, helper) => {
     const pp = asNum(purchasePrice), ps = asNum(packSize);
     const dl = asNum(helper.delivery), km = asNum(helper.kgMarkup), bm = asNum(helper.bagMarkup);
     if (pp <= 0 || ps <= 0) return null;
     return {
-      salePrice:    fmt2(((pp + dl) / ps) + km),
-      bagSalePrice: fmt2(pp + dl + bm),
+      salePrice:    String(Math.ceil(((pp + dl) / ps) + km)),
+      bagSalePrice: String(Math.ceil(pp + dl + bm)),
     };
   };
   // Apply auto-calc whenever purchase price / pack size / helper change (only when both are valid)
