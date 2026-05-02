@@ -29,14 +29,18 @@ const blankRow = () => ({
 
 /* Sale price inclusive of tax — amount = qty × salePrice.
    Special case: if the item has a packSize + bagSalePrice and the
-   typed qty exactly equals packSize, the line amount switches to
-   the whole-bag price (loose-vs-bag pricing). */
+   typed qty is an EXACT multiple of packSize (1×, 2×, 3× ... bags),
+   the line amount switches to N × bagSalePrice (whole-bag pricing).
+   Anything in between falls back to per-kg loose pricing. */
 function calcRowAmount(row) {
   const qty  = asNum(row.qty);
   const sp   = asNum(row.salePrice);
   const ps   = asNum(row.packSize);
   const bsp  = asNum(row.bagSalePrice);
-  if (ps > 0 && bsp > 0 && qty > 0 && Math.abs(qty - ps) < 1e-6) return bsp;
+  if (ps > 0 && bsp > 0 && qty > 0) {
+    const n = Math.round(qty / ps);
+    if (n >= 1 && Math.abs(qty - n * ps) < 1e-6) return n * bsp;
+  }
   return qty * sp;
 }
 
@@ -259,9 +263,11 @@ export default function AddSales() {
       const u = { ...n[i], salePrice: val };
       const mrp = asNum(u.mrp), sp = asNum(val);
       u.discount = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
-      // For bag-pack items: if user is editing in loose mode, persist as the new loose rate
+      // For bag-pack items: if user is editing in loose mode (qty not a bag multiple),
+      // persist the new value as the loose rate so it survives qty flips.
       const ps = asNum(u.packSize), q = asNum(u.qty);
-      const inBag = ps > 0 && q > 0 && Math.abs(q - ps) < 1e-6;
+      const nB = ps > 0 && q > 0 ? Math.round(q / ps) : 0;
+      const inBag = ps > 0 && nB >= 1 && Math.abs(q - nB * ps) < 1e-6;
       if (ps > 0 && !inBag) u.looseSalePrice = val;
       u.amount   = fmt2(calcRowAmount(u));
       n[i] = u;
@@ -296,13 +302,14 @@ export default function AddSales() {
       const qty  = asNum(val);
       const ps   = asNum(u.packSize);
       const bsp  = asNum(u.bagSalePrice);
-      // Flip displayed salePrice for bag-pack items: per-kg-from-bag when qty == packSize, else loose
+      // Flip displayed salePrice for bag-pack items: per-kg-from-bag when qty is an
+      // exact multiple of packSize (1×, 2×, 3× bags…), else loose per-kg rate
       if (ps > 0 && bsp > 0) {
-        if (qty > 0 && Math.abs(qty - ps) < 1e-6) {
-          // Bag mode: per-unit equivalent of bag price (so qty * salePrice ≈ bag total)
+        const n = qty > 0 ? Math.round(qty / ps) : 0;
+        const isMultiple = n >= 1 && Math.abs(qty - n * ps) < 1e-6;
+        if (isMultiple) {
           u.salePrice = fmt2(bsp / ps);
         } else if (u.looseSalePrice != null && u.looseSalePrice !== "") {
-          // Loose mode: restore the original per-kg rate
           u.salePrice = u.looseSalePrice;
         }
       }
@@ -857,10 +864,15 @@ export default function AddSales() {
                       )}
                       {(() => {
                         const ps = asNum(r.packSize), bsp = asNum(r.bagSalePrice), q = asNum(r.qty);
-                        const isBag = ps > 0 && bsp > 0 && q > 0 && Math.abs(q - ps) < 1e-6;
-                        return isBag ? (
-                          <div style={{ fontSize: 9, textAlign: "center", fontWeight: 800, color: C.brand, background: C.brandLighter, borderRadius: 3, padding: "1px 4px", marginTop: 2 }}>BAG</div>
-                        ) : null;
+                        if (!(ps > 0 && bsp > 0 && q > 0)) return null;
+                        const n = Math.round(q / ps);
+                        const isBag = n >= 1 && Math.abs(q - n * ps) < 1e-6;
+                        if (!isBag) return null;
+                        return (
+                          <div style={{ fontSize: 9, textAlign: "center", fontWeight: 800, color: C.brand, background: C.brandLighter, borderRadius: 3, padding: "1px 4px", marginTop: 2 }}>
+                            {n > 1 ? `BAG×${n}` : "BAG"}
+                          </div>
+                        );
                       })()}
                     </td>
 
