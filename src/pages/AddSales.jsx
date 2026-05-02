@@ -24,12 +24,19 @@ const blankRow = () => ({
   invId: 0, itemId: 0, itemName: "", code: "", hsn: "",
   batchNo: "", expDate: "", mrp: "", qty: "", salePrice: "",
   discount: "", tax: "", amount: "",
+  packSize: null, bagSalePrice: null,
 });
 
-/* Sale price inclusive of tax — amount = qty × salePrice */
+/* Sale price inclusive of tax — amount = qty × salePrice.
+   Special case: if the item has a packSize + bagSalePrice and the
+   typed qty exactly equals packSize, the line amount switches to
+   the whole-bag price (loose-vs-bag pricing). */
 function calcRowAmount(row) {
-  const qty = asNum(row.qty);
-  const sp  = asNum(row.salePrice);
+  const qty  = asNum(row.qty);
+  const sp   = asNum(row.salePrice);
+  const ps   = asNum(row.packSize);
+  const bsp  = asNum(row.bagSalePrice);
+  if (ps > 0 && bsp > 0 && qty > 0 && Math.abs(qty - ps) < 1e-6) return bsp;
   return qty * sp;
 }
 
@@ -140,6 +147,8 @@ export default function AddSales() {
           tax_pct: Number(it.tax || it.tax_pct || 0),
           gst_flag: it.is_primary ? 1 : 0,
           current_qty: 0,
+          pack_size:      it.packSize     != null ? Number(it.packSize)     : null,
+          bag_sale_price: it.bagSalePrice != null ? Number(it.bagSalePrice) : null,
         }));
       setInventory([...invList, ...synthetic]);
     } catch { }
@@ -319,6 +328,8 @@ export default function AddSales() {
         expDate: inv.exp_date || "", mrp: String(mrp),
         salePrice: fmt2(sp), discount: disc,
         tax: String(inv.tax_pct || ""), qty: "1",
+        packSize:     inv.pack_size      != null ? Number(inv.pack_size)      : null,
+        bagSalePrice: inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null,
       };
       fill.amount = fmt2(calcRowAmount(fill));
       const n = [...prev];
@@ -821,6 +832,13 @@ export default function AddSales() {
                           {isZeroStock ? "0" : stockQty}
                         </div>
                       )}
+                      {(() => {
+                        const ps = asNum(r.packSize), bsp = asNum(r.bagSalePrice), q = asNum(r.qty);
+                        const isBag = ps > 0 && bsp > 0 && q > 0 && Math.abs(q - ps) < 1e-6;
+                        return isBag ? (
+                          <div style={{ fontSize: 9, textAlign: "center", fontWeight: 800, color: C.brand, background: C.brandLighter, borderRadius: 3, padding: "1px 4px", marginTop: 2 }}>BAG</div>
+                        ) : null;
+                      })()}
                     </td>
 
                     {/* Amount */}

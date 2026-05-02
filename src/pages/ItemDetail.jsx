@@ -54,6 +54,8 @@ export default function ItemDetail() {
       category: it.category || "",
       mrp: String(it.mrp || ""),
       salePrice: String(it.salePrice || it.sale_price || ""),
+      packSize: it.packSize != null ? String(it.packSize) : (it.pack_size != null ? String(it.pack_size) : ""),
+      bagSalePrice: it.bagSalePrice != null ? String(it.bagSalePrice) : (it.bag_sale_price != null ? String(it.bag_sale_price) : ""),
       purchasePrice: String(it.purchasePrice || it.purchase_price || ""),
       tax: String(it.tax || it.tax_pct || ""),
       is_primary: it.is_primary != 0,
@@ -78,6 +80,8 @@ export default function ItemDetail() {
           category: (editForm.category || "").trim(),
           mrp: asNum(editForm.mrp),
           salePrice: asNum(editForm.salePrice),
+          packSize:     editForm.packSize     ? asNum(editForm.packSize)     : null,
+          bagSalePrice: editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
           purchasePrice: asNum(editForm.purchasePrice),
           tax: asNum(editForm.tax),
           is_primary: editForm.is_primary,
@@ -98,6 +102,10 @@ export default function ItemDetail() {
           mrp: asNum(editForm.mrp),
           sale_price: asNum(editForm.salePrice),
           salePrice: asNum(editForm.salePrice),
+          pack_size:      editForm.packSize     ? asNum(editForm.packSize)     : null,
+          packSize:       editForm.packSize     ? asNum(editForm.packSize)     : null,
+          bag_sale_price: editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
+          bagSalePrice:   editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
           purchase_price: asNum(editForm.purchasePrice),
           purchasePrice: asNum(editForm.purchasePrice),
           tax: asNum(editForm.tax),
@@ -250,6 +258,12 @@ export default function ItemDetail() {
                 <InfoRow label="Sale Price"     value={`₹${item.salePrice || item.sale_price}`} />
                 <InfoRow label="Purchase Price" value={`₹${item.purchasePrice || item.purchase_price}`} />
                 <InfoRow label="Tax %"          value={asNum(item.tax || item.tax_pct) > 0 ? `${item.tax || item.tax_pct}%` : "None"} />
+                {(item.packSize || item.pack_size) && (
+                  <>
+                    <InfoRow label="Pack Size"      value={`${item.packSize || item.pack_size} kg / bag`} />
+                    <InfoRow label="Bag Sale Price" value={`₹${item.bagSalePrice || item.bag_sale_price || "—"}`} />
+                  </>
+                )}
               </div>
             ) : (
               <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -275,7 +289,7 @@ export default function ItemDetail() {
                   <Field label="MRP (₹)">
                     <input className="g-inp" value={editForm.mrp} onChange={(e) => ef("mrp", e.target.value)} inputMode="decimal" />
                   </Field>
-                  <Field label="Sale Price (₹)">
+                  <Field label="Sale Price (₹)" hint="Per-kg loose rate">
                     <input className="g-inp" value={editForm.salePrice} onChange={(e) => ef("salePrice", e.target.value)} inputMode="decimal" />
                   </Field>
                   <Field label="Purchase Price (₹)">
@@ -283,6 +297,12 @@ export default function ItemDetail() {
                   </Field>
                   <Field label="Tax %">
                     <input className="g-inp" value={editForm.tax} onChange={(e) => ef("tax", e.target.value)} inputMode="decimal" />
+                  </Field>
+                  <Field label="Pack Size (kg)" hint="Leave blank for normal items">
+                    <input className="g-inp" value={editForm.packSize} onChange={(e) => ef("packSize", e.target.value)} inputMode="decimal" placeholder="e.g. 26" />
+                  </Field>
+                  <Field label="Bag Sale Price (₹)" hint="Total when qty equals pack size">
+                    <input className="g-inp" value={editForm.bagSalePrice} onChange={(e) => ef("bagSalePrice", e.target.value)} inputMode="decimal" placeholder="0.00" />
                   </Field>
                 </div>
               </div>

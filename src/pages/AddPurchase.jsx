@@ -12,7 +12,7 @@ import { printLabel } from "../printLabel.js";
 
 /* ── helpers ── */
 const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
-const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", category: "", mrp: "", salePrice: "", purchasePrice: "", tax: "", is_primary: true });
+const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", category: "", mrp: "", salePrice: "", packSize: "", bagSalePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => {
   try {
@@ -350,6 +350,8 @@ export default function AddPurchase() {
           category: (newItem.category || "").trim(),
           mrp: asNum(newItem.mrp),
           salePrice: asNum(newItem.salePrice),
+          packSize:     newItem.packSize     ? asNum(newItem.packSize)     : null,
+          bagSalePrice: newItem.bagSalePrice ? asNum(newItem.bagSalePrice) : null,
           purchasePrice: asNum(newItem.purchasePrice),
           tax: asNum(newItem.tax),
           is_primary: !!newItem.is_primary,
@@ -1681,6 +1683,12 @@ export default function AddPurchase() {
           </Field>
           <Field label="Tax %">
             <input className="g-inp lg" value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" />
+          </Field>
+          <Field label="Pack Size (kg)" hint="For loose-vs-bag pricing — leave blank for normal items">
+            <input className="g-inp lg" value={newItem.packSize} onChange={(e) => setNewItem((p) => ({ ...p, packSize: e.target.value }))} inputMode="decimal" placeholder="e.g. 26" />
+          </Field>
+          <Field label="Bag Sale Price (₹)" hint="Total price when sold as one whole bag (qty matches Pack Size)">
+            <input className="g-inp lg" value={newItem.bagSalePrice} onChange={(e) => setNewItem((p) => ({ ...p, bagSalePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
           </Field>
         </div>
       </Modal>
