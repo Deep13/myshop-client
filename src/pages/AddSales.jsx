@@ -259,6 +259,10 @@ export default function AddSales() {
       const u = { ...n[i], salePrice: val };
       const mrp = asNum(u.mrp), sp = asNum(val);
       u.discount = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
+      // For bag-pack items: if user is editing in loose mode, persist as the new loose rate
+      const ps = asNum(u.packSize), q = asNum(u.qty);
+      const inBag = ps > 0 && q > 0 && Math.abs(q - ps) < 1e-6;
+      if (ps > 0 && !inBag) u.looseSalePrice = val;
       u.amount   = fmt2(calcRowAmount(u));
       n[i] = u;
       return n;
@@ -288,8 +292,21 @@ export default function AddSales() {
       const n = [...prev];
       const u = { ...n[i] };
       // Keep raw typed string so users can type "0." or "0.5" without it being clobbered.
-      u.qty    = val;
-      u.amount = fmt2(calcRowAmount({ ...u, qty: asNum(val) }));
+      u.qty = val;
+      const qty  = asNum(val);
+      const ps   = asNum(u.packSize);
+      const bsp  = asNum(u.bagSalePrice);
+      // Flip displayed salePrice for bag-pack items: per-kg-from-bag when qty == packSize, else loose
+      if (ps > 0 && bsp > 0) {
+        if (qty > 0 && Math.abs(qty - ps) < 1e-6) {
+          // Bag mode: per-unit equivalent of bag price (so qty * salePrice ≈ bag total)
+          u.salePrice = fmt2(bsp / ps);
+        } else if (u.looseSalePrice != null && u.looseSalePrice !== "") {
+          // Loose mode: restore the original per-kg rate
+          u.salePrice = u.looseSalePrice;
+        }
+      }
+      u.amount = fmt2(calcRowAmount({ ...u, qty }));
       n[i] = u;
       return n;
     });
@@ -321,15 +338,21 @@ export default function AddSales() {
       const mrp  = asNum(inv.mrp);
       const sp   = asNum(inv.sale_price);
       const disc = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
+      const ps  = inv.pack_size      != null ? Number(inv.pack_size)      : null;
+      const bsp = inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null;
+      // For bag-pack items: show per-kg MRP by default (bag MRP / pack size, rounded up).
+      // salePrice is per-kg loose rate; it'll flip to bag-per-kg when qty hits pack size.
+      const mrpDisplay = ps && ps > 0 ? String(Math.ceil(mrp / ps)) : String(mrp);
       const fill = {
         invId: invId, itemId: asNum(inv.item_id),
         itemName: inv.item_name, code: inv.item_code,
         hsn: inv.hsn || "", batchNo: inv.batch_no || "",
-        expDate: inv.exp_date || "", mrp: String(mrp),
+        expDate: inv.exp_date || "", mrp: mrpDisplay,
         salePrice: fmt2(sp), discount: disc,
         tax: String(inv.tax_pct || ""), qty: "1",
-        packSize:     inv.pack_size      != null ? Number(inv.pack_size)      : null,
-        bagSalePrice: inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null,
+        packSize: ps,
+        bagSalePrice: bsp,
+        looseSalePrice: fmt2(sp),                                                // remembered loose per-kg rate
       };
       fill.amount = fmt2(calcRowAmount(fill));
       const n = [...prev];
