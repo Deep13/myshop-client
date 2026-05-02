@@ -27,6 +27,9 @@ const blankRow = () => ({
   packSize: null, bagSalePrice: null,
 });
 
+/* Bag-pack pricing only applies to Rice categories. */
+const isBagPackCategory = (cat) => /^Rice\b/i.test(String(cat || ""));
+
 /* Sale price inclusive of tax — amount = qty × salePrice.
    Special case: if the item has a packSize + bagSalePrice and the
    typed qty is an EXACT multiple of packSize (1×, 2×, 3× ... bags),
@@ -37,7 +40,7 @@ function calcRowAmount(row) {
   const sp   = asNum(row.salePrice);
   const ps   = asNum(row.packSize);
   const bsp  = asNum(row.bagSalePrice);
-  if (ps > 0 && bsp > 0 && qty > 0) {
+  if (isBagPackCategory(row.category) && ps > 0 && bsp > 0 && qty > 0) {
     const n = Math.round(qty / ps);
     if (n >= 1 && Math.abs(qty - n * ps) < 1e-6) return n * bsp;
   }
@@ -143,6 +146,7 @@ export default function AddSales() {
           item_name: it.name,
           item_code: it.code,
           hsn: it.hsn || "",
+          category: it.category || "",
           batch_no: "",
           exp_date: null,
           mrp: Number(it.mrp || 0),
@@ -263,12 +267,14 @@ export default function AddSales() {
       const u = { ...n[i], salePrice: val };
       const mrp = asNum(u.mrp), sp = asNum(val);
       u.discount = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
-      // For bag-pack items: if user is editing in loose mode (qty not a bag multiple),
+      // For bag-pack (rice) items: if user is editing in loose mode (qty not a bag multiple),
       // persist the new value as the loose rate so it survives qty flips.
-      const ps = asNum(u.packSize), q = asNum(u.qty);
-      const nB = ps > 0 && q > 0 ? Math.round(q / ps) : 0;
-      const inBag = ps > 0 && nB >= 1 && Math.abs(q - nB * ps) < 1e-6;
-      if (ps > 0 && !inBag) u.looseSalePrice = val;
+      if (isBagPackCategory(u.category)) {
+        const ps = asNum(u.packSize), q = asNum(u.qty);
+        const nB = ps > 0 && q > 0 ? Math.round(q / ps) : 0;
+        const inBag = ps > 0 && nB >= 1 && Math.abs(q - nB * ps) < 1e-6;
+        if (ps > 0 && !inBag) u.looseSalePrice = val;
+      }
       u.amount   = fmt2(calcRowAmount(u));
       n[i] = u;
       return n;
@@ -302,9 +308,9 @@ export default function AddSales() {
       const qty  = asNum(val);
       const ps   = asNum(u.packSize);
       const bsp  = asNum(u.bagSalePrice);
-      // Flip displayed salePrice for bag-pack items: per-kg-from-bag when qty is an
+      // Flip displayed salePrice for bag-pack (rice) items: per-kg-from-bag when qty is an
       // exact multiple of packSize (1×, 2×, 3× bags…), else loose per-kg rate
-      if (ps > 0 && bsp > 0) {
+      if (isBagPackCategory(u.category) && ps > 0 && bsp > 0) {
         const n = qty > 0 ? Math.round(qty / ps) : 0;
         const isMultiple = n >= 1 && Math.abs(qty - n * ps) < 1e-6;
         if (isMultiple) {
@@ -344,18 +350,19 @@ export default function AddSales() {
       // No duplicate — fill the current row
       const mrp  = asNum(inv.mrp);
       const sp   = asNum(inv.sale_price);
-      const ps  = inv.pack_size      != null ? Number(inv.pack_size)      : null;
-      const bsp = inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null;
-      // For bag-pack items: show per-kg MRP by default (bag MRP / pack size, rounded up).
-      // salePrice is per-kg loose rate; it'll flip to bag-per-kg when qty hits pack size.
+      const cat = inv.category || "";
+      const isBagPack = isBagPackCategory(cat);
+      const ps  = isBagPack && inv.pack_size      != null ? Number(inv.pack_size)      : null;
+      const bsp = isBagPack && inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null;
+      // For bag-pack (rice) items: show per-kg MRP by default (bag MRP / pack size, rounded up).
+      // For everything else MRP is whatever's stored on the item (no per-kg conversion).
       const mrpDisplay = ps && ps > 0 ? Math.ceil(mrp / ps) : mrp;
-      // Discount must be computed against the DISPLAYED MRP, not the raw bag MRP —
-      // otherwise rice items show a huge negative-looking discount (bagMrp − loose-sale).
+      // Discount = displayed MRP − loose sale price.
       const disc = mrpDisplay > 0 ? fmt2(Math.max(0, mrpDisplay - sp)) : "";
       const fill = {
         invId: invId, itemId: asNum(inv.item_id),
         itemName: inv.item_name, code: inv.item_code,
-        hsn: inv.hsn || "", batchNo: inv.batch_no || "",
+        hsn: inv.hsn || "", category: cat, batchNo: inv.batch_no || "",
         expDate: inv.exp_date || "", mrp: String(mrpDisplay),
         salePrice: fmt2(sp), discount: disc,
         tax: String(inv.tax_pct || ""), qty: "1",
@@ -865,6 +872,7 @@ export default function AddSales() {
                         </div>
                       )}
                       {(() => {
+                        if (!isBagPackCategory(r.category)) return null;
                         const ps = asNum(r.packSize), bsp = asNum(r.bagSalePrice), q = asNum(r.qty);
                         if (!(ps > 0 && bsp > 0 && q > 0)) return null;
                         const n = Math.round(q / ps);

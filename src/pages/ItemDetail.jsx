@@ -258,7 +258,7 @@ export default function ItemDetail() {
                 <InfoRow label="Sale Price"     value={`₹${item.salePrice || item.sale_price}`} />
                 <InfoRow label="Purchase Price" value={`₹${item.purchasePrice || item.purchase_price}`} />
                 <InfoRow label="Tax %"          value={asNum(item.tax || item.tax_pct) > 0 ? `${item.tax || item.tax_pct}%` : "None"} />
-                {(item.packSize || item.pack_size) && (
+                {/^Rice\b/i.test(item.category || "") && (item.packSize || item.pack_size) && (
                   <>
                     <InfoRow label="Pack Size"      value={`${item.packSize || item.pack_size} kg / bag`} />
                     <InfoRow label="Bag Sale Price" value={`₹${item.bagSalePrice || item.bag_sale_price || "—"}`} />
@@ -298,12 +298,16 @@ export default function ItemDetail() {
                   <Field label="Tax %">
                     <input className="g-inp" value={editForm.tax} onChange={(e) => ef("tax", e.target.value)} inputMode="decimal" />
                   </Field>
-                  <Field label="Pack Size (kg)" hint="Leave blank for normal items">
-                    <input className="g-inp" value={editForm.packSize} onChange={(e) => ef("packSize", e.target.value)} inputMode="decimal" placeholder="e.g. 26" />
-                  </Field>
-                  <Field label="Bag Sale Price (₹)" hint="Total when qty equals pack size">
-                    <input className="g-inp" value={editForm.bagSalePrice} onChange={(e) => ef("bagSalePrice", e.target.value)} inputMode="decimal" placeholder="0.00" />
-                  </Field>
+                  {/^Rice\b/i.test(editForm.category || "") && (
+                    <>
+                      <Field label="Pack Size (kg)" hint="Leave blank for normal items">
+                        <input className="g-inp" value={editForm.packSize} onChange={(e) => ef("packSize", e.target.value)} inputMode="decimal" placeholder="e.g. 26" />
+                      </Field>
+                      <Field label="Bag Sale Price (₹)" hint="Total when qty equals pack size">
+                        <input className="g-inp" value={editForm.bagSalePrice} onChange={(e) => ef("bagSalePrice", e.target.value)} inputMode="decimal" placeholder="0.00" />
+                      </Field>
+                    </>
+                  )}
                 </div>
               </div>
             )}

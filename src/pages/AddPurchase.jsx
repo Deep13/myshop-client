@@ -1705,6 +1705,8 @@ export default function AddPurchase() {
           <Field label="Tax %">
             <input className="g-inp lg" value={newItem.tax} onChange={(e) => setNewItem((p) => ({ ...p, tax: e.target.value }))} inputMode="decimal" placeholder="e.g. 12" />
           </Field>
+          {/* Bag-pack fields only for Rice categories */}
+          {/^Rice\b/i.test(newItem.category || "") && <>
           <Field label="Pack Size (kg)" hint="For loose-vs-bag pricing — leave blank for normal items">
             <input className="g-inp lg" value={newItem.packSize}
               onChange={(e) => setNewItem((p) => applyBagPricing({ ...p, packSize: e.target.value }))}
@@ -1713,9 +1715,10 @@ export default function AddPurchase() {
           <Field label="Bag Sale Price (₹)" hint="Total price when sold as one whole bag (qty matches Pack Size)">
             <input className="g-inp lg" value={newItem.bagSalePrice} onChange={(e) => setNewItem((p) => ({ ...p, bagSalePrice: e.target.value }))} inputMode="decimal" placeholder="0.00" />
           </Field>
+          </>}
 
-          {/* Bag pricing helper — visible when Pack Size is set */}
-          {asNum(newItem.packSize) > 0 && (
+          {/* Bag pricing helper — visible when Pack Size is set AND category is Rice */}
+          {/^Rice\b/i.test(newItem.category || "") && asNum(newItem.packSize) > 0 && (
             <div className="g-span-2" style={{ background: C.brandLighter, border: `1.5px solid ${C.brand}33`, borderRadius: 10, padding: "12px 14px" }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: C.brand, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.04 }}>
                 Bag Pricing Helper
