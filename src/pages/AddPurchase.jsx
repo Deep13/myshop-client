@@ -193,11 +193,24 @@ export default function AddPurchase() {
 
   /* ── Item search filtering ── */
   const getSug = (text) => {
-    const q = String(text || "")
-      .trim()
-      .toLowerCase();
+    const q = String(text || "").trim().toLowerCase();
     if (!q) return [];
-    return itemMaster.filter((it) => it.name.toLowerCase().includes(q) || it.code.toLowerCase().includes(q) || (it.hsn || "").includes(q)).slice(0, 10);
+    // Score: 0 = name or code starts with q; 1 = contains anywhere (name/code/hsn)
+    const scored = [];
+    for (const it of itemMaster) {
+      const name = (it.name || "").toLowerCase();
+      const code = (it.code || "").toLowerCase();
+      const hsn  = (it.hsn  || "").toLowerCase();
+      let score;
+      if (name.startsWith(q) || code.startsWith(q)) score = 0;
+      else if (name.includes(q) || code.includes(q) || hsn.includes(q)) score = 1;
+      else continue;
+      scored.push({ it, score });
+    }
+    return scored
+      .sort((a, b) => a.score - b.score || (a.it.name || "").localeCompare(b.it.name || ""))
+      .slice(0, 10)
+      .map((s) => s.it);
   };
 
   const updRow = (i, patch) =>

@@ -209,18 +209,29 @@ export default function AddSales() {
   const getInvSug = (text) => {
     const q = String(text || "").trim().toLowerCase();
     if (!q) return [];
-    return inventory
-      .filter((inv) =>
-        (inv.item_name || "").toLowerCase().includes(q) ||
-        (inv.item_code || "").toLowerCase().includes(q)
-      )
+    // Score: 0 = name or code starts with q (best), 1 = contains anywhere
+    const scored = [];
+    for (const inv of inventory) {
+      const name = (inv.item_name || "").toLowerCase();
+      const code = (inv.item_code || "").toLowerCase();
+      let score;
+      if (name.startsWith(q) || code.startsWith(q)) score = 0;
+      else if (name.includes(q) || code.includes(q)) score = 1;
+      else continue;
+      scored.push({ inv, score });
+    }
+    return scored
       .sort((a, b) => {
-        if (!a.exp_date && !b.exp_date) return 0;
-        if (!a.exp_date) return 1;
-        if (!b.exp_date) return -1;
-        return a.exp_date.localeCompare(b.exp_date);
+        if (a.score !== b.score) return a.score - b.score;
+        // Within same score, prefer earlier expiry
+        const ae = a.inv.exp_date, be = b.inv.exp_date;
+        if (!ae && !be) return 0;
+        if (!ae) return 1;
+        if (!be) return -1;
+        return ae.localeCompare(be);
       })
-      .slice(0, 15);
+      .slice(0, 15)
+      .map((s) => s.inv);
   };
 
   /* ── Row update — recalc amount ── */

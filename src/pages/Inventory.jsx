@@ -69,7 +69,20 @@ export default function Inventory() {
     let rows = [...itemRows];
     if (q.trim()) {
       const qLow = q.trim().toLowerCase();
-      rows = rows.filter((r) => r.name.toLowerCase().includes(qLow) || r.code.toLowerCase().includes(qLow) || (r.hsn || "").includes(qLow));
+      // Score: 0 = name or code starts with q; 1 = contains anywhere (name/code/hsn)
+      const scored = [];
+      for (const r of rows) {
+        const name = (r.name || "").toLowerCase();
+        const code = (r.code || "").toLowerCase();
+        const hsn  = (r.hsn  || "").toLowerCase();
+        let score;
+        if (name.startsWith(qLow) || code.startsWith(qLow)) score = 0;
+        else if (name.includes(qLow) || code.includes(qLow) || hsn.includes(qLow)) score = 1;
+        else continue;
+        scored.push({ r, score });
+      }
+      scored.sort((a, b) => a.score - b.score || (a.r.name || "").localeCompare(b.r.name || ""));
+      rows = scored.map((s) => s.r);
     }
     if (filterExp === "expired")     rows = rows.filter((r) => r.hasExpired);
     if (filterExp === "expiring")    rows = rows.filter((r) => r.hasExpiring && !r.hasExpired);
