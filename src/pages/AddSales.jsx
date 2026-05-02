@@ -110,14 +110,38 @@ export default function AddSales() {
     return () => clearTimeout(t);
   }, []);
 
-  /* ── Load inventory with include_zero=1 so all batches show ── */
+  /* ── Load inventory + master, merge so master-only items also show up ── */
   const [loadingInv, setLoadingInv] = useState(false);
   const loadInventory = async () => {
     try {
       setLoadingInv(true);
-      const r = await fetch(`${API}/get_inventory.php?include_zero=1`);
-      const j = await r.json();
-      if (j.status === "success") setInventory(j.data || []);
+      const [invRes, masterRes] = await Promise.all([
+        fetch(`${API}/get_inventory.php?include_zero=1`).then((r) => r.json()),
+        fetch(`${API}/get_items_all.php?limit=10000`).then((r) => r.json()),
+      ]);
+      const invList = invRes.status === "success" ? (invRes.data || []) : [];
+      const master  = masterRes.status === "success" ? (masterRes.data || []) : [];
+      // Items already represented in inventory (any batch) — skip those when adding master rows
+      const seenItemIds = new Set(invList.map((b) => Number(b.item_id)).filter(Boolean));
+      // Synthetic "no-stock" rows for items in master that have no inventory batch
+      const synthetic = master
+        .filter((it) => !seenItemIds.has(Number(it.id)))
+        .map((it) => ({
+          id: 0,                            // no inventory batch id
+          item_id: Number(it.id),
+          item_name: it.name,
+          item_code: it.code,
+          hsn: it.hsn || "",
+          batch_no: "",
+          exp_date: null,
+          mrp: Number(it.mrp || 0),
+          purchase_price: Number(it.purchasePrice || it.purchase_price || 0),
+          sale_price: Number(it.salePrice || it.sale_price || 0),
+          tax_pct: Number(it.tax || it.tax_pct || 0),
+          gst_flag: it.is_primary ? 1 : 0,
+          current_qty: 0,
+        }));
+      setInventory([...invList, ...synthetic]);
     } catch { }
     finally { setLoadingInv(false); }
   };
@@ -255,10 +279,12 @@ export default function AddSales() {
   const pickBatch = (ri, inv) => {
     setActiveSug(null);
     setSearchText((p) => ({ ...p, [ri]: "" }));
-    const invId = asNum(inv.id);
+    const invId  = asNum(inv.id);
+    const itemId = asNum(inv.item_id);
     setRows((prev) => {
-      // Check if this batch already exists in another filled row
-      const existingIdx = prev.findIndex((r, i) => i !== ri && r.invId === invId && String(r.itemName || "").trim());
+      // Match by invId (real batch) or by itemId when invId is 0 (master-only synthetic row)
+      const existingIdx = prev.findIndex((r, i) => i !== ri && String(r.itemName || "").trim() &&
+        ((invId > 0 && r.invId === invId) || (invId === 0 && itemId > 0 && r.invId === 0 && r.itemId === itemId)));
       if (existingIdx >= 0) {
         // Increment qty of existing row instead of filling a new one
         const n = [...prev];
