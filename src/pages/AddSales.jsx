@@ -545,9 +545,15 @@ export default function AddSales() {
       const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      // The backend may have auto-bumped invoiceNo if two terminals raced — use the one
+      // it actually persisted, so the printed receipt shows the right number.
+      const finalInvoiceNo = j.invoiceNo || invoiceNo;
+      if (finalInvoiceNo !== invoiceNo) setInvoiceNo(finalInvoiceNo);
       const shouldPrint = andPrint || (!isEdit && getShopSettings().autoPrint);
       if (shouldPrint) {
-        printReceipt(buildPrintData());
+        const printData = buildPrintData();
+        printData.invoiceNo = finalInvoiceNo;
+        printReceipt(printData);
         setTimeout(() => { window.location.href = "/sales"; }, 1500);
       } else {
         window.location.href = "/sales";
