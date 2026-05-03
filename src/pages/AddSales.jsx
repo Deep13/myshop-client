@@ -80,6 +80,8 @@ export default function AddSales() {
   const [sp] = useSearchParams();
   const invoiceId = sp.get("id");
   const isEdit = Boolean(invoiceId);
+  // Filter for line-item table (only shown in edit mode)
+  const [rowFilter, setRowFilter] = useState("");
   usePageMeta(isEdit ? "Edit Sale" : "New Sale", "Create or edit a sales invoice");
 
   const [custType, setCustType]   = useState("Retail");
@@ -658,9 +660,22 @@ export default function AddSales() {
                 <th style={{ minWidth: 100, textAlign: "right", paddingRight: 10 }}>Amount</th>
                 <th style={{ width: 32 }}></th>
               </tr>
+              {isEdit && (
+                <tr>
+                  <th colSpan={10} style={{ padding: "6px 10px", background: "#f8fafc" }}>
+                    <input className="g-inp sm" placeholder="Filter items by name or code…"
+                      value={rowFilter} onChange={(e) => setRowFilter(e.target.value)}
+                      style={{ width: "100%" }} />
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody>
               {rows.map((r, idx) => {
+                if (isEdit && rowFilter.trim() && r.itemName) {
+                  const f = rowFilter.toLowerCase().trim();
+                  if (!r.itemName.toLowerCase().includes(f) && !(r.code || "").toLowerCase().includes(f)) return null;
+                }
                 const st       = searchText[idx] !== undefined ? searchText[idx] : r.itemName;
                 const sug      = getInvSug(st);
                 const filled   = r.itemName.trim();

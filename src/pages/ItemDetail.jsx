@@ -225,6 +225,18 @@ export default function ItemDetail() {
           }}>
             <FiPrinter size={13} /> Print Label
           </button>
+          {/^Rice\b/i.test(item.category || "") && (item.bagSalePrice || item.bag_sale_price) && (item.packSize || item.pack_size) && (
+            <button className="g-btn ghost sm" onClick={() => {
+              const input = window.prompt("How many copies?", "1");
+              if (input === null) return;
+              const copies = Math.max(1, Math.min(99, parseInt(input, 10) || 1));
+              const ps  = item.packSize || item.pack_size;
+              const bsp = item.bagSalePrice || item.bag_sale_price;
+              printLabel({ itemName: `${item.name} (${ps}kg bag)`, salePrice: bsp, itemCode: item.code, copies });
+            }}>
+              <FiPrinter size={13} /> Print Bag Label
+            </button>
+          )}
           <button className="g-btn danger sm" disabled={saving} onClick={deleteItem} title="Delete this item from master">
             <FiTrash2 size={13} /> Delete Item
           </button>

@@ -70,6 +70,8 @@ export default function AddPurchase() {
   const [sp] = useSearchParams();
   const purchaseId = sp.get("purchaseId");
   const isEdit = Boolean(purchaseId);
+  // Filter for line-item table (only shown in edit mode)
+  const [rowFilter, setRowFilter] = useState("");
   usePageMeta(isEdit ? "Edit Purchase" : "New Purchase", "Create or edit a purchase bill");
 
   /* item master — loaded from DB */
@@ -1092,9 +1094,22 @@ export default function AddPurchase() {
                 <th style={{ minWidth: 100, textAlign: "right", paddingRight: 10 }}>Amount</th>
                 <th style={{ width: 32 }}></th>
               </tr>
+              {isEdit && (
+                <tr>
+                  <th colSpan={isGST ? 13 : 12} style={{ padding: "6px 10px", background: "#f8fafc" }}>
+                    <input className="g-inp sm" placeholder="Filter items by name or code…"
+                      value={rowFilter} onChange={(e) => setRowFilter(e.target.value)}
+                      style={{ width: "100%" }} />
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody>
               {rows.map((r, idx) => {
+                if (isEdit && rowFilter.trim() && r.itemName) {
+                  const f = rowFilter.toLowerCase().trim();
+                  if (!r.itemName.toLowerCase().includes(f) && !(r.code || "").toLowerCase().includes(f)) return null;
+                }
                 const searchText = itemSearch[idx] !== undefined ? itemSearch[idx] : r.itemName;
                 const sug = getSug(searchText);
                 const filled = r.itemName.trim();
