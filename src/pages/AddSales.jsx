@@ -813,7 +813,7 @@ export default function AddSales() {
                         onChange={(e) => {
                           setRows((prev) => {
                             const n = [...prev];
-                            const u = { ...n[i], mrp: e.target.value };
+                            const u = { ...n[idx], mrp: e.target.value };
                             const mrpN = asNum(e.target.value), spN = asNum(u.salePrice);
                             u.discount = mrpN > 0 ? fmt2(Math.max(0, mrpN - spN)) : u.discount;
                             u.amount = fmt2(calcRowAmount(u));
