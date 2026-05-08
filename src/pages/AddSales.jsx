@@ -529,6 +529,13 @@ export default function AddSales() {
       amount: asNum(r.amount),
     })).filter((r) => r.itemName && r.qty > 0);
     if (!cleanRows.length) return showToast("Add at least one item");
+    // Credit-sale guard: any unpaid balance > 0 means we need a real customer + phone
+    if (asNum(balance) > 0.01) {
+      const trimmedName = (custName || "").trim();
+      const isCashName = !trimmedName || /^cash( sale)?$/i.test(trimmedName);
+      if (isCashName) return showToast("Credit sales need a customer name (cannot be saved as Cash)");
+      if (!String(phone || "").trim()) return showToast("Credit sales need a customer phone number");
+    }
     const payList = multiPay
       ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0)
       : [{ type: payMode, amount: asNum(received) }];
