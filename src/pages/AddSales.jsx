@@ -536,6 +536,11 @@ export default function AddSales() {
       if (isCashName) return showToast("Credit sales need a customer name (cannot be saved as Cash)");
       if (!String(phone || "").trim()) return showToast("Credit sales need a customer phone number");
     }
+    // Phone format guard: if a phone is provided, it must be exactly 10 digits
+    const phoneDigits = String(phone || "").replace(/\D/g, "");
+    if (phoneDigits.length > 0 && phoneDigits.length !== 10) {
+      return showToast("Phone number must be 10 digits");
+    }
     const payList = multiPay
       ? payments.map((p) => ({ type: p.type, amount: asNum(p.amount) })).filter((p) => p.amount > 0)
       : [{ type: payMode, amount: asNum(received) }];
