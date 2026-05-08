@@ -86,6 +86,9 @@ export default function AddSales() {
 
   const [custType, setCustType]   = useState("Retail");
   const [custName, setCustName]   = useState("");
+  const [customers, setCustomers] = useState([]);
+  const [custSugOpen, setCustSugOpen] = useState(false);
+  const [custHighlight, setCustHighlight] = useState(-1);
   const [phone, setPhone]         = useState("");
   const [custGstin, setCustGstin] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
@@ -165,6 +168,17 @@ export default function AddSales() {
     finally { setLoadingInv(false); }
   };
   useEffect(() => { loadInventory(); }, []);
+
+  /* ── Load customer list for AddSales name autocomplete ── */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/get_customers.php`);
+        const j = await r.json();
+        if (j.status === "success") setCustomers(j.data || []);
+      } catch { }
+    })();
+  }, []);
 
   /* ── Load invoice for edit ── */
   useEffect(() => {
@@ -617,10 +631,64 @@ export default function AddSales() {
 
         <div style={{ width: 1, height: 32, background: "#e5e7eb" }} />
 
-        {/* Customer Name */}
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 140 }}>
+        {/* Customer Name with autocomplete */}
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 140, position: "relative" }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Customer Name</span>
-          <input className="g-inp sm" value={custName} onChange={(e) => setCustName(e.target.value)} placeholder="Cash" style={{ height: 30, fontSize: 13 }} />
+          <input className="g-inp sm" value={custName}
+            onChange={(e) => { setCustName(e.target.value); setCustSugOpen(true); setCustHighlight(-1); }}
+            onFocus={() => { setCustSugOpen(true); setCustHighlight(-1); }}
+            onBlur={() => setTimeout(() => setCustSugOpen(false), 150)}
+            onKeyDown={(e) => {
+              if (!custSugOpen) return;
+              const q = (custName || "").toLowerCase().trim();
+              const list = !q ? customers.slice(0, 12) : (() => {
+                const scored = [];
+                for (const c of customers) {
+                  const n = (c.name || "").toLowerCase(), p = (c.phone || "").toLowerCase();
+                  if (n.startsWith(q) || p.startsWith(q)) scored.push({ c, s: 0 });
+                  else if (n.includes(q) || p.includes(q)) scored.push({ c, s: 1 });
+                }
+                return scored.sort((a,b)=>a.s-b.s).slice(0, 12).map(x=>x.c);
+              })();
+              if (e.key === "ArrowDown") { e.preventDefault(); setCustHighlight((h) => Math.min(h+1, list.length-1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setCustHighlight((h) => Math.max(h-1, -1)); }
+              else if (e.key === "Enter" && custHighlight >= 0 && list[custHighlight]) {
+                e.preventDefault();
+                const c = list[custHighlight];
+                setCustName(c.name); if (c.phone) setPhone(c.phone); if (c.gstin) setCustGstin(c.gstin);
+                setCustSugOpen(false); setCustHighlight(-1);
+              }
+              else if (e.key === "Escape") { setCustSugOpen(false); }
+            }}
+            placeholder="Cash" style={{ height: 30, fontSize: 13 }} />
+          {custSugOpen && customers.length > 0 && (() => {
+            const q = (custName || "").toLowerCase().trim();
+            const list = !q ? customers.slice(0, 12) : (() => {
+              const scored = [];
+              for (const c of customers) {
+                const n = (c.name || "").toLowerCase(), p = (c.phone || "").toLowerCase();
+                if (n.startsWith(q) || p.startsWith(q)) scored.push({ c, s: 0 });
+                else if (n.includes(q) || p.includes(q)) scored.push({ c, s: 1 });
+              }
+              return scored.sort((a,b)=>a.s-b.s).slice(0, 12).map(x=>x.c);
+            })();
+            if (list.length === 0) return null;
+            return (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.10)", maxHeight: 260, overflowY: "auto", marginTop: 2 }}>
+                {list.map((c, i) => (
+                  <div key={c.name + i}
+                    onMouseDown={(e) => { e.preventDefault(); setCustName(c.name); if (c.phone) setPhone(c.phone); if (c.gstin) setCustGstin(c.gstin); setCustSugOpen(false); }}
+                    onMouseEnter={() => setCustHighlight(i)}
+                    style={{ padding: "7px 10px", cursor: "pointer", borderBottom: i < list.length-1 ? `1px solid ${C.borderLight || '#f1f5f9'}` : "none", background: custHighlight === i ? "#f0f9ff" : "#fff" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: C.textSub }}>
+                      {c.phone || "—"}{c.invoice_count ? ` · ${c.invoice_count} bills` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Phone */}
