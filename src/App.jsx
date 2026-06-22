@@ -81,6 +81,7 @@ export default function App() {
   const cashTotal = asN(modes.cash);
   const upiTotal = asN(modes.upi);
   const cardTotal = asN(modes.card);
+  const creditTotal = asN(modes.credit);
   const inv = data?.inventory || {};
   const expiring = data?.expiring_items || [];
   const expired = data?.expired_items || [];
@@ -146,11 +147,12 @@ export default function App() {
               </div>
             </div>
             <div style={{ padding: "18px 18px" }}>
-              <div className="g-grid-4">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
                 <StatCard label="Total Sales" value={fmtINR(sales.total)} color={C.brand} icon={<FiShoppingCart size={16} />} bg={C.brandLighter} sub={`${sales.count} bills`} />
                 <StatCard label="Cash" value={fmtINR(cashTotal)} color={C.green} icon={<BsCash size={16} />} bg={C.greenLight} sub={sales.total ? `${((cashTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
                 <StatCard label="UPI" value={fmtINR(upiTotal)} color="#7c3aed" icon={<FiSmartphone size={16} />} bg="#f5f3ff" sub={sales.total ? `${((upiTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
                 <StatCard label="Card" value={fmtINR(cardTotal)} color="#0891b2" icon={<FiCreditCard size={16} />} bg="#ecfeff" sub={sales.total ? `${((cardTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
+                <StatCard label="Credit (unpaid)" value={fmtINR(creditTotal)} color={C.orange} icon={<FiClock size={16} />} bg={C.orangeLight} sub={sales.total ? `${((creditTotal / sales.total) * 100).toFixed(1)}%` : "0%"} />
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
+import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
@@ -25,6 +25,7 @@ const blankRow = () => ({
   batchNo: "", expDate: "", mrp: "", qty: "", salePrice: "",
   discount: "", tax: "", amount: "",
   packSize: null, bagSalePrice: null,
+  purchasePrice: 0, stockQty: 0, category: "",
 });
 
 /* Bag-pack pricing only applies to Rice categories. */
@@ -89,6 +90,9 @@ export default function AddSales() {
   const [customers, setCustomers] = useState([]);
   const [custSugOpen, setCustSugOpen] = useState(false);
   const [custHighlight, setCustHighlight] = useState(-1);
+  const [phoneSugOpen, setPhoneSugOpen] = useState(false);
+  const [phoneHighlight, setPhoneHighlight] = useState(-1);
+  const [missingCustModal, setMissingCustModal] = useState(""); // big centered alert text
   const [phone, setPhone]         = useState("");
   const [custGstin, setCustGstin] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
@@ -98,6 +102,7 @@ export default function AddSales() {
   const [activeSug, setActiveSug] = useState(null);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [searchText, setSearchText] = useState({});
+  const [hoverRow, setHoverRow] = useState(null);
   const qtyRefs = useRef({});
   const searchRefs = useRef({});
 
@@ -216,11 +221,16 @@ export default function AddSales() {
             amount: String(item.amount || ""),
           };
         }));
+        // Always reflect the actual received amount stored on the invoice (not
+        // re-derived from invoice_payments — those can drift if the user edited
+        // received directly, and zero them out when no payment row exists).
+        setReceived(String(h.received != null ? h.received : "0"));
+        setRecTouched(true);
         if (j.payments?.length) {
           const pList = j.payments.map((p) => ({ type: p.pay_type || "Cash", amount: String(p.amount || "") }));
           setPayments(pList);
           if (pList.length > 1) setMultiPay(true);
-          else { setPayMode(pList[0]?.type || "Cash"); setReceived(String(pList[0]?.amount || "")); setRecTouched(true); }
+          else setPayMode(pList[0]?.type || "Cash");
         }
       } catch (e) { showToast(e.message || "Load failed"); }
     })();
@@ -368,11 +378,24 @@ export default function AddSales() {
       }
       // No duplicate — fill the current row
       const mrp  = asNum(inv.mrp);
-      const sp   = asNum(inv.sale_price);
       const cat = inv.category || "";
       const isBagPack = isBagPackCategory(cat);
-      const ps  = isBagPack && inv.pack_size      != null ? Number(inv.pack_size)      : null;
-      const bsp = isBagPack && inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null;
+      const ps  = isBagPack && inv.pack_size != null ? Number(inv.pack_size) : null;
+      // For rice batches, recompute per-kg sale price + bag sale price from
+      // THIS batch's purchase price (rather than using the items-master values
+      // which reflect the first purchase only). Same formula as AddPurchase:
+      //   sale/kg = ⌈(pp + delivery) / pack + kgMarkup⌉
+      //   bag     = ⌈pp + delivery + bagMarkup⌉
+      let sp, bsp;
+      if (isBagPack && ps && ps > 0 && asNum(inv.purchase_price) > 0) {
+        const pp = asNum(inv.purchase_price);
+        const DELIVERY = 13, KG_MARKUP = 5, BAG_MARKUP = 50;
+        sp  = Math.ceil((pp + DELIVERY) / ps + KG_MARKUP);
+        bsp = Math.ceil(pp + DELIVERY + BAG_MARKUP);
+      } else {
+        sp  = asNum(inv.sale_price);
+        bsp = isBagPack && inv.bag_sale_price != null ? Number(inv.bag_sale_price) : null;
+      }
       // For bag-pack (rice) items: show per-kg MRP by default (bag MRP / pack size, rounded up).
       // For everything else MRP is whatever's stored on the item (no per-kg conversion).
       const mrpDisplay = ps && ps > 0 ? Math.ceil(mrp / ps) : mrp;
@@ -388,6 +411,22 @@ export default function AddSales() {
         packSize: ps,
         bagSalePrice: bsp,
         looseSalePrice: fmt2(sp),                                                // remembered loose per-kg rate
+        // Snapshot for the row-hover tooltip — buy price + stock at pick time.
+        // Effective buy price = stored purchase_price + GST when the bill was
+        // GST + exclusive (the unit price doesn't include the GST you paid),
+        // otherwise the stored value is already the all-in cost.
+        purchasePrice: (() => {
+          const pp = asNum(inv.purchase_price);
+          const t  = asNum(inv.tax_pct);
+          const isExclusiveGstBill =
+            inv.purchase_bill_id &&
+            String(inv.purchase_bill_type || "GST").toUpperCase() === "GST" &&
+            String(inv.purchase_gst_mode || "exclusive").toLowerCase() === "exclusive" &&
+            Number(inv.gst_flag) === 1 &&
+            t > 0;
+          return isExclusiveGstBill ? Math.round(pp * (100 + t)) / 100 : pp;
+        })(),
+        stockQty: asNum(inv.current_qty),
       };
       fill.amount = fmt2(calcRowAmount(fill));
       const n = [...prev];
@@ -452,34 +491,36 @@ export default function AddSales() {
   const preTax         = useMemo(() => rowBreakdown.reduce((a, r) => a + r.tax,      0), [rowBreakdown]);
   const totalSavings   = useMemo(() => rowBreakdown.reduce((a, r) => a + r.savings,  0), [rowBreakdown]);
 
-  /* Bill discount — applied on taxable (excl-tax) amount */
+  /* Bill discount — typed value is a flat reduction off the INCLUSIVE total
+     (what the customer pays). e.g. ₹100 typed → ₹100 less in the bill total.
+     For GST records the discount is split proportionally between taxable
+     and tax portions so the line-level tax breakdown stays consistent. */
   const billDiscValue = useMemo(() => {
     const s = String(billDisc || "").trim();
     if (!s) return 0;
     if (s.endsWith("%")) {
       const n = parseFloat(s);
-      return isFinite(n) ? Math.min(preTaxable * n / 100, preTaxable) : 0;
+      return isFinite(n) ? Math.min(rowTotal * n / 100, rowTotal) : 0;
     }
     const n = parseFloat(s);
-    return isFinite(n) ? Math.min(n, preTaxable) : 0;
-  }, [billDisc, preTaxable]);
+    return isFinite(n) ? Math.min(n, rowTotal) : 0;
+  }, [billDisc, rowTotal]);
 
-  /* After bill discount: taxable shrinks, recalculate tax on it */
-  const taxableAfterDisc = useMemo(() => preTaxable - billDiscValue, [preTaxable, billDiscValue]);
+  /* Split the inclusive discount into taxable vs tax portions, proportional
+     to their share of the original inclusive total. */
+  const discTaxablePortion = useMemo(() =>
+    rowTotal > 0 ? billDiscValue * (preTaxable / rowTotal) : 0,
+  [billDiscValue, preTaxable, rowTotal]);
+  const discTaxPortion = useMemo(() =>
+    billDiscValue - discTaxablePortion,
+  [billDiscValue, discTaxablePortion]);
 
-  /* Effective overall tax rate from pre-discount values — keep same rate */
-  const effectiveTaxRate = useMemo(() =>
-    preTaxable > 0 ? preTax / preTaxable : 0,
-  [preTax, preTaxable]);
+  const taxableAfterDisc = useMemo(() => preTaxable - discTaxablePortion, [preTaxable, discTaxablePortion]);
+  const taxAfterDisc     = useMemo(() => preTax     - discTaxPortion,     [preTax,     discTaxPortion]);
 
-  /* Tax on the discounted taxable base */
-  const taxAfterDisc = useMemo(() =>
-    taxableAfterDisc * effectiveTaxRate,
-  [taxableAfterDisc, effectiveTaxRate]);
-
-  /* Net total = discounted taxable + recalculated tax */
+  /* Net total = discounted taxable + remaining tax (= rowTotal - billDiscValue). */
   const afterDisc    = useMemo(() => taxableAfterDisc + taxAfterDisc, [taxableAfterDisc, taxAfterDisc]);
-  const roundedTotal = useMemo(() => roundOff ? Math.ceil(afterDisc) : afterDisc, [afterDisc, roundOff]);
+  const roundedTotal = useMemo(() => roundOff ? smartRound(afterDisc) : afterDisc, [afterDisc, roundOff]);
   const roundDiff    = useMemo(() => roundedTotal - afterDisc, [roundedTotal, afterDisc]);
   const sumPay       = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
   const totalPaid    = useMemo(() => multiPay ? sumPay : asNum(received), [multiPay, sumPay, received]);
@@ -529,12 +570,19 @@ export default function AddSales() {
       amount: asNum(r.amount),
     })).filter((r) => r.itemName && r.qty > 0);
     if (!cleanRows.length) return showToast("Add at least one item");
-    // Credit-sale guard: any unpaid balance > 0 means we need a real customer + phone
-    if (asNum(balance) > 0.01) {
+    // New sales: customer name AND phone are always required.
+    if (!isEdit) {
       const trimmedName = (custName || "").trim();
       const isCashName = !trimmedName || /^cash( sale)?$/i.test(trimmedName);
-      if (isCashName) return showToast("Credit sales need a customer name (cannot be saved as Cash)");
-      if (!String(phone || "").trim()) return showToast("Credit sales need a customer phone number");
+      if (isCashName) return setMissingCustModal("Customer name is required to save this bill.");
+      if (!String(phone || "").trim()) return setMissingCustModal("Customer phone number is required to save this bill.");
+    }
+    // Edit: keep the existing credit-sale guard (name+phone required on unpaid bills).
+    if (isEdit && asNum(balance) > 0.01) {
+      const trimmedName = (custName || "").trim();
+      const isCashName = !trimmedName || /^cash( sale)?$/i.test(trimmedName);
+      if (isCashName) return setMissingCustModal("Credit sales need a customer name (cannot be saved as Cash).");
+      if (!String(phone || "").trim()) return setMissingCustModal("Credit sales need a customer phone number.");
     }
     // Phone format guard: if a phone is provided, it must be exactly 10 digits
     const phoneDigits = String(phone || "").replace(/\D/g, "");
@@ -632,7 +680,7 @@ export default function AddSales() {
         {/* Invoice No */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Invoice No</span>
-          <input className="g-inp sm" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="Auto" style={{ height: 30, fontSize: 13, fontWeight: 700 }} />
+          <input className="g-inp sm" value={invoiceNo} readOnly placeholder="Auto" style={{ height: 30, fontSize: 13, fontWeight: 700, background: "#f9fafb", color: C.textSub, cursor: "not-allowed" }} title="Assigned automatically. If two terminals race, the server auto-bumps to the next available number." />
         </div>
 
         {/* Refresh suggestions (re-fetch inventory only — form state preserved) */}
@@ -703,10 +751,68 @@ export default function AddSales() {
           })()}
         </div>
 
-        {/* Phone */}
-        <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
+        {/* Phone (autocomplete on digits — matches existing customers) */}
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 140, position: "relative" }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Phone</span>
-          <input className="g-inp sm" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" type="tel" style={{ height: 30, fontSize: 13 }} />
+          <input className="g-inp sm" value={phone}
+            onChange={(e) => { setPhone(e.target.value); setPhoneSugOpen(true); setPhoneHighlight(-1); }}
+            onFocus={() => { setPhoneSugOpen(true); setPhoneHighlight(-1); }}
+            onBlur={() => setTimeout(() => setPhoneSugOpen(false), 150)}
+            onKeyDown={(e) => {
+              if (!phoneSugOpen) return;
+              const q = String(phone || "").toLowerCase().trim();
+              const list = !q ? customers.filter((c) => c.phone).slice(0, 12) : (() => {
+                const scored = [];
+                for (const c of customers) {
+                  const n = (c.name || "").toLowerCase(), p = (c.phone || "").toLowerCase();
+                  if (p.startsWith(q)) scored.push({ c, s: 0 });
+                  else if (p.includes(q)) scored.push({ c, s: 1 });
+                  else if (n.startsWith(q) || n.includes(q)) scored.push({ c, s: 2 });
+                }
+                return scored.sort((a,b)=>a.s-b.s).slice(0, 12).map(x=>x.c);
+              })();
+              if (e.key === "ArrowDown") { e.preventDefault(); setPhoneHighlight((h) => Math.min(h+1, list.length-1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setPhoneHighlight((h) => Math.max(h-1, -1)); }
+              else if (e.key === "Enter" && phoneHighlight >= 0 && list[phoneHighlight]) {
+                e.preventDefault();
+                const c = list[phoneHighlight];
+                if (c.phone) setPhone(c.phone);
+                if (c.name) setCustName(c.name);
+                if (c.gstin) setCustGstin(c.gstin);
+                setPhoneSugOpen(false); setPhoneHighlight(-1);
+              }
+              else if (e.key === "Escape") { setPhoneSugOpen(false); }
+            }}
+            placeholder="10-digit phone" type="tel" inputMode="numeric" style={{ height: 30, fontSize: 13 }} />
+          {phoneSugOpen && customers.length > 0 && (() => {
+            const q = String(phone || "").toLowerCase().trim();
+            const list = !q ? customers.filter((c) => c.phone).slice(0, 12) : (() => {
+              const scored = [];
+              for (const c of customers) {
+                const n = (c.name || "").toLowerCase(), p = (c.phone || "").toLowerCase();
+                if (p.startsWith(q)) scored.push({ c, s: 0 });
+                else if (p.includes(q)) scored.push({ c, s: 1 });
+                else if (n.startsWith(q) || n.includes(q)) scored.push({ c, s: 2 });
+              }
+              return scored.sort((a,b)=>a.s-b.s).slice(0, 12).map(x=>x.c);
+            })();
+            if (list.length === 0) return null;
+            return (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.10)", maxHeight: 260, overflowY: "auto", marginTop: 2, minWidth: 220 }}>
+                {list.map((c, i) => (
+                  <div key={(c.phone || c.name) + i}
+                    onMouseDown={(e) => { e.preventDefault(); if (c.phone) setPhone(c.phone); if (c.name) setCustName(c.name); if (c.gstin) setCustGstin(c.gstin); setPhoneSugOpen(false); }}
+                    onMouseEnter={() => setPhoneHighlight(i)}
+                    style={{ padding: "7px 10px", cursor: "pointer", borderBottom: i < list.length-1 ? `1px solid ${C.borderLight || '#f1f5f9'}` : "none", background: phoneHighlight === i ? "#f0f9ff" : "#fff" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{c.phone || "—"}</div>
+                    <div style={{ fontSize: 11, color: C.textSub }}>
+                      {c.name || "—"}{c.invoice_count ? ` · ${c.invoice_count} bills` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* GST Number */}
@@ -784,7 +890,8 @@ export default function AddSales() {
                     {/* ── Item search & display ── */}
                     <td style={{ position: "relative" }}>
                       {filled ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 6px", position: "relative" }}
+                          onMouseEnter={() => setHoverRow(idx)} onMouseLeave={() => setHoverRow(null)}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.itemName}</div>
                             <div style={{ fontSize: 11, color: C.textSub, display: "flex", gap: 6, flexWrap: "wrap", marginTop: 1 }}>
@@ -802,6 +909,25 @@ export default function AddSales() {
                             style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, padding: 3, borderRadius: 4, display: "flex", flexShrink: 0 }}>
                             <FiX size={13} />
                           </button>
+                          {hoverRow === idx && (asNum(r.purchasePrice) > 0 || r.hsn) && (
+                            <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 40, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", padding: "10px 14px", minWidth: 220, pointerEvents: "none" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: 12 }}>
+                                {r.hsn && (<><span style={{ color: C.textSub }}>HSN</span><span style={{ fontWeight: 600 }}>{r.hsn}</span></>)}
+                                {asNum(r.purchasePrice) > 0 && (
+                                  <>
+                                    <span style={{ color: C.textSub }}>Buy Price</span>
+                                    <span style={{ fontWeight: 600 }}>₹{fmt2(r.purchasePrice)}</span>
+                                    {asNum(r.salePrice) > 0 && (
+                                      <>
+                                        <span style={{ color: C.textSub }}>Margin</span>
+                                        <span style={{ fontWeight: 600, color: C.green }}>₹{fmt2(asNum(r.salePrice) - asNum(r.purchasePrice))} ({fmt2((asNum(r.salePrice) - asNum(r.purchasePrice)) / asNum(r.purchasePrice) * 100)}%)</span>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div>
@@ -824,13 +950,14 @@ export default function AddSales() {
                           {/* Suggestions dropdown */}
                           {activeSug === idx && sug.length > 0 && (
                             <div onMouseDown={(e) => e.stopPropagation()}
-                              style={{ position: "absolute", top: "100%", left: 0, width: 650, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.15)", maxHeight: 380, overflow: "hidden" }}>
+                              style={{ position: "absolute", top: "100%", left: 0, width: 720, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.15)", maxHeight: 380, overflow: "hidden" }}>
                               {/* Header row */}
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0, padding: "8px 16px", background: "#f1f5f9", borderBottom: "1.5px solid #e2e8f0" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 75px 70px 70px 45px", gap: 0, padding: "8px 16px", background: "#f1f5f9", borderBottom: "1.5px solid #e2e8f0" }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Item</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Batch</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Expiry</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "right" }}>MRP</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "right" }}>Buy</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", textAlign: "center" }}>Qty</span>
                               </div>
                               <div style={{ maxHeight: 340, overflowY: "auto" }}>
@@ -844,7 +971,7 @@ export default function AddSales() {
                                     ref={(el) => { if (isHl && el) el.scrollIntoView({ block: "nearest" }); }}
                                     onMouseDown={() => pickBatch(idx, inv)}
                                     style={{
-                                      display: "grid", gridTemplateColumns: "1fr 90px 80px 80px 50px", gap: 0,
+                                      display: "grid", gridTemplateColumns: "1fr 80px 75px 70px 70px 45px", gap: 0,
                                       padding: "10px 16px", cursor: "pointer",
                                       borderBottom: "1px solid #f3f4f6",
                                       background: isHl ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
@@ -878,6 +1005,21 @@ export default function AddSales() {
                                     <div style={{ fontSize: 13, fontWeight: 700, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end",
                                       color: isHl ? "#fff" : C.text }}>
                                       ₹{inv.mrp}
+                                    </div>
+                                    {/* Buy (effective purchase price, incl. GST when bill is exclusive) */}
+                                    <div style={{ fontSize: 12, fontWeight: 600, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end",
+                                      color: isHl ? "rgba(255,255,255,0.85)" : C.textSub }}>
+                                      {(() => {
+                                        const pp = asNum(inv.purchase_price);
+                                        if (pp <= 0) return "—";
+                                        const t = asNum(inv.tax_pct);
+                                        const isExclGst = inv.purchase_bill_id &&
+                                          String(inv.purchase_bill_type || "GST").toUpperCase() === "GST" &&
+                                          String(inv.purchase_gst_mode || "exclusive").toLowerCase() === "exclusive" &&
+                                          Number(inv.gst_flag) === 1 && t > 0;
+                                        const eff = isExclGst ? Math.round(pp * (100 + t)) / 100 : pp;
+                                        return `₹${fmt2(eff)}`;
+                                      })()}
                                     </div>
                                     {/* Stock */}
                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1257,6 +1399,25 @@ export default function AddSales() {
           </div>
         </div>
       </Modal>
+
+      {/* Missing-customer alert — big centered modal */}
+      <Modal show={!!missingCustModal} title="Customer details required" onClose={() => setMissingCustModal("")} width={520}
+        footer={
+          <button className="g-btn primary" style={{ minWidth: 100, height: 40, fontSize: 14 }}
+            onClick={() => setMissingCustModal("")} autoFocus>
+            OK
+          </button>
+        }>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "10px 8px 20px" }}>
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.redLight || "#fee2e2", color: C.red, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
+            <FiAlertCircle size={34} />
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: C.text, lineHeight: 1.5, maxWidth: 380 }}>
+            {missingCustModal}
+          </div>
+        </div>
+      </Modal>
+
       <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }`}</style>
     </div>
   );

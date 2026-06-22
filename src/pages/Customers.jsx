@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { FiSearch, FiRefreshCw, FiPhone, FiUser, FiDollarSign, FiX, FiDownload, FiCheck } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, fmt2, fmtDate, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
@@ -11,6 +12,7 @@ const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "n
 
 export default function Customers() {
   usePageMeta("Customers", "Customer list, balances and payment history");
+  const navigate = useNavigate();
   const [rawSales, setRawSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -28,7 +30,7 @@ export default function Customers() {
   const load = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API}/get_sales.php?limit=5000`);
+      const res = await fetch(`${API}/get_sales.php`);
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
       setRawSales(j.data || []);
@@ -249,7 +251,7 @@ export default function Customers() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No customers found</td></tr>
               ) : paged.map((r, i) => (
-                <tr key={i}>
+                <tr key={i} style={{ cursor: "pointer" }} onClick={() => navigate(`/customers/${encodeURIComponent(r.name)}`)}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ width: 28, height: 28, borderRadius: 7, background: C.brandLighter, display: "flex", alignItems: "center", justifyContent: "center", color: C.brand, flexShrink: 0 }}>
@@ -268,7 +270,7 @@ export default function Customers() {
                   <td style={{ fontSize: 13, color: C.brand, fontWeight: 600 }}>{r.lastInvoice}</td>
                   <td>
                     {r.balance > 0 && (
-                      <button className="g-btn success sm" title="Collect Payment" onClick={() => openPay(r)}>
+                      <button className="g-btn success sm" title="Collect Payment" onClick={(e) => { e.stopPropagation(); openPay(r); }}>
                         <FiDollarSign size={12} /> Collect
                       </button>
                     )}

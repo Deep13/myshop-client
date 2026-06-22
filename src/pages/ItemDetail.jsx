@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
 import { printLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
+import DateInput from "../comps/DateInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
 import usePageMeta from "../usePageMeta.js";
@@ -43,6 +44,11 @@ export default function ItemDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving]   = useState(false);
+  // Inline batch-edit state (only for inventory rows with no purchase_bill_id)
+  const [editBatchId, setEditBatchId]     = useState(null);
+  const [editBatchNo, setEditBatchNo]     = useState("");
+  const [editBatchExp, setEditBatchExp]   = useState("");
+  const [batchSaving, setBatchSaving]     = useState(false);
   usePageMeta(data ? `${data.item?.name || "Item"} — Detail` : "Item Detail", "Item stock, batches, purchase and sales history");
 
   const startEdit = () => {
@@ -121,7 +127,35 @@ export default function ItemDetail() {
     }
   };
 
-  const ef = (key, val) => setEditForm((p) => ({ ...p, [key]: val }));
+  // Bag-pricing helper (only used for Rice items). Same formula as AddPurchase.
+  const [pricingHelper, setPricingHelper] = useState({ delivery: "13", kgMarkup: "5", bagMarkup: "50" });
+  // MRP convention for rice: per-kg sale price × pack size (kg per bag).
+  const computeBagPrices = (purchasePrice, packSize, helper) => {
+    const pp = asNum(purchasePrice), ps = asNum(packSize);
+    const dl = asNum(helper.delivery), km = asNum(helper.kgMarkup), bm = asNum(helper.bagMarkup);
+    if (pp <= 0 || ps <= 0) return null;
+    const salePerKg = Math.ceil(((pp + dl) / ps) + km);
+    return {
+      salePrice:    String(salePerKg),
+      bagSalePrice: String(Math.ceil(pp + dl + bm)),
+      mrp:          String(salePerKg * ps),
+    };
+  };
+  const applyBagPricing = (next, helper = pricingHelper) => {
+    if (!/^Rice\b/i.test(next.category || "")) return next;
+    const calc = computeBagPrices(next.purchasePrice, next.packSize, helper);
+    if (!calc) return next;
+    // Always overwrite sale price + bag price + MRP on price/pack changes so
+    // the printed-MRP stays consistent with per-kg × pack-size.
+    return { ...next, salePrice: calc.salePrice, bagSalePrice: calc.bagSalePrice, mrp: calc.mrp };
+  };
+
+  const ef = (key, val) => setEditForm((p) => {
+    const next = { ...p, [key]: val };
+    // Recalculate per-kg + per-bag prices when relevant inputs change on a Rice item
+    if (["purchasePrice", "packSize", "category"].includes(key)) return applyBagPricing(next);
+    return next;
+  });
 
   /* ── Delete item (master) ────────────────────────────────────── */
   const deleteItem = async () => {
@@ -147,6 +181,40 @@ export default function ItemDetail() {
       navigate("/inventory");
     } catch (e) { toast.error(e.message || "Failed to delete"); }
     finally { setSaving(false); }
+  };
+
+  /* ── Edit a single inventory batch (only for rows without a purchase bill) ─ */
+  const startEditBatch = (b) => {
+    setEditBatchId(Number(b.id));
+    setEditBatchNo(b.batch_no || "");
+    setEditBatchExp(b.exp_date || "");
+  };
+  const cancelEditBatch = () => {
+    setEditBatchId(null); setEditBatchNo(""); setEditBatchExp("");
+  };
+  const saveEditBatch = async () => {
+    if (editBatchId == null) return;
+    setBatchSaving(true);
+    try {
+      const r = await fetch(`${API}/update_inventory_batch.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inventoryId: editBatchId, batch_no: editBatchNo.trim(), exp_date: editBatchExp || "" }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
+      // Patch local data
+      setData((prev) => ({
+        ...prev,
+        batches: prev.batches.map((b) =>
+          Number(b.id) === editBatchId
+            ? { ...b, batch_no: editBatchNo.trim(), exp_date: editBatchExp || null }
+            : b
+        ),
+      }));
+      toast.success("Batch updated");
+      cancelEditBatch();
+    } catch (e) { toast.error(e.message || "Failed to update"); }
+    finally { setBatchSaving(false); }
   };
 
   /* ── Delete a single inventory batch ─────────────────────────── */
@@ -315,12 +383,34 @@ export default function ItemDetail() {
                       <Field label="Pack Size (kg)" hint="Leave blank for normal items">
                         <input className="g-inp" value={editForm.packSize} onChange={(e) => ef("packSize", e.target.value)} inputMode="decimal" placeholder="e.g. 26" />
                       </Field>
-                      <Field label="Bag Sale Price (₹)" hint="Total when qty equals pack size">
+                      <Field label="Bag Sale Price (₹)" hint="Auto-calc on price/pack change; editable">
                         <input className="g-inp" value={editForm.bagSalePrice} onChange={(e) => ef("bagSalePrice", e.target.value)} inputMode="decimal" placeholder="0.00" />
                       </Field>
                     </>
                   )}
                 </div>
+                {/^Rice\b/i.test(editForm.category || "") && asNum(editForm.packSize) > 0 && (
+                  <div style={{ padding: "10px 12px", background: "#f1f5f9", borderRadius: 8, fontSize: 12 }}>
+                    <div style={{ fontWeight: 700, color: C.textSub, marginBottom: 6 }}>Pricing helper (Rice)</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                      <Field label="Delivery (₹/bag)">
+                        <input className="g-inp" value={pricingHelper.delivery} inputMode="decimal"
+                          onChange={(e) => { const h = { ...pricingHelper, delivery: e.target.value }; setPricingHelper(h); setEditForm((p) => applyBagPricing(p, h)); }} />
+                      </Field>
+                      <Field label="Per-kg markup (₹)">
+                        <input className="g-inp" value={pricingHelper.kgMarkup} inputMode="decimal"
+                          onChange={(e) => { const h = { ...pricingHelper, kgMarkup: e.target.value }; setPricingHelper(h); setEditForm((p) => applyBagPricing(p, h)); }} />
+                      </Field>
+                      <Field label="Per-bag markup (₹)">
+                        <input className="g-inp" value={pricingHelper.bagMarkup} inputMode="decimal"
+                          onChange={(e) => { const h = { ...pricingHelper, bagMarkup: e.target.value }; setPricingHelper(h); setEditForm((p) => applyBagPricing(p, h)); }} />
+                      </Field>
+                    </div>
+                    <div style={{ marginTop: 6, color: C.textSub, fontSize: 11 }}>
+                      sale/kg = ⌈(purchase + delivery) / pack + kg-markup⌉ · bag = ⌈purchase + delivery + bag-markup⌉
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -369,7 +459,7 @@ export default function ItemDetail() {
                       <th>Type</th>
                       <th>Purchase Bill</th>
                       <th>Distributor</th>
-                      <th style={{ width: 36 }}></th>
+                      <th style={{ width: 72 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -377,13 +467,23 @@ export default function ItemDetail() {
                       const isExp    = b.exp_date && b.exp_date < today;
                       const isExpNear = b.exp_date && b.exp_date >= today && b.exp_date <= in90;
                       const qty      = asNum(b.current_qty);
+                      const isEditing = editBatchId === Number(b.id);
+                      const canEdit  = !b.purchase_bill_id;
                       return (
-                        <tr key={i} style={{ background: isExp ? "#fff5f5" : isExpNear ? "#fffbeb" : undefined }}>
-                          <td style={{ fontWeight: 600 }}>{b.batch_no || "—"}</td>
+                        <tr key={i} style={{ background: isEditing ? "#eff6ff" : isExp ? "#fff5f5" : isExpNear ? "#fffbeb" : undefined }}>
+                          <td style={{ fontWeight: 600 }}>
+                            {isEditing
+                              ? <input className="g-inp sm" value={editBatchNo} onChange={(e) => setEditBatchNo(e.target.value)} placeholder="Batch no" style={{ width: 130 }} autoFocus />
+                              : (b.batch_no || "—")}
+                          </td>
                           <td style={{ color: isExp ? C.red : isExpNear ? C.yellow : C.text, fontWeight: isExp || isExpNear ? 700 : 400, fontSize: 13 }}>
-                            {b.exp_date ? fmtDate(b.exp_date) : "—"}
-                            {isExp    && <div style={{ fontSize: 10, color: C.red,    fontWeight: 700 }}>EXPIRED</div>}
-                            {isExpNear && !isExp && <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700 }}>EXPIRING</div>}
+                            {isEditing
+                              ? <div style={{ width: 130 }}><DateInput className="g-inp sm" value={editBatchExp} onChange={(e) => setEditBatchExp(e.target.value)} /></div>
+                              : <>
+                                  {b.exp_date ? fmtDate(b.exp_date) : "—"}
+                                  {isExp    && <div style={{ fontSize: 10, color: C.red,    fontWeight: 700 }}>EXPIRED</div>}
+                                  {isExpNear && !isExp && <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700 }}>EXPIRING</div>}
+                                </>}
                           </td>
                           <td style={{ textAlign: "right", fontWeight: 800, color: qty <= 0 ? C.red : qty < 10 ? C.orange : C.green }}>{qty}</td>
                           <td style={{ textAlign: "right" }}>₹{fmt2(b.purchase_price)}</td>
@@ -403,12 +503,34 @@ export default function ItemDetail() {
                             {b.purchase_bill_date && <div style={{ fontSize: 11, color: C.textSub }}>{fmtDate(b.purchase_bill_date)}</div>}
                           </td>
                           <td style={{ fontSize: 12, color: C.textSub }}>{b.distributor_name || "—"}</td>
-                          <td style={{ textAlign: "center" }}>
-                            <button title="Delete this batch"
-                              onClick={() => deleteBatch(b.id, `${b.batch_no || "no batch"} · ${b.exp_date ? fmtDate(b.exp_date) : "no exp"}`)}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: C.red, padding: 4, borderRadius: 4, display: "inline-flex" }}>
-                              <FiTrash2 size={14} />
-                            </button>
+                          <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                            {isEditing ? (
+                              <>
+                                <button title="Save" disabled={batchSaving} onClick={saveEditBatch}
+                                  style={{ background: "none", border: "none", cursor: batchSaving ? "wait" : "pointer", color: C.green, padding: 4, borderRadius: 4, display: "inline-flex" }}>
+                                  <FiCheck size={14} />
+                                </button>
+                                <button title="Cancel" disabled={batchSaving} onClick={cancelEditBatch}
+                                  style={{ background: "none", border: "none", cursor: batchSaving ? "wait" : "pointer", color: C.textSub, padding: 4, borderRadius: 4, display: "inline-flex" }}>
+                                  <FiX size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {canEdit && (
+                                  <button title="Edit batch number / expiry"
+                                    onClick={() => startEditBatch(b)}
+                                    style={{ background: "none", border: "none", cursor: "pointer", color: C.brand, padding: 4, borderRadius: 4, display: "inline-flex" }}>
+                                    <FiEdit2 size={14} />
+                                  </button>
+                                )}
+                                <button title="Delete this batch"
+                                  onClick={() => deleteBatch(b.id, `${b.batch_no || "no batch"} · ${b.exp_date ? fmtDate(b.exp_date) : "no exp"}`)}
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: C.red, padding: 4, borderRadius: 4, display: "inline-flex" }}>
+                                  <FiTrash2 size={14} />
+                                </button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       );
@@ -493,9 +615,9 @@ export default function ItemDetail() {
                       <tr key={i}>
                         <td style={{ fontSize: 12 }}>{fmtDate(r.invoice_date)}</td>
                         <td>
-                          <span style={{ color: C.green, cursor: "pointer", fontWeight: 600 }} onClick={() => navigate(`/addsales?id=${r.invoice_id || r.id}`)}>
+                          <Link to={`/addsales?id=${r.invoice_id || r.id}`} style={{ color: C.green, fontWeight: 600, textDecoration: "none" }}>
                             {r.invoice_no}
-                          </span>
+                          </Link>
                         </td>
                         <td style={{ fontSize: 12, color: C.textSub }}>{r.customer_name || "Cash"}</td>
                         <td style={{ fontSize: 12 }}>{r.batch_no || "—"}</td>

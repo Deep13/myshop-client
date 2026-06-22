@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { FiSearch, FiRefreshCw, FiTruck, FiDollarSign, FiX, FiDownload, FiCheck } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, fmt2, fmtDate, SortTH, Modal, Field, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
@@ -11,6 +12,7 @@ const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "n
 
 export default function Distributors() {
   usePageMeta("Distributors", "Distributor list, balances and payment history");
+  const navigate = useNavigate();
   const [rawBills, setRawBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -233,8 +235,9 @@ export default function Distributors() {
                 <tr><td colSpan={9} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No distributors found</td></tr>
               ) : paged.map((r, i) => {
                 const bal = r.totalAmount - r.paidAmount;
+                const clickable = !!r.id;
                 return (
-                  <tr key={i}>
+                  <tr key={i} style={{ cursor: clickable ? "pointer" : "default" }} onClick={() => clickable && navigate(`/distributors/${r.id}`)}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ width: 28, height: 28, borderRadius: 7, background: C.orangeLight, display: "flex", alignItems: "center", justifyContent: "center", color: C.orange, flexShrink: 0 }}>
@@ -252,7 +255,7 @@ export default function Distributors() {
                     <td style={{ fontSize: 13, color: C.brand, fontWeight: 600 }}>{r.lastBillNo}</td>
                     <td>
                       {bal > 0 && (
-                        <button className="g-btn success sm" title="Make Payment" onClick={() => openPay(r)}>
+                        <button className="g-btn success sm" title="Make Payment" onClick={(e) => { e.stopPropagation(); openPay(r); }}>
                           <FiDollarSign size={12} /> Pay
                         </button>
                       )}

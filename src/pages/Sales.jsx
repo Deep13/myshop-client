@@ -15,7 +15,7 @@ export default function Sales() {
   const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({ from: "", to: "", q: "", payType: "", dateRange: "This Month" });
+  const [filters, setFilters] = useState({ from: "", to: "", q: "", payType: "", status: "", dateRange: "This Month" });
   const [sort, setSort] = useState({ key: "date", direction: "desc" });
   const [page, setPage] = useState(1);
 
@@ -50,10 +50,13 @@ export default function Sales() {
     try {
       setLoading(true);
       const qs = new URLSearchParams();
-      if (filters.from) qs.set("from", filters.from);
-      if (filters.to) qs.set("to", filters.to);
-      if (filters.q) qs.set("party", filters.q);
+      // When a search term is entered, ignore the date filter and search the whole DB.
+      const hasSearch = !!filters.q.trim();
+      if (!hasSearch && filters.from) qs.set("from", filters.from);
+      if (!hasSearch && filters.to)   qs.set("to", filters.to);
+      if (hasSearch) qs.set("party", filters.q.trim());
       if (filters.payType) qs.set("paymentType", filters.payType);
+      if (filters.status)  qs.set("status", filters.status);
       const res = await fetch(`${API}/get_sales.php?${qs}`);
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
@@ -61,7 +64,7 @@ export default function Sales() {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  useEffect(() => { const t = setTimeout(fetch_, 250); return () => clearTimeout(t); }, [filters.from, filters.to, filters.q, filters.payType]);
+  useEffect(() => { const t = setTimeout(fetch_, 250); return () => clearTimeout(t); }, [filters.from, filters.to, filters.q, filters.payType, filters.status]);
 
   const sorted = useMemo(() => {
     const arr = [...data];
@@ -69,7 +72,7 @@ export default function Sales() {
     return arr.sort((a, b) => {
       let va = a[key], vb = b[key];
       if (key === "date") { va = va ? new Date(va).getTime() : 0; vb = vb ? new Date(vb).getTime() : 0; }
-      else if (key === "amount") { va = Number(va || 0); vb = Number(vb || 0); }
+      else if (key === "amount" || key === "invoice" || key === "balance") { va = Number(va || 0); vb = Number(vb || 0); }
       else { va = String(va ?? "").toLowerCase(); vb = String(vb ?? "").toLowerCase(); }
       return dir === "asc" ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
     });
@@ -78,10 +81,22 @@ export default function Sales() {
   const paged = useMemo(() => sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [sorted, page]);
   useEffect(() => setPage(1), [filters, sort]);
 
-  const totals = useMemo(() => ({
-    count: sorted.length,
-    amount: sorted.reduce((s, r) => s + Number(r.amount || 0), 0),
-  }), [sorted]);
+  const totals = useMemo(() => {
+    let cash = 0, upi = 0, card = 0, credit = 0, amount = 0;
+    for (const r of sorted) {
+      amount += Number(r.amount || 0);
+      const bal = Number(r.balance || 0);
+      if (bal > 0.01) credit += bal;
+      const received = Number(r.received ?? (Number(r.amount || 0) - bal));
+      const pt = String(r.paymentType || "Cash").toLowerCase();
+      // Single-mode invoices attribute received to that bucket. Mixed (e.g. "Cash+UPI")
+      // currently fall through — surfacing accurate splits requires per-payment data.
+      if (pt === "cash")      cash += received;
+      else if (pt === "upi")  upi  += received;
+      else if (pt === "card") card += received;
+    }
+    return { count: sorted.length, amount, cash, upi, card, credit };
+  }, [sorted]);
 
   const onSort = (k) => setSort((p) => ({ key: k, direction: p.key === k && p.direction === "asc" ? "desc" : "asc" }));
   const fc = (k, v) => setFilters((p) => ({ ...p, [k]: v }));
@@ -237,10 +252,19 @@ export default function Sales() {
       <style>{GLOBAL_CSS}</style>
 
       {/* Page Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22, gap: 12, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>Sales</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: C.textSub }}>{totals.count} invoices &middot; {`₹${fmt2(totals.amount)}`} total</p>
+          <div style={{ marginTop: 4, fontSize: 13, color: C.textSub, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <span>{totals.count} invoices</span>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            <span><span style={{ color: C.green, fontWeight: 700 }}>Cash</span> ₹{fmt2(totals.cash)}</span>
+            <span><span style={{ color: C.brand, fontWeight: 700 }}>UPI</span> ₹{fmt2(totals.upi)}</span>
+            <span><span style={{ color: "#7c3aed", fontWeight: 700 }}>Card</span> ₹{fmt2(totals.card)}</span>
+            <span><span style={{ color: C.orange, fontWeight: 700 }}>Credit</span> ₹{fmt2(totals.credit)}</span>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            <span style={{ color: C.text, fontWeight: 700 }}>Total ₹{fmt2(totals.amount)}</span>
+          </div>
         </div>
         <button className="g-btn primary" onClick={() => navigate("/addsales")}><FiPlus size={14} /> New Sale</button>
       </div>
@@ -253,6 +277,12 @@ export default function Sales() {
         </select>
         <DateInput className="g-inp sm" style={{ width: 130 }} value={filters.from} onChange={(e) => fc("from", e.target.value)} />
         <DateInput className="g-inp sm" style={{ width: 130 }} value={filters.to} onChange={(e) => fc("to", e.target.value)} />
+        <select className="g-sel sm" style={{ width: 120 }} value={filters.status} onChange={(e) => fc("status", e.target.value)} title="Payment status">
+          <option value="">All Status</option>
+          <option value="Unpaid">Unpaid</option>
+          <option value="Partial">Partial</option>
+          <option value="Paid">Paid</option>
+        </select>
         <button className="g-btn ghost sm" onClick={fetch_} disabled={loading}><FiRefreshCw size={14} /></button>
         {/* Download dropdown */}
         <div style={{ position: "relative" }}>
@@ -289,17 +319,22 @@ export default function Sales() {
                 <SortTH label="Invoice No" colKey="invoice" sortConfig={sort} onSort={onSort} />
                 <SortTH label="Customer" colKey="party" sortConfig={sort} onSort={onSort} />
                 <th>Phone</th>
-                <th>Payment</th>
+                <SortTH label="Payment" colKey="paymentType" sortConfig={sort} onSort={onSort} />
                 <SortTH label="Amount ₹" colKey="amount" sortConfig={sort} onSort={onSort} />
+                <SortTH label="Balance ₹" colKey="balance" sortConfig={sort} onSort={onSort} />
                 <th style={{ width: 130 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: C.textSub }}>Loading…</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: C.textSub }}>Loading…</td></tr>
               ) : sorted.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No records found</td></tr>
-              ) : paged.map((r) => (
+                <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No records found</td></tr>
+              ) : paged.map((r) => {
+                const bal = Number(r.balance || 0);
+                const isPaid = bal <= 0.01;
+                const isPartial = !isPaid && bal < Number(r.amount || 0) - 0.01;
+                return (
                 <tr key={r.id} onClick={() => navigate(`/addsales?id=${r.id}`)} style={{ cursor: "pointer" }}>
                   <td>{fmtDate(r.date)}</td>
                   <td style={{ fontWeight: 600 }}>{r.invoice}</td>
@@ -309,6 +344,18 @@ export default function Sales() {
                   <td style={{ color: C.textSub }}>{r.phone || "—"}</td>
                   <td><StatusBadge status={r.paymentType || "Cash"} /></td>
                   <td style={{ fontWeight: 700 }}>₹{fmt2(r.amount)}</td>
+                  <td>
+                    {isPaid ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: C.green, background: C.greenLight, padding: "2px 8px", borderRadius: 6 }}>Paid</span>
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontWeight: 800, color: C.red }}>₹{fmt2(bal)}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: isPartial ? C.orange : C.red, background: isPartial ? C.orangeLight : C.redLight, padding: "1px 6px", borderRadius: 5 }}>
+                          {isPartial ? "Partial" : "Unpaid"}
+                        </span>
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <div style={{ display: "flex", gap: 4 }}>
                       <button className="g-btn ghost sm" title="Payments" onClick={(e) => { e.stopPropagation(); openPayHistory(r); }}>
@@ -323,7 +370,8 @@ export default function Sales() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

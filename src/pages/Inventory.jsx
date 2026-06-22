@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent, FiTag, FiX } from "react-icons/fi";
+import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent, FiTag, FiX, FiAlertTriangle } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, fmtDate, Pagination, PAGE_SIZE } from "../ui.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
 import usePageMeta from "../usePageMeta.js";
@@ -231,6 +231,9 @@ export default function Inventory() {
           <button className="g-btn ghost sm" onClick={() => { setQ(""); setFilterExp("all"); setFilterTax(""); setFilterCat(""); }}>Clear</button>
         )}
         <span style={{ fontSize: 11, color: C.textSub, whiteSpace: "nowrap" }}>{filtered.length} results</span>
+        <button className="g-btn ghost sm" onClick={() => navigate("/inventory/writeoff")} title="Review expired and expiring stock" style={{ color: C.red }}>
+          <FiAlertTriangle size={14} /> Expired / Expiring
+        </button>
         <button className="g-btn ghost sm" onClick={() => setShowBulkGst(true)} title="Bulk GST% Update">
           <FiPercent size={14} /> Bulk GST
         </button>

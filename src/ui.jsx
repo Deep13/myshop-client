@@ -448,3 +448,11 @@ export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}
 export const fmtDate = (d) => { if (!d) return "—"; const p = String(d).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d; };
 export const fmt2 = (n) => Number(n || 0).toFixed(2);
 export const fmtINR = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Half-up at >0.5: 100.5 -> 100, 100.51 -> 101, 100.49 -> 100.
+export const smartRound = (v) => {
+  const n = Number(v) || 0;
+  const sign = n < 0 ? -1 : 1;
+  const abs = Math.abs(n);
+  const frac = abs - Math.floor(abs);
+  return sign * (frac > 0.5 ? Math.ceil(abs) : Math.floor(abs));
+};

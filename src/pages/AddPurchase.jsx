@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw } from "react-icons/fi";
+import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw, FiDollarSign } from "react-icons/fi";
 import * as XLSX from "xlsx";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
@@ -11,7 +11,7 @@ import toast from "../toast.js";
 import { printLabel } from "../printLabel.js";
 
 /* ── helpers ── */
-const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "" });
+const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "", packSize: "", category: "" });
 const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", category: "", mrp: "", salePrice: "", packSize: "", bagSalePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => {
@@ -108,6 +108,7 @@ export default function AddPurchase() {
   const [received, setReceived] = useState("0");
   const [recTouched, setRecTouched] = useState(false);
   const [payments, setPayments] = useState([{ type: "Cash", amount: "" }]);
+  const [payHist, setPayHist] = useState([]); // historical payments (read-only) when editing
 
   /* round off */
   const [roundOff, setRoundOff] = useState(true);
@@ -129,22 +130,30 @@ export default function AddPurchase() {
   const [newItem, setNewItem] = useState(blankNewItem());
   // Bag-pricing helper constants (used in the Add-to-Master modal when Pack Size is set)
   const [pricingHelper, setPricingHelper] = useState({ delivery: "13", kgMarkup: "5", bagMarkup: "50" });
-  // Compute loose + bag sale prices from purchase price + pack size + helper constants.
-  // Both prices round UP to the next whole rupee (Math.ceil).
+  // Compute loose sale price, bag sale price, and MRP from purchase price + pack
+  // size + helper constants. All values round UP to the next whole rupee.
+  //   salePrice (per kg) = ⌈(pp + delivery) / pack + kgMarkup⌉
+  //   bagSalePrice       = ⌈pp + delivery + bagMarkup⌉
+  //   mrp (per bag)      = salePrice × packSize   (printed-MRP convention)
   const computeBagPrices = (purchasePrice, packSize, helper) => {
     const pp = asNum(purchasePrice), ps = asNum(packSize);
     const dl = asNum(helper.delivery), km = asNum(helper.kgMarkup), bm = asNum(helper.bagMarkup);
     if (pp <= 0 || ps <= 0) return null;
+    const salePerKg = Math.ceil(((pp + dl) / ps) + km);
     return {
-      salePrice:    String(Math.ceil(((pp + dl) / ps) + km)),
+      salePrice:    String(salePerKg),
       bagSalePrice: String(Math.ceil(pp + dl + bm)),
+      mrp:          String(salePerKg * ps),
     };
   };
-  // Apply auto-calc whenever purchase price / pack size / helper change (only when both are valid)
+  // Apply auto-calc whenever purchase price / pack size / helper change (only when both are valid).
+  // For rice items, MRP also defaults to the calculated per-bag MRP if the user hasn't typed one yet.
   const applyBagPricing = (next, helper = pricingHelper) => {
     const calc = computeBagPrices(next.purchasePrice, next.packSize, helper);
-    if (calc) return { ...next, salePrice: calc.salePrice, bagSalePrice: calc.bagSalePrice };
-    return next;
+    if (!calc) return next;
+    const patched = { ...next, salePrice: calc.salePrice, bagSalePrice: calc.bagSalePrice };
+    if (!String(next.mrp || "").trim()) patched.mrp = calc.mrp;
+    return patched;
   };
   const [showPriceWarning, setShowPriceWarning] = useState(false);
   const [priceWarnings, setPriceWarnings] = useState([]);
@@ -185,24 +194,31 @@ export default function AddPurchase() {
         setBillDate(h.bill_date);
         setDueDate(h.due_date || "");
         setBillType(h.bill_type || "GST");
-        setGstMode(h.gst_mode || "exclusive");
+        setGstMode(["exclusive", "inclusive"].includes(h.gst_mode) ? h.gst_mode : "exclusive");
         setRows(
-          j.items.map((r) => ({
-            itemId: asNum(r.item_id),
-            itemName: r.item_name,
-            code: r.item_code,
-            hsn: r.hsn,
-            batchNo: r.batch_no,
-            expDate: r.exp_date || "",
-            mrp: r.mrp,
-            qty: r.qty,
-            freeQty: r.free_qty || "",
-            purchasePrice: r.purchase_price,
-            salePrice: r.sale_price,
-            discount: r.discount,
-            tax: r.tax,
-            amount: r.amount,
-          })),
+          j.items.map((r) => {
+            // Pull category + packSize from the items master so rice-row auto-recalc
+            // still works on edits of existing purchase bills.
+            const m = itemMaster.find((x) => asNum(x.id) === asNum(r.item_id));
+            return {
+              itemId: asNum(r.item_id),
+              itemName: r.item_name,
+              code: r.item_code,
+              hsn: r.hsn,
+              batchNo: r.batch_no,
+              expDate: r.exp_date || "",
+              mrp: r.mrp,
+              qty: r.qty,
+              freeQty: r.free_qty || "",
+              purchasePrice: r.purchase_price,
+              salePrice: r.sale_price,
+              discount: r.discount,
+              tax: r.tax,
+              amount: r.amount,
+              category: m?.category || "",
+              packSize: m?.packSize ?? m?.pack_size ?? "",
+            };
+          }),
         );
         setRoundOff(Boolean(h.round_off_enabled));
         if (j.payments?.length) setPayments(j.payments.map((p) => ({ type: p.mode, amount: String(p.amount) })));
@@ -211,6 +227,18 @@ export default function AddPurchase() {
       }
     })();
   }, [purchaseId, masterLoaded]);
+
+  /* ── Load full payment history (date, mode, amount, ref, note) for the detail panel ── */
+  useEffect(() => {
+    if (!purchaseId) { setPayHist([]); return; }
+    (async () => {
+      try {
+        const r = await fetch(`${API}/get_purchase_payments.php?purchaseId=${purchaseId}`);
+        const j = await r.json().catch(() => ({}));
+        if (j.status === "success") setPayHist(j.data || []);
+      } catch { setPayHist([]); }
+    })();
+  }, [purchaseId]);
 
   /* ── Item search filtering ── */
   const getSug = (text) => {
@@ -238,6 +266,17 @@ export default function AddPurchase() {
     setRows((prev) => {
       const n = [...prev];
       const u = { ...n[i], ...patch };
+      // Rice items: when purchase price or pack size changes on the bill row,
+      // auto-recompute the per-kg sale price AND the MRP (= bag sale price)
+      // using the same formula as the Add-to-Master modal.
+      if ((patch.purchasePrice !== undefined || patch.packSize !== undefined) &&
+          /^Rice\b/i.test(u.category || "")) {
+        const calc = computeBagPrices(u.purchasePrice, u.packSize, pricingHelper);
+        if (calc) {
+          u.salePrice = calc.salePrice;
+          u.mrp       = calc.mrp;   // per-kg × pack size
+        }
+      }
       u.amount = calcRowAmt(u).toFixed(2);
       n[i] = u;
       return n;
@@ -264,6 +303,9 @@ export default function AddPurchase() {
         tax: item.tax ?? "",
         qty: 1,
         discount: "",
+        // Snapshot for the row-level rice auto-recalc
+        category: item.category || "",
+        packSize: item.packSize ?? item.pack_size ?? "",
       };
       const n = [...prev];
       n[ri] = { ...n[ri], ...fill };
@@ -330,7 +372,7 @@ export default function AddPurchase() {
   }, [rows, isGST, gstMode]);
   // For inclusive: grand total = subTotal (tax is already inside), for exclusive: grand total = subTotal + tax on top
   const grandTotal = useMemo(() => (gstMode === "inclusive" ? subTotal : subTotal + taxTotal), [subTotal, taxTotal, gstMode]);
-  const roundedTotal = useMemo(() => (roundOff ? Math.round(grandTotal) : grandTotal), [grandTotal, roundOff]);
+  const roundedTotal = useMemo(() => (roundOff ? smartRound(grandTotal) : grandTotal), [grandTotal, roundOff]);
   const roundDiff = useMemo(() => roundedTotal - grandTotal, [roundedTotal, grandTotal]);
   const sumPay = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
   const totalPaid = useMemo(() => (multiPay ? sumPay : asNum(received)), [multiPay, sumPay, received]);
@@ -1545,6 +1587,46 @@ export default function AddPurchase() {
           </div>
         </div>
 
+        {/* Payment history (read-only) — only when editing an existing bill with payments */}
+        {isEdit && payHist.length > 0 && (
+          <div className="g-card" style={{ marginBottom: 16 }}>
+            <div className="g-card-head">
+              <div className="g-card-title">
+                <FiDollarSign size={14} style={{ color: C.green }} /> Payment History ({payHist.length})
+              </div>
+              <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600 }}>
+                Paid: ₹{fmt2(payHist.reduce((s, p) => s + Number(p.amount || 0), 0))}
+              </div>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="g-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Mode</th>
+                    <th style={{ textAlign: "right" }}>Amount</th>
+                    <th>Reference</th>
+                    <th>Note</th>
+                    <th style={{ fontSize: 11, color: C.textLight }}>Recorded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payHist.map((p) => (
+                    <tr key={p.id}>
+                      <td>{fmtDate(p.pay_date)}</td>
+                      <td><StatusBadge status={p.mode || "Cash"} /></td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: C.green }}>₹{fmt2(p.amount)}</td>
+                      <td style={{ fontSize: 12, color: C.textSub }}>{p.reference_no || "—"}</td>
+                      <td style={{ fontSize: 12, color: C.textSub }}>{p.note || "—"}</td>
+                      <td style={{ fontSize: 11, color: C.textLight }}>{p.created_at ? new Date(p.created_at).toLocaleString("en-IN") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Summary */}
         <div className="g-card" style={{ marginBottom: 0 }}>
           <div className="g-card-head">
@@ -1944,10 +2026,15 @@ export default function AddPurchase() {
                 </div>
               </div>
 
-              {/* Cheaper purchase history */}
-              {w.cheaper_purchases?.length > 0 && (
+              {/* Recent purchase history — flags direction vs last buy */}
+              {w.recent_purchases?.length > 0 && w.price_direction && (
                 <div>
-                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: C.orange, background: "#fff7ed" }}>Bought cheaper before</div>
+                  <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, background: w.price_direction === "higher" ? "#fff7ed" : "#ecfdf5", color: w.price_direction === "higher" ? C.orange : C.green }}>
+                    Buy price is {w.price_direction === "higher" ? "HIGHER" : "LOWER"} than last purchase
+                    {w.last_price > 0 && (
+                      <> · last ₹{Number(w.last_price).toFixed(2)} → now ₹{Number(w.current_price).toFixed(2)} ({w.price_direction === "higher" ? "+" : ""}{((w.current_price - w.last_price) / w.last_price * 100).toFixed(1)}%)</>
+                    )}
+                  </div>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "#fafbfc" }}>
@@ -1962,15 +2049,19 @@ export default function AddPurchase() {
                       </tr>
                     </thead>
                     <tbody>
-                      {w.cheaper_purchases.map((p, j) => (
-                        <tr key={j} style={{ borderBottom: "1px solid #f9fafb" }}>
-                          <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color: C.green }}>₹{p.purchase_price.toFixed(2)}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.qty}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.distributor_name}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{p.bill_no}</td>
-                          <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{fmtDate(p.bill_date)}</td>
-                        </tr>
-                      ))}
+                      {w.recent_purchases.map((p, j) => {
+                        const diff = w.current_price - p.purchase_price;
+                        const color = Math.abs(diff) < 0.01 ? C.textSub : diff > 0 ? C.red : C.green;
+                        return (
+                          <tr key={j} style={{ borderBottom: "1px solid #f9fafb" }}>
+                            <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color }}>₹{p.purchase_price.toFixed(2)}</td>
+                            <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.qty}</td>
+                            <td style={{ padding: "8px 12px", fontSize: 13 }}>{p.distributor_name}</td>
+                            <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{p.bill_no}</td>
+                            <td style={{ padding: "8px 12px", fontSize: 12, color: C.textSub }}>{fmtDate(p.bill_date)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

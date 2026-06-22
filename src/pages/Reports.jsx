@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown, FiArrowUp, FiDownload, FiFileText, FiDollarSign, FiSend } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Modal, fmt2, fmtDate, DATE_RANGES, applyDateRange } from "../ui.jsx";
+import { useNavigate, Link } from "react-router-dom";
+import { FiRefreshCw, FiTrendingUp, FiClock, FiBarChart2, FiPackage, FiArrowDown, FiArrowUp, FiDownload, FiFileText, FiDollarSign, FiSend, FiPlus, FiEdit2, FiTrash2, FiZap } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Modal, fmt2, fmtDate, DATE_RANGES, applyDateRange, todayISO } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { downloadExcel, generateExcelBlob } from "../excelExport.js";
+import { downloadGSTR1, buildGSTR1Blob } from "../gstr1Export.js";
 import { getShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -67,12 +69,18 @@ const TABS = [
 
 export default function Reports() {
   usePageMeta("Reports", "Sales, purchase, profit, GST and accounting reports");
+  const navigate = useNavigate();
   const [tab, setTab] = useState("sales");
   const [salesData, setSalesData] = useState(null);
   const [gstData, setGstData] = useState(null);
   const [profitData, setProfitData] = useState(null);
   const [purchaseData, setPurchaseData] = useState(null);
   const [accountsData, setAccountsData] = useState(null);
+  const [expenses, setExpenses] = useState([]);
+  const [expModalShow, setExpModalShow] = useState(false);
+  const [expForm, setExpForm] = useState({ id: 0, expDate: "", category: "Electricity", customLabel: "", amount: "", mode: "Cash", note: "" });
+  const [expSaving, setExpSaving] = useState(false);
+  const [expDeleting, setExpDeleting] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [upgradeStats, setUpgradeStats] = useState(null);
@@ -126,10 +134,87 @@ export default function Reports() {
     } catch (e) { console.error(e); }
   };
 
+  const loadExpenses = async () => {
+    try {
+      const res = await fetch(`${API}/get_expenses.php?from=${from}&to=${to}`);
+      const j = await res.json().catch(() => ({}));
+      if (j.status === "success") setExpenses(j.data || []);
+    } catch (e) { console.error(e); }
+  };
+
+  const openAddExpense = () => {
+    setExpForm({ id: 0, expDate: to || todayISO(), category: "Electricity", customLabel: "", amount: "", mode: "Cash", note: "" });
+    setExpModalShow(true);
+  };
+  const openEditExpense = (e) => {
+    setExpForm({
+      id: e.id,
+      expDate: e.exp_date,
+      category: e.category,
+      customLabel: e.custom_label || "",
+      amount: String(e.amount),
+      mode: e.mode,
+      note: e.note || "",
+    });
+    setExpModalShow(true);
+  };
+  const saveExpense = async () => {
+    if (!expForm.expDate) { toast.error("Date required"); return; }
+    if (expForm.category === "Custom" && !expForm.customLabel.trim()) { toast.error("Custom label required"); return; }
+    const amt = Number(expForm.amount);
+    if (!isFinite(amt) || amt <= 0) { toast.error("Amount must be > 0"); return; }
+    setExpSaving(true);
+    try {
+      const url = expForm.id ? `${API}/update_expense.php` : `${API}/add_expense.php`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: expForm.id || undefined,
+          expDate: expForm.expDate,
+          category: expForm.category,
+          customLabel: expForm.category === "Custom" ? expForm.customLabel.trim() : "",
+          amount: amt,
+          mode: expForm.mode,
+          note: expForm.note,
+          createdBy: user?.username || user?.name || "",
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Save failed");
+      toast.success(expForm.id ? "Expense updated" : "Expense added");
+      setExpModalShow(false);
+      await Promise.all([loadExpenses(), loadAccounts()]);
+    } catch (e) {
+      toast.error(e.message || "Save failed");
+    } finally {
+      setExpSaving(false);
+    }
+  };
+  const deleteExpense = async (id) => {
+    if (!window.confirm("Delete this expense?")) return;
+    setExpDeleting(id);
+    try {
+      const res = await fetch(`${API}/delete_expense.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.status !== "success") throw new Error(j.message || "Delete failed");
+      toast.success("Expense deleted");
+      await Promise.all([loadExpenses(), loadAccounts()]);
+    } catch (e) {
+      toast.error(e.message || "Delete failed");
+    } finally {
+      setExpDeleting(0);
+    }
+  };
+
   const load = async () => {
     if (!from || !to) return;
     setLoading(true);
-    await Promise.all([loadSales(), loadGst(), loadProfit(), loadPurchase(), loadAccounts()]);
+    await Promise.all([loadSales(), loadGst(), loadProfit(), loadPurchase(), loadAccounts(), loadExpenses()]);
     setLoading(false);
   };
 
@@ -170,24 +255,13 @@ export default function Reports() {
 
   /* ── Excel download helpers ── */
   const dlGSTR1 = () => {
-    downloadExcel([
-      { key: "invoice_no", label: "Invoice No" },
-      { key: "invoice_date", label: "Date" },
-      { key: "customer_name", label: "Customer" },
-      { key: "item_name", label: "Item" },
-      { key: "item_code", label: "Code" },
-      { key: "hsn", label: "HSN" },
-      { key: "qty", label: "Qty", type: "int" },
-      { key: "rate", label: "Rate", type: "number" },
-      { key: "taxable_value", label: "Taxable Value", type: "number" },
-      { key: "tax_pct", label: "GST %", type: "number" },
-      { key: "cgst", label: "CGST", type: "number" },
-      { key: "sgst", label: "SGST", type: "number" },
-      { key: "total_tax", label: "Total Tax", type: "number" },
-      { key: "total", label: "Total", type: "number" },
-    ], gstr1, `GSTR1_${from}_to_${to}`);
+    downloadGSTR1({
+      rows: gstr1,
+      from, to,
+      shop: getShopSettings(),
+      filename: `GSTR1_${from}_to_${to}.xlsx`,
+    });
   };
-
   const dlGSTR2A = () => {
     downloadExcel([
       { key: "bill_no", label: "Bill No" },
@@ -255,18 +329,9 @@ export default function Reports() {
     const zip = new JSZip();
     const range = `${from}_to_${to}`;
 
-    // GSTR-1
+    // GSTR-1 — canonical multi-sheet xlsx
     if (gstr1.length) {
-      zip.file(`GSTR1_${range}.xls`, generateExcelBlob([
-        { key: "invoice_no", label: "Invoice No" }, { key: "invoice_date", label: "Date" },
-        { key: "customer_name", label: "Customer" }, { key: "item_name", label: "Item" },
-        { key: "item_code", label: "Code" }, { key: "hsn", label: "HSN" },
-        { key: "qty", label: "Qty", type: "int" }, { key: "rate", label: "Rate", type: "number" },
-        { key: "taxable_value", label: "Taxable Value", type: "number" },
-        { key: "tax_pct", label: "GST %", type: "number" },
-        { key: "cgst", label: "CGST", type: "number" }, { key: "sgst", label: "SGST", type: "number" },
-        { key: "total_tax", label: "Total Tax", type: "number" }, { key: "total", label: "Total", type: "number" },
-      ], gstr1));
+      zip.file(`GSTR1_${range}.xlsx`, buildGSTR1Blob({ rows: gstr1, from, to, shop: getShopSettings() }));
     }
 
     // GSTR-2A
@@ -342,37 +407,28 @@ export default function Reports() {
     try {
       setSendingCA(true);
       setShowCAMenu(false);
-      const zipBlob = await buildCAZip();
       const range = `${from} to ${to}`;
-      const filename = `GST_Reports_${shop.name.replace(/\s+/g, "_")}_${from}_to_${to}.zip`;
 
       if (method === "download") {
+        const shopForFile = shop;
+        const filename = `GST_Reports_${shopForFile.name.replace(/\s+/g, "_")}_${from}_to_${to}.zip`;
+        const zipBlob = await buildCAZip();
         const url = URL.createObjectURL(zipBlob);
         const a = document.createElement("a");
         a.href = url; a.download = filename;
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        toast("Reports zip downloaded.", "success");
       } else if (method === "email") {
         const subject = encodeURIComponent(`GST Reports - ${shop.name} (${range})`);
-        const body = encodeURIComponent(`Dear ${shop.caName || "Sir/Madam"},\n\nPlease find attached the GST reports for ${shop.name} for the period ${range}.\n\nReports included:\n- GSTR-1 (Outward Supplies)\n- GSTR-2A (Inward Supplies)\n- GSTR-3B (Tax Summary)\n- HSN wise GST\n- Sales Item-wise Data\n\nRegards,\n${shop.name}\n${shop.phone}`);
-        // Create a File from the blob and try to share via mailto
-        const file = new File([zipBlob], filename, { type: "application/zip" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: `GST Reports - ${shop.name}`, text: `GST Reports for ${range}` });
-        } else {
-          window.location.href = `mailto:${shop.caEmail}?subject=${subject}&body=${body}`;
-        }
+        const body = encodeURIComponent(`Dear ${shop.caName || "Sir/Madam"},\n\nPlease find the GST reports for ${shop.name} for the period ${range}.\n\nReports included:\n- GSTR-1 (Outward Supplies)\n- GSTR-2A (Inward Supplies)\n- GSTR-3B (Tax Summary)\n- HSN wise GST\n- Sales Item-wise Data\n\nRegards,\n${shop.name}\n${shop.phone}`);
+        window.location.href = `mailto:${shop.caEmail}?subject=${subject}&body=${body}`;
       } else if (method === "whatsapp") {
-        const file = new File([zipBlob], filename, { type: "application/zip" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: `GST Reports - ${shop.name}`, text: `GST Reports for ${range}` });
-        } else {
-          const phone = shop.caPhone.replace(/\D/g, "");
-          const waPhone = phone.startsWith("91") ? phone : `91${phone}`;
-          const text = encodeURIComponent(`GST Reports - ${shop.name} (${range})\n\nReports: GSTR-1, GSTR-2A, GSTR-3B, HSN wise GST, Sales Data`);
-          window.open(`https://wa.me/${waPhone}?text=${text}`, "_blank");
-        }
+        const phone = shop.caPhone.replace(/\D/g, "");
+        const waPhone = phone.startsWith("91") ? phone : `91${phone}`;
+        const text = encodeURIComponent(`GST Reports - ${shop.name} (${range})\n\nReports: GSTR-1, GSTR-2A, GSTR-3B, HSN wise GST, Sales Data`);
+        window.open(`https://wa.me/${waPhone}?text=${text}`, "_blank");
       }
     } catch (e) {
       toast("Failed to generate reports: " + (e.message || "Unknown error"), "error");
@@ -833,14 +889,14 @@ export default function Reports() {
                           { key: "item_name", label: "Item" },
                           { key: "item_code", label: "Code" },
                           { key: "qty_sold", label: "Qty Sold", type: "int" },
-                          { key: "revenue", label: "Revenue", type: "number" },
-                          { key: "taxable_revenue", label: "Taxable Revenue", type: "number" },
-                          { key: "cost", label: "Cost", type: "number" },
+                          { key: "revenue", label: "Sale (incl GST)", type: "number" },
+                          { key: "cost", label: "Cost (incl GST)", type: "number" },
                           { key: "profit", label: "Profit", type: "number" },
                           { key: "margin_pct", label: "Margin %", type: "pct" },
                         ], profitItems, `Profit_Items_${from}_to_${to}`);
                       }}><FiDownload size={12} /> Excel</button>
                     </div>
+                    <div style={{ fontSize: 11, color: C.textSub, padding: "0 18px 2px" }}>Profit = Sale − Cost (both incl GST)</div>
                     <div style={{ padding: "10px 18px" }}>
                       {profitItems.slice(0, 10).map((item, i) => {
                         const maxProfit = profitItems[0]?.profit || 1;
@@ -848,8 +904,12 @@ export default function Reports() {
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 9 ? "1px solid #f3f4f6" : "none" }}>
                             <span style={{ width: 22, fontWeight: 800, fontSize: 12, color: i < 3 ? C.green : C.textSub, textAlign: "center" }}>{i + 1}</span>
                             <div style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
-                              <div style={{ fontWeight: 600 }}>{item.item_name}</div>
-                              <div style={{ fontSize: 11, color: C.textSub }}>Qty: {item.qty_sold} · Cost: ₹{fmt2(item.cost)}</div>
+                              {item.item_id ? (
+                                <Link to={`/inventory/${item.item_id}`} style={{ fontWeight: 600, color: C.brand, textDecoration: "none" }}>{item.item_name}</Link>
+                              ) : (
+                                <div style={{ fontWeight: 600 }}>{item.item_name}</div>
+                              )}
+                              <div style={{ fontSize: 11, color: C.textSub }}>Qty {item.qty_sold} · Sale ₹{fmt2(item.revenue)} − Cost ₹{fmt2(item.cost)}</div>
                             </div>
                             <HBar value={item.profit} max={maxProfit} color={C.green} />
                             <div style={{ textAlign: "right", minWidth: 70 }}>
@@ -865,13 +925,18 @@ export default function Reports() {
                 {profitItems.length > 0 && (
                   <div className="g-card">
                     <div className="g-card-head"><div className="g-card-title"><FiArrowDown size={14} style={{ color: C.red }} /> Least Profitable Items</div></div>
+                    <div style={{ fontSize: 11, color: C.textSub, padding: "0 18px 2px" }}>Profit = Sale − Cost (both incl GST)</div>
                     <div style={{ padding: "10px 18px" }}>
                       {[...profitItems].reverse().slice(0, 10).map((item, i) => (
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 9 ? "1px solid #f3f4f6" : "none" }}>
                           <span style={{ width: 22, fontWeight: 800, fontSize: 12, color: C.textSub, textAlign: "center" }}>{i + 1}</span>
                           <div style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
-                            <div style={{ fontWeight: 600 }}>{item.item_name}</div>
-                            <div style={{ fontSize: 11, color: C.textSub }}>Qty: {item.qty_sold} · Cost: ₹{fmt2(item.cost)}</div>
+                            {item.item_id ? (
+                              <Link to={`/inventory/${item.item_id}`} style={{ fontWeight: 600, color: C.brand, textDecoration: "none" }}>{item.item_name}</Link>
+                            ) : (
+                              <div style={{ fontWeight: 600 }}>{item.item_name}</div>
+                            )}
+                            <div style={{ fontSize: 11, color: C.textSub }}>Qty {item.qty_sold} · Sale ₹{fmt2(item.revenue)} − Cost ₹{fmt2(item.cost)}</div>
                           </div>
                           <div style={{ textAlign: "right", minWidth: 70 }}>
                             <div style={{ fontWeight: 800, fontSize: 13, color: item.profit < 0 ? C.red : C.orange }}>₹{fmt2(item.profit)}</div>
@@ -1049,10 +1114,14 @@ export default function Reports() {
             const ac = accountsData || {};
             const salesModes = ac.sales_by_mode || [];
             const purchaseModes = ac.purchase_by_mode || [];
+            const expensesByCat = ac.expenses_by_category || [];
+            const expensesTotal = ac.expenses_total || 0;
             const daily = ac.daily_cash_flow || [];
             const netFlow = ac.net_cash_flow || 0;
             const allModes = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
             const modeColors = { Cash: "#16a34a", UPI: "#7c3aed", Card: "#0369a1", Bank: "#0891b2", Cheque: "#ca8a04", Other: "#64748b" };
+            const catColors = ["#dc2626", "#ea580c", "#d97706", "#65a30d", "#0891b2", "#7c3aed", "#db2777", "#64748b"];
+            const catColorFor = (i) => catColors[i % catColors.length];
 
             return (
               <>
@@ -1061,8 +1130,8 @@ export default function Reports() {
                   {[
                     { label: "Total Received (Sales)", value: `₹${fmt2(ac.sales_total_received || 0)}`, color: C.green },
                     { label: "Total Paid (Purchase)", value: `₹${fmt2(ac.purchase_total_paid || 0)}`, color: C.orange },
+                    { label: "Total Expenses", value: `₹${fmt2(expensesTotal)}`, color: C.red },
                     { label: "Net Cash Flow", value: `₹${fmt2(netFlow)}`, color: netFlow >= 0 ? C.green : C.red },
-                    { label: "Outstanding", value: `₹${fmt2((ac.sales_outstanding || 0) + (ac.purchase_outstanding || 0))}`, color: C.red },
                   ].map(({ label, value, color }) => (
                     <div key={label} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
@@ -1141,6 +1210,92 @@ export default function Reports() {
                   </div>
                 </div>
 
+                {/* Expenses */}
+                <div className="g-card" style={{ marginBottom: 18 }}>
+                  <div className="g-card-head">
+                    <div className="g-card-title"><FiZap size={14} style={{ color: C.red }} /> Expenses</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button className="g-btn ghost sm" onClick={() => downloadExcel([
+                        { key: "exp_date", label: "Date" },
+                        { key: "category", label: "Category" },
+                        { key: "custom_label", label: "Custom Label" },
+                        { key: "amount", label: "Amount", type: "number" },
+                        { key: "mode", label: "Mode" },
+                        { key: "note", label: "Note" },
+                      ], expenses, `Expenses_${from}_to_${to}`)} disabled={!expenses.length}><FiDownload size={12} /></button>
+                      <button className="g-btn sm" onClick={openAddExpense} style={{ background: C.brand, color: "#fff", border: "none", height: 30, padding: "0 12px", borderRadius: 7, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                        <FiPlus size={13} /> Add
+                      </button>
+                    </div>
+                  </div>
+                  <div className="g-card-body" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 18 }}>
+                    {/* By category bars */}
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 10 }}>By Category</div>
+                      {expensesByCat.length === 0 ? (
+                        <div style={{ padding: 20, color: C.textSub, fontSize: 13, textAlign: "center" }}>No expenses</div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {expensesByCat.map((c, i) => (
+                            <div key={c.category} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <div style={{ width: 130, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.category}>{c.category}</div>
+                              <div style={{ flex: 1 }}>
+                                <HBar value={c.total} max={expensesTotal || 1} color={catColorFor(i)} />
+                              </div>
+                              <div style={{ width: 100, textAlign: "right", fontSize: 14, fontWeight: 700, color: C.text }}>₹{fmt2(c.total)}</div>
+                              <div style={{ width: 36, textAlign: "right", fontSize: 11, color: C.textSub }}>{c.txn_count}</div>
+                            </div>
+                          ))}
+                          <div style={{ borderTop: "1.5px solid #f1f5f9", paddingTop: 10, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800 }}>
+                            <span>Total</span>
+                            <span style={{ color: C.red }}>₹{fmt2(expensesTotal)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Entries table */}
+                    <div style={{ overflowX: "auto" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, textTransform: "uppercase", marginBottom: 10 }}>Entries</div>
+                      {expenses.length === 0 ? (
+                        <div style={{ padding: 20, color: C.textSub, fontSize: 13, textAlign: "center" }}>No expenses recorded for this range</div>
+                      ) : (
+                        <table className="g-table" style={{ fontSize: 13 }}>
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Category</th>
+                              <th>Mode</th>
+                              <th style={{ textAlign: "right" }}>Amount</th>
+                              <th>Note</th>
+                              <th style={{ textAlign: "center", width: 80 }}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {expenses.map((e) => (
+                              <tr key={e.id}>
+                                <td>{fmtDate(e.exp_date)}</td>
+                                <td>{e.category === "Custom" ? (e.custom_label || "Custom") : e.category}</td>
+                                <td>{e.mode}</td>
+                                <td style={{ textAlign: "right", fontWeight: 600, color: C.red }}>₹{fmt2(e.amount)}</td>
+                                <td style={{ color: C.textSub, fontSize: 12 }}>{e.note || "—"}</td>
+                                <td style={{ textAlign: "center" }}>
+                                  <button onClick={() => openEditExpense(e)} title="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: C.brand, padding: 4 }}>
+                                    <FiEdit2 size={14} />
+                                  </button>
+                                  <button onClick={() => deleteExpense(e.id)} disabled={expDeleting === e.id} title="Delete" style={{ background: "none", border: "none", cursor: expDeleting === e.id ? "wait" : "pointer", color: C.red, padding: 4 }}>
+                                    <FiTrash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Outstanding */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 18 }}>
                   <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
@@ -1162,6 +1317,7 @@ export default function Reports() {
                         { key: "date", label: "Date" },
                         { key: "sales_received", label: "Sales Received", type: "number" },
                         { key: "purchase_paid", label: "Purchase Paid", type: "number" },
+                        { key: "expenses", label: "Expenses", type: "number" },
                         { key: "net", label: "Net Flow", type: "number" },
                       ], daily, `Daily_CashFlow_${from}_to_${to}`)}><FiDownload size={12} /></button>
                     </div>
@@ -1172,6 +1328,7 @@ export default function Reports() {
                             <th>Date</th>
                             <th style={{ textAlign: "right" }}>Sales Received</th>
                             <th style={{ textAlign: "right" }}>Purchase Paid</th>
+                            <th style={{ textAlign: "right" }}>Expenses</th>
                             <th style={{ textAlign: "right" }}>Net Flow</th>
                           </tr>
                         </thead>
@@ -1181,6 +1338,7 @@ export default function Reports() {
                               <td>{fmtDate(d.date)}</td>
                               <td style={{ textAlign: "right", fontWeight: 600, color: C.green }}>₹{fmt2(d.sales_received)}</td>
                               <td style={{ textAlign: "right", fontWeight: 600, color: C.orange }}>₹{fmt2(d.purchase_paid)}</td>
+                              <td style={{ textAlign: "right", fontWeight: 600, color: C.red }}>₹{fmt2(d.expenses || 0)}</td>
                               <td style={{ textAlign: "right", fontWeight: 700, color: d.net >= 0 ? C.green : C.red }}>₹{fmt2(d.net)}</td>
                             </tr>
                           ))}
@@ -1188,6 +1346,7 @@ export default function Reports() {
                             <td>TOTAL</td>
                             <td style={{ textAlign: "right", color: C.green }}>₹{fmt2(daily.reduce((s, d) => s + d.sales_received, 0))}</td>
                             <td style={{ textAlign: "right", color: C.orange }}>₹{fmt2(daily.reduce((s, d) => s + d.purchase_paid, 0))}</td>
+                            <td style={{ textAlign: "right", color: C.red }}>₹{fmt2(daily.reduce((s, d) => s + (d.expenses || 0), 0))}</td>
                             <td style={{ textAlign: "right", color: netFlow >= 0 ? C.green : C.red }}>₹{fmt2(netFlow)}</td>
                           </tr>
                         </tbody>
@@ -1282,6 +1441,79 @@ export default function Reports() {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* ── MODAL: Add/Edit Expense ── */}
+      <Modal show={expModalShow} title={expForm.id ? "Edit Expense" : "Add Expense"} onClose={() => setExpModalShow(false)} width={520}
+        footer={<>
+          <button className="g-btn ghost" onClick={() => setExpModalShow(false)} disabled={expSaving}>Cancel</button>
+          <button className="g-btn" style={{ background: C.brand, color: "#fff", height: 38, padding: "0 18px", border: "none", borderRadius: 9, fontWeight: 700, cursor: "pointer" }}
+            onClick={saveExpense} disabled={expSaving}>
+            {expSaving ? "Saving…" : (expForm.id ? "Update" : "Add Expense")}
+          </button>
+        </>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>DATE</label>
+              <DateInput value={expForm.expDate} onChange={(e) => setExpForm({ ...expForm, expDate: e.target.value })} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>CATEGORY</label>
+              <select value={expForm.category} onChange={(e) => setExpForm({ ...expForm, category: e.target.value })}
+                style={{ width: "100%", height: 36, padding: "0 10px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                <option value="Electricity">Electricity</option>
+                <option value="Staff Payment">Staff Payment</option>
+                <option value="Cleaning">Cleaning</option>
+                <option value="Miscellaneous">Miscellaneous</option>
+                <option value="Custom">Custom</option>
+              </select>
+            </div>
+          </div>
+
+          {expForm.category === "Custom" && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>CUSTOM LABEL</label>
+              <input type="text" value={expForm.customLabel} onChange={(e) => setExpForm({ ...expForm, customLabel: e.target.value })}
+                placeholder="e.g. Internet bill, Rent, Stationery"
+                style={{ width: "100%", height: 36, padding: "0 10px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          )}
+
+          {expForm.category === "Staff Payment" && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>STAFF NAME (optional, goes to Note)</label>
+              <input type="text" value={expForm.note} onChange={(e) => setExpForm({ ...expForm, note: e.target.value })}
+                placeholder="e.g. Staff 1, Cleaning staff"
+                style={{ width: "100%", height: 36, padding: "0 10px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>AMOUNT (₹)</label>
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={expForm.amount}
+                onChange={(e) => setExpForm({ ...expForm, amount: e.target.value })}
+                style={{ width: "100%", height: 36, padding: "0 10px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>PAYMENT MODE</label>
+              <select value={expForm.mode} onChange={(e) => setExpForm({ ...expForm, mode: e.target.value })}
+                style={{ width: "100%", height: 36, padding: "0 10px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                {["Cash","UPI","Card","Bank","Cheque","Other"].map((m) => (<option key={m} value={m}>{m}</option>))}
+              </select>
+            </div>
+          </div>
+
+          {expForm.category !== "Staff Payment" && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: C.textSub, display: "block", marginBottom: 4 }}>NOTE (optional)</label>
+              <input type="text" value={expForm.note} onChange={(e) => setExpForm({ ...expForm, note: e.target.value })}
+                placeholder="e.g. April bill, ref no."
+                style={{ width: "100%", height: 36, padding: "0 10px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

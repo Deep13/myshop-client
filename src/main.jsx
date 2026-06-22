@@ -9,8 +9,11 @@ import AddPurchase from "./pages/AddPurchase.jsx";
 import Purchase from "./pages/Purchase.jsx";
 import Inventory from "./pages/Inventory.jsx";
 import ItemDetail from "./pages/ItemDetail.jsx";
+import WriteOffExpired from "./pages/WriteOffExpired.jsx";
 import Customers from "./pages/Customers.jsx";
+import CustomerDetail from "./pages/CustomerDetail.jsx";
 import Distributors from "./pages/Distributors.jsx";
+import DistributorDetail from "./pages/DistributorDetail.jsx";
 import Reports from "./pages/Reports.jsx";
 import Settings from "./pages/Settings.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
@@ -71,10 +74,13 @@ createRoot(document.getElementById("root")).render(
         <Route path="/addsales"            element={<AddSales />} />
         <Route path="/purchase"            element={<Purchase />} />
         <Route path="/addpurchase"         element={<AddPurchase />} />
-        <Route path="/inventory"           element={<Inventory />} />
-        <Route path="/inventory/:itemId"   element={<ItemDetail />} />
+        <Route path="/inventory"             element={<Inventory />} />
+        <Route path="/inventory/writeoff"    element={<WriteOffExpired />} />
+        <Route path="/inventory/:itemId"     element={<ItemDetail />} />
         <Route path="/customers"           element={<Customers />} />
+        <Route path="/customers/:name"     element={<CustomerDetail />} />
         <Route path="/distributors"        element={<Distributors />} />
+        <Route path="/distributors/:id"    element={<DistributorDetail />} />
         <Route path="/reports"             element={<Reports />} />
         <Route path="/settings"            element={<Settings />} />
         <Route path="/admin/users"         element={<AdminUsers />} />
