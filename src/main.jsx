@@ -17,6 +17,8 @@ import DistributorDetail from "./pages/DistributorDetail.jsx";
 import Reports from "./pages/Reports.jsx";
 import Settings from "./pages/Settings.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
+import LoginLog from "./pages/LoginLog.jsx";
+import Loyalty from "./pages/Loyalty.jsx";
 import MobileSale from "./pages/MobileSale.jsx";
 import MobileInventory from "./pages/MobileInventory.jsx";
 import MobileDashboard from "./pages/MobileDashboard.jsx";
@@ -83,7 +85,9 @@ createRoot(document.getElementById("root")).render(
         <Route path="/distributors/:id"    element={<DistributorDetail />} />
         <Route path="/reports"             element={<Reports />} />
         <Route path="/settings"            element={<Settings />} />
+        <Route path="/loyalty"             element={<Loyalty />} />
         <Route path="/admin/users"         element={<AdminUsers />} />
+        <Route path="/admin/login-log"     element={<LoginLog />} />
       </Route>
     </Routes>
   </BrowserRouter>

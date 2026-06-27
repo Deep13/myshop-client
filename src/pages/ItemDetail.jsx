@@ -11,6 +11,7 @@ import toast from "../toast.js";
 
 const today = todayISO();
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+const isAdmin = user?.role === "admin";
 const in90  = new Date(new Date().getTime() + 90 * 86400000).toISOString().slice(0, 10);
 
 function InfoRow({ label, value, bold }) {
@@ -48,6 +49,7 @@ export default function ItemDetail() {
   const [editBatchId, setEditBatchId]     = useState(null);
   const [editBatchNo, setEditBatchNo]     = useState("");
   const [editBatchExp, setEditBatchExp]   = useState("");
+  const [editBatchQty, setEditBatchQty]   = useState("");
   const [batchSaving, setBatchSaving]     = useState(false);
   usePageMeta(data ? `${data.item?.name || "Item"} — Detail` : "Item Detail", "Item stock, batches, purchase and sales history");
 
@@ -188,17 +190,28 @@ export default function ItemDetail() {
     setEditBatchId(Number(b.id));
     setEditBatchNo(b.batch_no || "");
     setEditBatchExp(b.exp_date || "");
+    setEditBatchQty(String(asNum(b.current_qty)));
   };
   const cancelEditBatch = () => {
-    setEditBatchId(null); setEditBatchNo(""); setEditBatchExp("");
+    setEditBatchId(null); setEditBatchNo(""); setEditBatchExp(""); setEditBatchQty("");
   };
   const saveEditBatch = async () => {
     if (editBatchId == null) return;
+    const qtyNum = asNum(editBatchQty);
+    if (editBatchQty.trim() !== "" && (!isFinite(qtyNum) || qtyNum < 0)) {
+      return toast.error("Stock must be 0 or greater");
+    }
     setBatchSaving(true);
     try {
       const r = await fetch(`${API}/update_inventory_batch.php`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inventoryId: editBatchId, batch_no: editBatchNo.trim(), exp_date: editBatchExp || "" }),
+        body: JSON.stringify({
+          inventoryId: editBatchId,
+          batch_no: editBatchNo.trim(),
+          exp_date: editBatchExp || "",
+          current_qty: editBatchQty.trim() === "" ? null : qtyNum,
+          updatedBy: user?.id || 0,
+        }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
@@ -207,7 +220,12 @@ export default function ItemDetail() {
         ...prev,
         batches: prev.batches.map((b) =>
           Number(b.id) === editBatchId
-            ? { ...b, batch_no: editBatchNo.trim(), exp_date: editBatchExp || null }
+            ? {
+                ...b,
+                batch_no: editBatchNo.trim(),
+                exp_date: editBatchExp || null,
+                current_qty: editBatchQty.trim() === "" ? b.current_qty : qtyNum,
+              }
             : b
         ),
       }));
@@ -459,6 +477,7 @@ export default function ItemDetail() {
                       <th>Type</th>
                       <th>Purchase Bill</th>
                       <th>Distributor</th>
+                      {isAdmin && <th>Last Updated</th>}
                       <th style={{ width: 72 }}></th>
                     </tr>
                   </thead>
@@ -485,7 +504,13 @@ export default function ItemDetail() {
                                   {isExpNear && !isExp && <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700 }}>EXPIRING</div>}
                                 </>}
                           </td>
-                          <td style={{ textAlign: "right", fontWeight: 800, color: qty <= 0 ? C.red : qty < 10 ? C.orange : C.green }}>{qty}</td>
+                          <td style={{ textAlign: "right", fontWeight: 800, color: qty <= 0 ? C.red : qty < 10 ? C.orange : C.green }}>
+                            {isEditing
+                              ? <input className="g-inp sm" type="number" min="0" step="any" value={editBatchQty}
+                                  onChange={(e) => setEditBatchQty(e.target.value)}
+                                  style={{ width: 80, textAlign: "right" }} />
+                              : qty}
+                          </td>
                           <td style={{ textAlign: "right" }}>₹{fmt2(b.purchase_price)}</td>
                           <td style={{ textAlign: "right" }}>₹{fmt2(b.mrp)}</td>
                           <td style={{ textAlign: "right" }}>₹{fmt2(b.sale_price)}</td>
@@ -503,6 +528,13 @@ export default function ItemDetail() {
                             {b.purchase_bill_date && <div style={{ fontSize: 11, color: C.textSub }}>{fmtDate(b.purchase_bill_date)}</div>}
                           </td>
                           <td style={{ fontSize: 12, color: C.textSub }}>{b.distributor_name || "—"}</td>
+                          {isAdmin && (
+                            <td style={{ fontSize: 12, color: C.textSub }}>
+                              {b.updated_by_name
+                                ? <>{b.updated_by_name}{b.updated_at && <div style={{ fontSize: 11, color: C.textLight }}>{fmtDate(b.updated_at)}</div>}</>
+                                : "—"}
+                            </td>
+                          )}
                           <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
                             {isEditing ? (
                               <>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle } from "react-icons/fi";
+import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
@@ -62,15 +62,16 @@ function discountPct(mrp, salePrice) {
   return Math.max(0, (m - s) / m * 100);
 }
 
-function SectionHead({ num, title, icon, actions }) {
+function SectionHead({ num, title, icon, actions, aside }) {
   return (
     <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
         <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.brand, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{num}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ color: C.brand }}>{icon}</span>
           <span style={{ fontWeight: 800, fontSize: 15, color: C.text }}>{title}</span>
         </div>
+        {aside && <div style={{ marginLeft: 14, fontSize: 11, color: C.textSub, lineHeight: 1.4 }}>{aside}</div>}
       </div>
       {actions && <div style={{ display: "flex", gap: 8 }}>{actions}</div>}
     </div>
@@ -99,7 +100,72 @@ export default function AddSales() {
   const [invoiceDate, setInvoiceDate] = useState(todayISO());
 
   const [rows, setRows]           = useState([blankRow(), blankRow()]);
+  const [savedOk, setSavedOk]     = useState(false); // set true after a successful save so we can leave freely
+  const allowLeaveRef             = useRef(false);   // read synchronously by beforeunload handler
+  const [audit, setAudit]         = useState(null); // { createdByName, updatedByName, createdAt, updatedAt } — admin-only display
   const [activeSug, setActiveSug] = useState(null);
+  const isAdmin = user?.role === "admin";
+
+  // ── Unsaved-changes guard (new-bill mode only). Trips when at least one row
+  // has any meaningful content: an item picked, a code typed, or qty > 0.
+  const hasUnsavedRows = useMemo(() => {
+    if (isEdit || savedOk) return false;
+    return rows.some((r) => (
+      (r.itemName && String(r.itemName).trim()) ||
+      (r.code && String(r.code).trim()) ||
+      Number(r.qty) > 0
+    ));
+  }, [rows, isEdit, savedOk]);
+
+  // Fetch loyalty card whenever phone is valid in new-bill mode
+  useEffect(() => {
+    if (isEdit) return;
+    const cleanPhone = String(phone || "").trim();
+    setCardIssuedNow(false); // reset when customer changes
+    if (!/^\d{10}$/.test(cleanPhone)) { setLoyaltyData(null); return; }
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/get_loyalty.php?phone=${encodeURIComponent(cleanPhone)}`);
+        const j = await r.json();
+        if (j.status === "success") setLoyaltyData(j);
+      } catch {}
+    }, 300);
+    return () => clearTimeout(t);
+  }, [isEdit, phone]);
+
+  // Browser navigation (tab close, refresh, URL bar) + back/forward
+  useEffect(() => {
+    if (!hasUnsavedRows) return;
+    const fn = (e) => {
+      if (allowLeaveRef.current) return; // post-save nav — allow through
+      e.preventDefault(); e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", fn);
+    return () => window.removeEventListener("beforeunload", fn);
+  }, [hasUnsavedRows]);
+
+  // In-app SPA navigation guard: capture-phase click handler on any <a> link.
+  // When unsaved, show the confirmation modal instead of navigating.
+  const [blockedHref, setBlockedHref] = useState(null);
+  useEffect(() => {
+    if (!hasUnsavedRows) return;
+    const onClick = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      const a = e.target.closest && e.target.closest("a[href]");
+      if (!a) return;
+      const href = a.getAttribute("href");
+      if (!href || href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
+      if (a.target === "_blank") return;
+      // Same-path means scroll-to-hash / no-op, allow it through
+      const url = new URL(href, window.location.origin);
+      if (url.pathname === window.location.pathname) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setBlockedHref(url.pathname + url.search + url.hash);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [hasUnsavedRows]);
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [searchText, setSearchText] = useState({});
   const [hoverRow, setHoverRow] = useState(null);
@@ -116,6 +182,17 @@ export default function AddSales() {
   const [received, setReceived]   = useState("0");
   const [recTouched, setRecTouched] = useState(false);
   const [payments, setPayments]   = useState([{ type: "Cash", amount: "" }]);
+
+  // Loyalty integration (new-bill mode only). When customer phone is known and
+  // the bill is ≥ ₹200 we fetch their active card and let the cashier stamp /
+  // redeem inline — the API calls fire after the invoice is saved so the
+  // freshly-allocated invoice no is stored with the stamp/redemption.
+  const [loyaltyData,    setLoyaltyData]    = useState(null);
+  const [pendingStamp,   setPendingStamp]   = useState(null);  // stamp_no to add
+  const [pendingRedeem,  setPendingRedeem]  = useState(false);
+  // True when the active card was just issued *during this bill* — stamping
+  // begins from the next purchase, not this one.
+  const [cardIssuedNow,  setCardIssuedNow]  = useState(false);
 
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState("");   // inline message instead of alert
@@ -200,6 +277,12 @@ export default function AddSales() {
         setCustGstin(h.customer_gstin || "");
         setInvoiceNo(h.invoice_no || "");
         setInvoiceDate(h.invoice_date || todayISO());
+        setAudit({
+          createdByName: h.created_by_name || null,
+          updatedByName: h.updated_by_name || null,
+          createdAt:     h.created_at || null,
+          updatedAt:     h.updated_at || null,
+        });
         setBillDisc(h.bill_discount || "");
         setRoundOff(h.round_off_enabled == "1" || h.round_off_enabled === 1);
         setRows((j.items || []).map((item) => {
@@ -619,10 +702,40 @@ export default function AddSales() {
       const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      setSavedOk(true);
+      allowLeaveRef.current = true; // synchronous flag — beforeunload reads this
       // The backend may have auto-bumped invoiceNo if two terminals raced — use the one
       // it actually persisted, so the printed receipt shows the right number.
       const finalInvoiceNo = j.invoiceNo || invoiceNo;
       if (finalInvoiceNo !== invoiceNo) setInvoiceNo(finalInvoiceNo);
+
+      // Fire queued loyalty actions with the freshly-saved invoice no.
+      // If the card was issued during *this* bill, skip stamping — the rules
+      // say stamping begins from the next purchase.
+      try {
+        const activeCard = loyaltyData?.current;
+        if (activeCard && pendingStamp != null && !cardIssuedNow) {
+          await fetch(`${API}/add_loyalty_stamp.php`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cardId: activeCard.id,
+              stampedBy: user?.id || 0,
+              invoiceNo: finalInvoiceNo,
+            }),
+          });
+        }
+        if (activeCard && pendingRedeem) {
+          await fetch(`${API}/redeem_loyalty.php`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cardId: activeCard.id,
+              updatedBy: user?.id || 0,
+              invoiceNo: finalInvoiceNo,
+            }),
+          });
+        }
+      } catch (le) { console.warn("Loyalty action failed:", le); }
+
       const shouldPrint = andPrint || (!isEdit && getShopSettings().autoPrint);
       if (shouldPrint) {
         const printData = buildPrintData();
@@ -682,6 +795,7 @@ export default function AddSales() {
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Invoice No</span>
           <input className="g-inp sm" value={invoiceNo} readOnly placeholder="Auto" style={{ height: 30, fontSize: 13, fontWeight: 700, background: "#f9fafb", color: C.textSub, cursor: "not-allowed" }} title="Assigned automatically. If two terminals race, the server auto-bumps to the next available number." />
         </div>
+
 
         {/* Refresh suggestions (re-fetch inventory only — form state preserved) */}
         <button className="g-btn ghost sm" onClick={loadInventory} disabled={loadingInv}
@@ -835,6 +949,12 @@ export default function AddSales() {
       <div className="g-card" style={{ marginBottom: 18 }}>
         <SectionHead num="2" icon={<FiShoppingCart size={15} />}
           title={`Items${filledCount > 0 ? ` — ${filledCount} added` : ""}`}
+          aside={isAdmin && isEdit && audit && (audit.updatedByName || audit.createdByName) ? (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {audit.createdByName && <span>Created by <b style={{ color: C.text }}>{audit.createdByName}</b>{audit.createdAt ? ` · ${fmtDate(audit.createdAt)}` : ""}</span>}
+              {audit.updatedByName && <span>Last updated by <b style={{ color: C.text }}>{audit.updatedByName}</b>{audit.updatedAt ? ` · ${fmtDate(audit.updatedAt)}` : ""}</span>}
+            </div>
+          ) : null}
         />
 
         <div>
@@ -1165,6 +1285,9 @@ export default function AddSales() {
       {/* ── STEP 3: PAYMENT + SUMMARY ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 18, alignItems: "start" }}>
 
+      {/* Left column: Payment stacked on top of optional Loyalty card */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
+
         {/* ── Payment ── */}
         <div className="g-card" style={{ marginBottom: 0 }}>
           <SectionHead num="3" icon={<FiShoppingCart size={15} />} title="Payment"
@@ -1251,6 +1374,160 @@ export default function AddSales() {
             </div>
           </div>
         </div>
+
+        {/* ── Loyalty card (new bill, customer name + 10-digit phone, total ≥ ₹200) ── */}
+        {!isEdit
+          && /^\d{10}$/.test(String(phone || "").trim())
+          && custName.trim() !== ""
+          && custName.trim().toLowerCase() !== "unknown"
+          && rowTotal >= 200
+          && loyaltyData && (() => {
+          const card = loyaltyData.current;
+          // No active card → offer to issue one
+          if (!card) {
+            return (
+              <div style={{
+                background: "linear-gradient(135deg, #0b0b14 0%, #1a1a2e 50%, #0b0b14 100%)",
+                borderRadius: 14, padding: "18px 20px", color: "#fff",
+                boxShadow: "0 10px 28px rgba(0,0,0,0.22)",
+                display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+              }}>
+                <FiAward size={22} style={{ color: "#d4af37" }} />
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: "#d4af37", letterSpacing: "0.05em" }}>NO ACTIVE LOYALTY CARD</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>Issue a new card for {custName} so this bill earns a stamp.</div>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const r = await fetch(`${API}/add_loyalty_card.php`, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ phone: String(phone).trim(), customerName: custName.trim(), createdBy: user?.id || 0 }),
+                      });
+                      const j = await r.json();
+                      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+                      // refetch loyalty so the new card shows
+                      const r2 = await fetch(`${API}/get_loyalty.php?phone=${encodeURIComponent(String(phone).trim())}`);
+                      const j2 = await r2.json();
+                      if (j2.status === "success") setLoyaltyData(j2);
+                      setCardIssuedNow(true); // disable stamping on this bill — starts next purchase
+                      showToast(`Card #${j.card_number} issued`);
+                    } catch (e) { showToast(e.message || "Failed to issue"); }
+                  }}
+                  style={{
+                    background: "#d4af37", color: "#1a1a2e", border: "none",
+                    padding: "8px 16px", borderRadius: 8, fontWeight: 800, fontSize: 13,
+                    cursor: "pointer", fontFamily: "inherit",
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    boxShadow: "0 0 18px rgba(212,175,55,0.35)",
+                  }}>
+                  <FiPlus size={13} /> Issue new card
+                </button>
+              </div>
+            );
+          }
+          const filled = new Set((card.stamps || []).map((s) => Number(s.stamp_no)));
+          const count = card.stamps?.length || 0;
+          const isComplete = card.status === "completed";
+          const isRedeemed = card.status === "redeemed";
+          const nextStamp  = count + 1;
+          // Card issued during this same bill → stamping begins next purchase
+          const interactionDisabled = cardIssuedNow;
+          return (
+            <div style={{
+              background: "linear-gradient(135deg, #0b0b14 0%, #1a1a2e 50%, #0b0b14 100%)",
+              borderRadius: 14, padding: "16px 20px 18px", color: "#fff",
+              boxShadow: "0 10px 28px rgba(0,0,0,0.22)",
+              position: "relative", overflow: "hidden",
+            }}>
+              <div style={{
+                position: "absolute", top: 0, left: 0, width: "55%", height: 60,
+                background: "radial-gradient(circle at top left, rgba(212,175,55,0.18), transparent 70%)",
+              }} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, position: "relative" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <FiAward size={16} style={{ color: "#d4af37" }} />
+                  <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: "0.06em", color: "#d4af37" }}>LOYALTY CARD #{card.card_number}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 10,
+                    background: isRedeemed ? "rgba(34,197,94,0.18)" : isComplete ? "rgba(212,175,55,0.20)" : "rgba(99,102,241,0.20)",
+                    color:      isRedeemed ? "#86efac" : isComplete ? "#fbbf24" : "#a5b4fc",
+                    border: `1px solid ${isRedeemed ? "rgba(34,197,94,0.35)" : isComplete ? "rgba(212,175,55,0.4)" : "rgba(165,180,252,0.35)"}`,
+                  }}>{count}/5 · {String(card.status).toUpperCase()}</span>
+                </div>
+                {(pendingStamp != null || pendingRedeem) && (
+                  <span style={{ fontSize: 10, fontWeight: 800, color: "#86efac", background: "rgba(34,197,94,0.15)", padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(34,197,94,0.35)" }}>
+                    {pendingRedeem ? "₹100 OFF queued · apply on save" : `STAMP #${pendingStamp} queued · apply on save`}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                {[1,2,3,4,5].map((n) => {
+                  const wasFilled = filled.has(n);
+                  const willStamp = !wasFilled && pendingStamp === n;
+                  const clickable = !wasFilled && !isComplete && !isRedeemed && !interactionDisabled;
+                  return (
+                    <button key={n}
+                      onClick={() => {
+                        if (!clickable) return;
+                        if (pendingStamp === n) setPendingStamp(null);
+                        else if (n === nextStamp) setPendingStamp(n);
+                      }}
+                      disabled={!clickable}
+                      title={wasFilled ? "Already stamped" : clickable ? (n === nextStamp ? "Click to queue this stamp" : `Stamp #${nextStamp} first`) : ""}
+                      style={{
+                        width: 42, height: 42, borderRadius: "50%",
+                        background: wasFilled || willStamp ? "radial-gradient(circle at 30% 30%, #fff8e1, #d4af37 70%, #8a6c1d)" : "#f4f4f4",
+                        border: wasFilled || willStamp ? "2px solid #d4af37" : "2px solid rgba(212,175,55,0.45)",
+                        cursor: clickable && n === nextStamp ? "pointer" : "default",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "#3d2e0a",
+                        boxShadow: wasFilled || willStamp ? "0 0 14px rgba(212,175,55,0.4)" : "none",
+                        opacity: willStamp ? 0.9 : 1,
+                      }}>
+                      {wasFilled ? <FiCheck size={18} strokeWidth={3} />
+                        : willStamp ? <FiCheck size={18} strokeWidth={3} style={{ opacity: 0.7 }} />
+                        : <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(0,0,0,0.25)" }}>{n}</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => {
+                    if (!isComplete || isRedeemed || interactionDisabled) return;
+                    if (pendingRedeem) { setPendingRedeem(false); setBillDisc(""); }
+                    else { setPendingRedeem(true); setBillDisc("100"); }
+                  }}
+                  disabled={!isComplete || isRedeemed || interactionDisabled}
+                  title={isRedeemed ? "Already redeemed" : isComplete ? (pendingRedeem ? "Click again to cancel" : "Click to queue ₹100 OFF") : "Available after 5 stamps"}
+                  style={{
+                    marginLeft: 4,
+                    width: 50, height: 50, borderRadius: "50%",
+                    background: isComplete && !isRedeemed
+                      ? (pendingRedeem ? "radial-gradient(circle at 30% 30%, #fff8e1, #d4af37 70%, #8a6c1d)" : "radial-gradient(circle at 30% 30%, rgba(212,175,55,0.4), rgba(212,175,55,0.1) 70%)")
+                      : "rgba(212,175,55,0.10)",
+                    border: "2px solid #d4af37",
+                    cursor: isComplete && !isRedeemed ? "pointer" : "default",
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    color: isComplete ? "#3d2e0a" : "rgba(212,175,55,0.6)",
+                    fontWeight: 900,
+                    boxShadow: isComplete && !isRedeemed ? "0 0 18px rgba(212,175,55,0.5)" : "none",
+                    animation: isComplete && !isRedeemed && !pendingRedeem ? "pulseGold 1.6s infinite" : "none",
+                  }}>
+                  <span style={{ fontSize: 12, lineHeight: 1 }}>₹100</span>
+                  <span style={{ fontSize: 7, fontWeight: 800, marginTop: 1, letterSpacing: "0.05em" }}>OFF</span>
+                </button>
+                <div style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.7)", textAlign: "right", maxWidth: 200 }}>
+                  {interactionDisabled ? "Card issued. Stamps begin from the next purchase."
+                    : isComplete && !isRedeemed ? "Click ₹100 OFF to apply."
+                    : `Click circle #${nextStamp} to queue stamp.`}
+                </div>
+              </div>
+              <style>{`@keyframes pulseGold { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }`}</style>
+            </div>
+          );
+        })()}
+
+      </div>{/* /left column wrapper */}
 
         {/* ── Summary ── */}
         <div className="g-card" style={{ marginBottom: 0 }}>
@@ -1396,6 +1673,34 @@ export default function AddSales() {
           </div>
           <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.green }}>
             Settings are saved in your browser. Set your thermal printer as the default printer in your OS for one-click printing.
+          </div>
+        </div>
+      </Modal>
+
+      {/* Unsaved-changes guard — fires when user tries to navigate away with items in cart */}
+      <Modal show={!!blockedHref} title="Unsaved items in cart" onClose={() => setBlockedHref(null)} width={500}
+        footer={
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="g-btn ghost" style={{ minWidth: 110, height: 40 }} onClick={() => {
+              const href = blockedHref;
+              setBlockedHref(null);
+              setSavedOk(true);
+              allowLeaveRef.current = true;
+              setTimeout(() => { window.location.href = href; }, 0);
+            }}>
+              Discard & Leave
+            </button>
+            <button className="g-btn primary" style={{ minWidth: 110, height: 40 }} onClick={() => setBlockedHref(null)} autoFocus>
+              Stay
+            </button>
+          </div>
+        }>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "10px 8px 16px" }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.orangeLight || "#fff7ed", color: C.orange, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+            <FiAlertCircle size={28} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.text, lineHeight: 1.5, maxWidth: 380 }}>
+            You have items in the cart. Please save the invoice or cancel before moving out.
           </div>
         </div>
       </Modal>

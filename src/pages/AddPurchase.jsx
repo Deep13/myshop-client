@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw, FiDollarSign } from "react-icons/fi";
+import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw, FiDollarSign, FiAlertCircle } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
@@ -35,10 +35,10 @@ function calcRowAmt(row) {
   return asNum(row.qty) * (price - disc);
 }
 
-function SectionHead({ num, title, icon, actions }) {
+function SectionHead({ num, title, icon, actions, aside }) {
   return (
     <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
         <div
           style={{
             width: 28,
@@ -60,6 +60,7 @@ function SectionHead({ num, title, icon, actions }) {
           <span style={{ color: C.brand }}>{icon}</span>
           <span style={{ fontWeight: 800, fontSize: 15, color: C.text }}>{title}</span>
         </div>
+        {aside && <div style={{ marginLeft: 14, fontSize: 11, color: C.textSub, lineHeight: 1.4 }}>{aside}</div>}
       </div>
       {actions && <div style={{ display: "flex", gap: 8 }}>{actions}</div>}
     </div>
@@ -93,13 +94,57 @@ export default function AddPurchase() {
   const [billType, setBillType] = useState("GST"); // GST | NON-GST
   const isGST = billType === "GST";
   const [gstMode, setGstMode] = useState("exclusive"); // "inclusive" | "exclusive"
+  const [audit, setAudit] = useState(null); // { createdByName, updatedByName, createdAt, updatedAt }
+  const isAdmin = user?.role === "admin";
 
   /* rows */
   const [rows, setRows] = useState([blankRow(), blankRow()]);
+  const [savedOk, setSavedOk] = useState(false); // suppress unsaved guard once we've persisted
+  const allowLeaveRef = useRef(false);             // synchronous flag for beforeunload
   const itemRefs = useRef({});
   const batchRefs = useRef({});
   const [activeSug, setActiveSug] = useState(null);
   const [highlightIdx, setHighlightIdx] = useState(-1);
+
+  // ── Unsaved-changes guard (new-bill mode only) ──
+  const hasUnsavedRows = useMemo(() => {
+    if (isEdit || savedOk) return false;
+    return rows.some((r) => (
+      (r.itemName && String(r.itemName).trim()) ||
+      (r.code && String(r.code).trim()) ||
+      Number(r.qty) > 0
+    ));
+  }, [rows, isEdit, savedOk]);
+
+  useEffect(() => {
+    if (!hasUnsavedRows) return;
+    const fn = (e) => {
+      if (allowLeaveRef.current) return;
+      e.preventDefault(); e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", fn);
+    return () => window.removeEventListener("beforeunload", fn);
+  }, [hasUnsavedRows]);
+
+  const [blockedHref, setBlockedHref] = useState(null);
+  useEffect(() => {
+    if (!hasUnsavedRows) return;
+    const onClick = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      const a = e.target.closest && e.target.closest("a[href]");
+      if (!a) return;
+      const href = a.getAttribute("href");
+      if (!href || href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
+      if (a.target === "_blank") return;
+      const url = new URL(href, window.location.origin);
+      if (url.pathname === window.location.pathname) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setBlockedHref(url.pathname + url.search + url.hash);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [hasUnsavedRows]);
   const [itemSearch, setItemSearch] = useState({}); // per-row search text
 
   /* payment */
@@ -192,6 +237,12 @@ export default function AddPurchase() {
         setGstin(h.distributor_gstin || "");
         setBillNo(h.bill_no);
         setBillDate(h.bill_date);
+        setAudit({
+          createdByName: h.created_by_name || null,
+          updatedByName: h.updated_by_name || null,
+          createdAt:     h.created_at || null,
+          updatedAt:     h.updated_at || null,
+        });
         setDueDate(h.due_date || "");
         setBillType(h.bill_type || "GST");
         setGstMode(["exclusive", "inclusive"].includes(h.gst_mode) ? h.gst_mode : "exclusive");
@@ -835,12 +886,16 @@ export default function AddPurchase() {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
+        setSavedOk(true);
+        allowLeaveRef.current = true;
         toast("Purchase Updated!", "success");
         window.location.href = "/purchase";
       } else {
         const r = await fetch(`${API}/save_purchase.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...base, createdBy: user?.id || 1 }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.status !== "success") throw new Error(j.message || "Save failed");
+        setSavedOk(true);
+        allowLeaveRef.current = true;
         const newId = j.purchaseId;
         for (const p of base.payments) {
           if (!p.amount || p.amount <= 0) continue;
@@ -936,6 +991,7 @@ export default function AddPurchase() {
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Bill No</span>
           <input className="g-inp sm" value={billNo} onChange={(e) => setBillNo(e.target.value)} placeholder="INV-001" style={{ height: 30, fontSize: 13, fontWeight: 700 }} />
         </div>
+
 
         {/* Refresh suggestions (re-fetch item master only — form state preserved) */}
         <button className="g-btn ghost sm" onClick={loadItemMaster} disabled={loadingMaster}
@@ -1103,7 +1159,13 @@ export default function AddPurchase() {
         <SectionHead
           num="2"
           icon={<FiPackage size={15} />}
-          title={`Items / Medicines${filledCount > 0 ? ` — ${filledCount} added` : ""}${!isGST ? "  [NON-GST — Tax not applied]" : ""}`}
+          title={`Items${filledCount > 0 ? ` — ${filledCount} added` : ""}${!isGST ? "  [NON-GST — Tax not applied]" : ""}`}
+          aside={isAdmin && isEdit && audit && (audit.updatedByName || audit.createdByName) ? (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {audit.createdByName && <span>Created by <b style={{ color: C.text }}>{audit.createdByName}</b>{audit.createdAt ? ` · ${fmtDate(audit.createdAt)}` : ""}</span>}
+              {audit.updatedByName && <span>Last updated by <b style={{ color: C.text }}>{audit.updatedByName}</b>{audit.updatedAt ? ` · ${fmtDate(audit.updatedAt)}` : ""}</span>}
+            </div>
+          ) : null}
           actions={
             <button
               className="g-btn ghost sm"
@@ -2100,6 +2162,34 @@ export default function AddPurchase() {
               )}
             </div>
           ))}
+        </div>
+      </Modal>
+
+      {/* Unsaved-changes guard — fires when user tries to navigate away with items */}
+      <Modal show={!!blockedHref} title="Unsaved items in bill" onClose={() => setBlockedHref(null)} width={500}
+        footer={
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="g-btn ghost" style={{ minWidth: 110, height: 40 }} onClick={() => {
+              const href = blockedHref;
+              setBlockedHref(null);
+              setSavedOk(true);
+              allowLeaveRef.current = true;
+              setTimeout(() => { window.location.href = href; }, 0);
+            }}>
+              Discard & Leave
+            </button>
+            <button className="g-btn primary" style={{ minWidth: 110, height: 40 }} onClick={() => setBlockedHref(null)} autoFocus>
+              Stay
+            </button>
+          </div>
+        }>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "10px 8px 16px" }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.orangeLight || "#fff7ed", color: C.orange, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+            <FiAlertCircle size={28} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.text, lineHeight: 1.5, maxWidth: 380 }}>
+            You have items in the bill. Please save the purchase or cancel before moving out.
+          </div>
         </div>
       </Modal>
     </div>

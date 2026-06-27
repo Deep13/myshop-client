@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { RiShutDownLine } from "react-icons/ri";
-import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield, FiMoon, FiSun } from "react-icons/fi";
-import { C, Modal, GLOBAL_CSS } from "../ui.jsx";
+import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield, FiMoon, FiSun, FiAward } from "react-icons/fi";
+import { C, Modal, GLOBAL_CSS, API } from "../ui.jsx";
 import { SHORTCUTS } from "../shortcuts.js";
 
 const LINKS = [
@@ -15,10 +15,12 @@ const LINKS = [
 const MORE_ITEMS = [
   { to: "/customers",    label: "Customers",    icon: <FiUsers size={15} /> },
   { to: "/distributors", label: "Distributors",  icon: <FiTruck size={15} /> },
+  { to: "/loyalty",      label: "Loyalty",      icon: <FiAward size={15} /> },
   { to: "/reports",      label: "Reports",       icon: <FiBarChart2 size={15} /> },
   { to: "/settings",     label: "Settings",       icon: <FiSettings size={15} /> },
   { key: "shortcuts",    label: "Shortcuts",     icon: <FiCommand size={15} /> },
-  { to: "/admin/users",  label: "Admin Users",   icon: <FiShield size={15} />, adminOnly: true },
+  { to: "/admin/users",      label: "Admin Users",    icon: <FiShield size={15} />, adminOnly: true },
+  { to: "/admin/login-log",  label: "Login Activity", icon: <FiShield size={15} />, adminOnly: true },
 ];
 
 export default function Header() {
@@ -50,12 +52,22 @@ export default function Header() {
   }, []);
 
   const logout = () => {
+    // Fire-and-forget logout log. sendBeacon is preferred (survives navigation)
+    // and falls back to fetch with keepalive if not available.
+    try {
+      const payload = JSON.stringify({ userId: user?.id || 0, userName: user?.name || "" });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(`${API}/log_logout.php`, new Blob([payload], { type: "application/json" }));
+      } else {
+        fetch(`${API}/log_logout.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+      }
+    } catch {}
     localStorage.removeItem("user");
     localStorage.removeItem("auth");
     window.location.href = "/login";
   };
 
-  const moreActive = ["/customers", "/distributors", "/reports", "/settings", "/admin"].some((p) => pathname.startsWith(p));
+  const moreActive = ["/customers", "/distributors", "/reports", "/settings", "/admin", "/admin/login-log"].some((p) => pathname.startsWith(p));
 
   return (
     <>
@@ -185,6 +197,28 @@ export default function Header() {
         </nav>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Logged-in user chip */}
+          {user && (
+            <div className="g-hide-mobile" title={`Signed in as ${user.name} (${user.role || "user"})`} style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "6px 12px", borderRadius: 8,
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              color: "#fff", fontSize: 13, fontWeight: 600,
+              maxWidth: 200,
+            }}>
+              <span style={{
+                width: 22, height: 22, borderRadius: "50%",
+                background: isAdmin ? "#fbbf24" : "rgba(255,255,255,0.25)",
+                color: isAdmin ? "#78350f" : "#fff",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 800,
+              }}>{(user.name || "?")[0]?.toUpperCase()}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
+              {isAdmin && <span style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24" }}>ADMIN</span>}
+            </div>
+          )}
+
           {/* Dark mode toggle */}
           <button onClick={() => setDark((d) => !d)} title={dark ? "Light Mode" : "Dark Mode"}
             style={{
