@@ -527,7 +527,11 @@ export default function ItemDetail() {
                               : "—"}
                             {b.purchase_bill_date && <div style={{ fontSize: 11, color: C.textSub }}>{fmtDate(b.purchase_bill_date)}</div>}
                           </td>
-                          <td style={{ fontSize: 12, color: C.textSub }}>{b.distributor_name || "—"}</td>
+                          <td style={{ fontSize: 12, color: C.textSub }}>
+                            {b.distributor_id
+                              ? <Link to={`/distributors/${b.distributor_id}`} style={{ color: C.brand, textDecoration: "none", fontWeight: 600 }}>{b.distributor_name}</Link>
+                              : (b.distributor_name || "—")}
+                          </td>
                           {isAdmin && (
                             <td style={{ fontSize: 12, color: C.textSub }}>
                               {b.updated_by_name
@@ -602,7 +606,11 @@ export default function ItemDetail() {
                             {r.bill_no}
                           </span>
                         </td>
-                        <td style={{ fontSize: 12, color: C.textSub }}>{r.distributor_name}</td>
+                        <td style={{ fontSize: 12, color: C.textSub }}>
+                          {r.distributor_id
+                            ? <Link to={`/distributors/${r.distributor_id}`} style={{ color: C.brand, textDecoration: "none", fontWeight: 600 }}>{r.distributor_name}</Link>
+                            : (r.distributor_name || "—")}
+                        </td>
                         <td style={{ fontSize: 12 }}>{r.batch_no || "—"}</td>
                         <td style={{ fontSize: 12, color: r.exp_date && r.exp_date < today ? C.red : C.text }}>{r.exp_date ? fmtDate(r.exp_date) : "—"}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{r.qty}</td>

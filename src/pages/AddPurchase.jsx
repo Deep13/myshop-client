@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw, FiDollarSign, FiAlertCircle } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
@@ -1012,7 +1012,11 @@ export default function AddPurchase() {
           <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Distributor</span>
           {selDist ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, height: 30 }}>
-              <span style={{ fontWeight: 700, fontSize: 13, color: C.brand }}>{selDist.name}</span>
+              {selDist.id ? (
+                <Link to={`/distributors/${selDist.id}`} style={{ fontWeight: 700, fontSize: 13, color: C.brand, textDecoration: "none" }}>{selDist.name}</Link>
+              ) : (
+                <span style={{ fontWeight: 700, fontSize: 13, color: C.brand }}>{selDist.name}</span>
+              )}
               {gstin && <span style={{ fontSize: 11, color: C.textSub }}>{gstin}</span>}
               <button
                 onClick={() => {

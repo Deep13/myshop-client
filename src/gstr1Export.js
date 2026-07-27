@@ -65,7 +65,7 @@ export function buildGSTR1Workbook({ rows, from, to, shop }) {
   // Note: Invoice Value is repeated on every rate bucket of an invoice (matching
   // the reference layout), but the Total row sums each invoice's value ONCE.
   const seenInvForTotal = new Set();
-  let sumInvVal = 0, sumTaxable = 0, sumTax = 0;
+  let sumInvVal = 0, sumTaxable = 0, sumCgst = 0, sumSgst = 0;
   const detail = mainRows.map((b) => {
     const taxable = b.gst_flag && b.tax_pct > 0
       ? r2(b.amount * 100 / (100 + b.tax_pct))
@@ -81,7 +81,10 @@ export function buildGSTR1Workbook({ rows, from, to, shop }) {
       sumInvVal += b.invoice_value;
     }
     sumTaxable += taxable;
-    sumTax     += tax;
+    // Sum the per-line rounded values (not the raw pre-rounded halves) so
+    // the Total row equals what Excel's SUM formula produces on the columns.
+    sumCgst    += cgst;
+    sumSgst    += sgst;
     return [
       b.customer_gstin || "",                 // GSTIN/UIN
       b.customer_name,                        // Party Name
@@ -119,11 +122,8 @@ export function buildGSTR1Workbook({ rows, from, to, shop }) {
     [],
     ...detail,
     [],
-    // Derive CGST/SGST totals from aggregate tax so they're exactly equal.
-    (() => {
-      const half = r2(sumTax / 2);
-      return ["Total", "", "", "", "", r2(sumInvVal), "", "", r2(sumTaxable), "", 0, half, half, 0];
-    })(),
+    // Total row: match Excel's SUM of the visible columns exactly.
+    ["Total", "", "", "", "", r2(sumInvVal), "", "", r2(sumTaxable), "", 0, r2(sumCgst), r2(sumSgst), 0],
   ];
 
   // ── 3) b2cs — by tax rate, taxable supplies only (rate > 0)
@@ -272,28 +272,33 @@ export function buildGSTR1Workbook({ rows, from, to, shop }) {
     return { ...x, cgst: half, sgst: half };
   };
 
-  // hsn(b2c) — totals across all rows
-  const hsnRows = [...hsnAgg.values()].map(splitTaxEven).sort((a, b) => b.totalValue - a.totalValue);
-  const hsnTotalTax = hsnRows.reduce((t, x) => r2(t + (x.tax || 0)), 0);
-  const hsnTotalHalf = r2(hsnTotalTax / 2);
-  const hsnTotals = hsnRows.reduce((t, x) => ({
+  // Header totals must equal the SUM of the sheet's own visible rows —
+  // including the per-row rounded CGST/SGST — so Excel column sums reconcile.
+  const sheetTotals = (rows) => rows.reduce((t, x) => ({
     totalValue: r2(t.totalValue + x.totalValue),
     taxable:    r2(t.taxable    + x.taxable),
-  }), { totalValue: 0, taxable: 0 });
+    cgst:       r2(t.cgst       + x.cgst),
+    sgst:       r2(t.sgst       + x.sgst),
+  }), { totalValue: 0, taxable: 0, cgst: 0, sgst: 0 });
+
+  // hsn(b2c) — totals across all rows
+  const hsnRows = [...hsnAgg.values()].map(splitTaxEven).sort((a, b) => b.totalValue - a.totalValue);
+  const hsnTotals = sheetTotals(hsnRows);
   addSheet("hsn(b2c)", [
     ["Summary For HSN(12)"],
     ["No. of HSN", "", "", "", "Total Value", "", "Total Taxable Value", "Total Integrated Tax", "Total Central Tax", "Total State/UT Tax", "Total Cess"],
-    [hsnRows.length, "", "", "", hsnTotals.totalValue, "", hsnTotals.taxable, 0, hsnTotalHalf, hsnTotalHalf, 0],
+    [hsnRows.length, "", "", "", hsnTotals.totalValue, "", hsnTotals.taxable, 0, hsnTotals.cgst, hsnTotals.sgst, 0],
     ["HSN", "Description", "UQC", "Total Quantity", "Total Value", "Rate", "Taxable Value", "Integrated Tax Amount", "Central Tax Amount", "State/UT Tax Amount", "Cess Amount"],
     ...hsnRows.map((x) => [x.hsn, "", "OTH-OTHERS", x.qty, x.totalValue, x.rate, x.taxable, 0, x.cgst, x.sgst, 0]),
   ]);
 
-  // itemSummary — same totals as hsn(b2c) but per-item
+  // itemSummary — same layout but per-item rows; totals from its own rows
   const itemRows = [...itemAgg.values()].map(splitTaxEven).sort((a, b) => b.totalValue - a.totalValue);
+  const itemTotals = sheetTotals(itemRows);
   addSheet("itemSummary", [
     ["Summary For HSN(12)"],
     ["No. of HSN", "", "", "", "Total Value", "", "Total Taxable Value", "Total Integrated Tax", "Total Central Tax", "Total State/UT Tax", "Total Cess"],
-    [hsnRows.length, "", "", "", hsnTotals.totalValue, "", hsnTotals.taxable, 0, hsnTotalHalf, hsnTotalHalf, 0],
+    [hsnRows.length, "", "", "", itemTotals.totalValue, "", itemTotals.taxable, 0, itemTotals.cgst, itemTotals.sgst, 0],
     ["HSN", "Description", "UQC", "Total Quantity", "Total Value", "Rate", "Taxable Value", "Integrated Tax Amount", "Central Tax Amount", "State/UT Tax Amount", "Cess Amount"],
     ...itemRows.map((x) => [x.hsn, x.itemName, "OTH-OTHERS", x.qty, x.totalValue, x.rate, x.taxable, 0, x.cgst, x.sgst, 0]),
   ]);

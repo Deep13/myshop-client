@@ -127,13 +127,65 @@ function LoyaltyCardVisual({ card, onClickCircle, onClickFilled, onClickRedeem, 
             : <>{count} of 5 stamps · Complete all 5 to unlock ₹100 OFF</>}
       </div>
 
+      {/* Per-stamp invoice details */}
+      {(stamps.length > 0 || (isRedeemed && card.redeemed_invoice_no)) && (
+        <div style={{ marginTop: 18, borderTop: "1px solid rgba(212,175,55,0.25)", paddingTop: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#d4af37", letterSpacing: "0.08em", marginBottom: 8, textTransform: "uppercase" }}>Invoice history</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>
+            <thead>
+              <tr style={{ color: "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                <th style={{ textAlign: "left",  padding: "4px 6px 4px 0" }}>#</th>
+                <th style={{ textAlign: "left",  padding: "4px 6px" }}>Invoice</th>
+                <th style={{ textAlign: "right", padding: "4px 6px" }}>Total ₹</th>
+                <th style={{ textAlign: "left",  padding: "4px 6px" }}>Date</th>
+                <th style={{ textAlign: "left",  padding: "4px 6px" }}>Stamped by</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stamps.map((s) => {
+                const invId = s.resolved_invoice_id ? Number(s.resolved_invoice_id) : 0;
+                return (
+                  <tr key={s.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <td style={{ padding: "6px 6px 6px 0", color: "#d4af37", fontWeight: 800 }}>{s.stamp_no}</td>
+                    <td style={{ padding: "6px 6px" }}>
+                      {s.invoice_no
+                        ? (invId > 0
+                            ? <Link to={`/addsales?id=${invId}`} style={{ color: "#fbbf24", fontWeight: 700, textDecoration: "none" }}>{s.invoice_no}</Link>
+                            : <span style={{ color: "rgba(255,255,255,0.55)" }} title="No matching invoice found">{s.invoice_no}</span>)
+                        : <span style={{ color: "rgba(255,255,255,0.35)" }}>— (pre-filled)</span>}
+                    </td>
+                    <td style={{ padding: "6px 6px", textAlign: "right" }}>
+                      {s.invoice_total ? `₹${fmt2(s.invoice_total)}` : "—"}
+                    </td>
+                    <td style={{ padding: "6px 6px", color: "rgba(255,255,255,0.65)" }}>{s.stamped_at ? fmtDate(s.stamped_at) : "—"}</td>
+                    <td style={{ padding: "6px 6px" }}>{s.stamped_by_name || "—"}</td>
+                  </tr>
+                );
+              })}
+              {isRedeemed && card.redeemed_invoice_no && (
+                <tr style={{ borderTop: "2px solid rgba(212,175,55,0.35)", background: "rgba(212,175,55,0.08)" }}>
+                  <td style={{ padding: "6px 6px 6px 0", fontWeight: 900, color: "#fbbf24" }} title="₹100 OFF redemption">₹</td>
+                  <td style={{ padding: "6px 6px" }}>
+                    {card.redeemed_invoice_id
+                      ? <Link to={`/addsales?id=${card.redeemed_invoice_id}`} style={{ color: "#fbbf24", fontWeight: 700, textDecoration: "none" }}>{card.redeemed_invoice_no}</Link>
+                      : <span style={{ color: "#fbbf24", fontWeight: 700 }}>{card.redeemed_invoice_no}</span>}
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#fbbf24" }}>(₹100 OFF)</span>
+                  </td>
+                  <td colSpan={3} style={{ padding: "6px 6px", color: "rgba(255,255,255,0.65)" }}>{fmtDate(card.redeemed_at)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <style>{`@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }`}</style>
     </div>
   );
 }
 
 /* ── Compact card chip for history (expandable) ── */
-function MiniCard({ card, onDelete }) {
+function MiniCard({ card, onDelete, isCurrent }) {
   const [open, setOpen] = useState(false);
   const stamps  = card.stamps || [];
   const filled  = new Set(stamps.map((s) => Number(s.stamp_no)));
@@ -145,7 +197,11 @@ function MiniCard({ card, onDelete }) {
   const redeemedInvoiceId = card.redeemed_invoice_id || null;
 
   return (
-    <div style={{ borderBottom: "1px solid #f1f5f9" }}>
+    <div style={{
+      borderBottom: "1px solid #f1f5f9",
+      background: isCurrent ? "linear-gradient(90deg, rgba(212,175,55,0.10), rgba(212,175,55,0.02) 60%, transparent)" : undefined,
+      borderLeft: isCurrent ? "3px solid #d4af37" : undefined,
+    }}>
       <button
         onClick={() => setOpen((p) => !p)}
         style={{ display: "block", width: "100%", textAlign: "left", padding: "12px 14px", background: open ? "#fafbfd" : "transparent", border: "none", cursor: "pointer", fontFamily: "inherit" }}
@@ -154,7 +210,16 @@ function MiniCard({ card, onDelete }) {
           <span style={{ color: C.textSub, display: "inline-flex" }}>
             {open ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
           </span>
-          <div style={{ fontWeight: 700, color: C.text, minWidth: 50, fontSize: 13 }}>#{card.card_number}</div>
+          <div style={{ fontWeight: 700, color: C.text, minWidth: 50, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            #{card.card_number}
+            {isCurrent && (
+              <span style={{
+                fontSize: 9, fontWeight: 800, letterSpacing: "0.06em",
+                padding: "2px 7px", borderRadius: 10,
+                background: "#d4af37", color: "#1a1a2e",
+              }}>ACTIVE</span>
+            )}
+          </div>
           <div style={{ display: "flex", gap: 3 }}>
             {[1,2,3,4,5].map((n) => (
               <div key={n} style={{
@@ -466,7 +531,8 @@ export default function Loyalty() {
   };
 
   const current = data?.current;
-  const history = (data?.cards || []).filter((c) => !current || c.id !== current.id);
+  // Include the current card in the history list too, marked visually.
+  const history = data?.cards || [];
 
   return (
     <div id="g-root" style={{ padding: "24px 28px", background: C.bg, minHeight: "100vh" }}>
@@ -674,7 +740,7 @@ export default function Loyalty() {
                     <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>History ({history.length})</span>
                   </div>
                   <div>
-                    {history.map((c) => <MiniCard key={c.id} card={c} onDelete={setDeleteCard} />)}
+                    {history.map((c) => <MiniCard key={c.id} card={c} onDelete={setDeleteCard} isCurrent={current && c.id === current.id} />)}
                   </div>
                 </div>
               ) : (
