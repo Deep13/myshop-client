@@ -260,6 +260,74 @@ function barcodeSVG(enc) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="${widthMm}mm" height="8mm" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
 }
 
+/* ── Dual label: two barcodes side-by-side on one 50×23mm label, no text ──
+   For dual-label stock (two 25mm labels per row). The barcode is scaled to
+   fill each half's width and most of the label height for scannability. */
+export function printDualLabel({ itemCode, copies = 1 }) {
+  const enc = encodeBarcode(itemCode);
+  const bits = enc.bits;
+  const n = bits.length;
+  const quiet = 10;
+  const total = n + 2 * quiet;
+  let rects = "";
+  let i = 0;
+  while (i < n) {
+    if (bits[i] === "1") {
+      const s = i;
+      while (i < n && bits[i] === "1") i++;
+      rects += `<rect x="${quiet + s}" y="0" width="${i - s}" height="100" />`;
+    } else i++;
+  }
+  // Width/height controlled by CSS so the barcode stretches to its half.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 100" width="100%" height="100%" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
+
+  let labelsHTML = "";
+  for (let c = 0; c < copies; c++) {
+    labelsHTML += `
+      <div class="label">
+        <div class="half">${svg}</div>
+        <div class="half">${svg}</div>
+      </div>
+    `;
+  }
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  @page { size: 50mm 23mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 50mm; }
+  body { color: #000; }
+  .label {
+    width: 50mm;
+    height: 23mm;
+    display: flex;
+    flex-direction: row;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .label:last-child { page-break-after: auto; }
+  .half {
+    width: 25mm;
+    height: 23mm;
+    padding: 2.5mm 1mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+  .half svg { display: block; }
+</style></head><body>${labelsHTML}</body></html>`;
+
+  const win = window.open("", "_blank", "width=320,height=240");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => {
+    win.print();
+    win.onafterprint = () => win.close();
+  };
+}
+
 export function printLabel({ itemName, salePrice, itemCode, copies = 1 }) {
   const enc = encodeBarcode(itemCode);
   const barcodeStr = barcodeSVG(enc);

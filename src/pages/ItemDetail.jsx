@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
-import { printLabel } from "../printLabel.js";
+import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiRefreshCw, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
+import { printLabel, printDualLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
@@ -311,6 +311,15 @@ export default function ItemDetail() {
           }}>
             <FiPrinter size={13} /> Print Label
           </button>
+          <button className="g-btn ghost sm" title="Two barcodes on one 50×23mm label, no text — for dual-label stock"
+            onClick={() => {
+              const input = window.prompt("How many labels (each has 2 barcodes)?", "1");
+              if (input === null) return;
+              const copies = Math.max(1, Math.min(99, parseInt(input, 10) || 1));
+              printDualLabel({ itemCode: item.code, copies });
+            }}>
+            <FiPrinter size={13} /> Print Dual Label
+          </button>
           {/^Rice\b/i.test(item.category || "") && (item.bagSalePrice || item.bag_sale_price) && (item.packSize || item.pack_size) && (
             <button className="g-btn ghost sm" onClick={() => {
               const input = window.prompt("How many copies?", "1");
@@ -342,7 +351,7 @@ export default function ItemDetail() {
               ) : (
                 <div style={{ display: "flex", gap: 6 }}>
                   <button className="g-btn ghost sm" onClick={cancelEdit} disabled={saving}><FiX size={13} /> Cancel</button>
-                  <button className="g-btn primary sm" onClick={saveEdit} disabled={saving}><FiCheck size={13} /> {saving ? "Saving…" : "Save"}</button>
+                  <button className="g-btn primary sm" onClick={saveEdit} disabled={saving}>{saving ? <FiRefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> : <FiCheck size={13} />} {saving ? "Saving…" : "Save"}</button>
                 </div>
               )}
             </div>

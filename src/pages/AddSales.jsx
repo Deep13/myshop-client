@@ -937,7 +937,8 @@ export default function AddSales() {
 
         <div style={{ flex: "0 0 auto", display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
           <button className="g-btn success sm" onClick={() => onSave(false)} disabled={saving} style={{ minWidth: 90 }}>
-            <FiCheck size={14} />{saving ? "Saving…" : isEdit ? "Update" : "Save"}
+            {saving ? <FiRefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> : <FiCheck size={14} />}
+            {saving ? "Saving…" : isEdit ? "Update" : "Save"}
           </button>
           <button className="g-btn primary sm" onClick={() => onSave(true)} disabled={saving} title="Save & Print">
             <FiPrinter size={14} />
@@ -1617,7 +1618,8 @@ export default function AddSales() {
             </div>
 
             <button className="g-btn success lg" onClick={() => onSave(false)} disabled={saving}>
-              <FiCheck size={16} />{saving ? "Saving…" : isEdit ? "Update Invoice" : "Save Invoice"}
+              {saving ? <FiRefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} /> : <FiCheck size={16} />}
+              {saving ? "Saving…" : isEdit ? "Update Invoice" : "Save Invoice"}
             </button>
             <button className="g-btn primary lg" onClick={() => onSave(true)} disabled={saving} style={{ marginTop: 8, width: "100%" }}>
               <FiPrinter size={16} /> Save & Print

@@ -448,11 +448,14 @@ export default function AddPurchase() {
   };
 
   /* ── Save item to master ── */
+  const [savingItem, setSavingItem] = useState(false);
   const saveNewItem = async () => {
+    if (savingItem) return;
     const name = newItem.itemName.trim(),
       code = newItem.itemCode.trim();
     if (!name) return toast("Item name required", "warn");
     if (!code) return toast("Item code required", "warn");
+    setSavingItem(true);
     try {
       const r = await fetch(`${API}/add_item.php`, {
         method: "POST",
@@ -485,6 +488,8 @@ export default function AddPurchase() {
       setNewItem(blankNewItem());
     } catch (e) {
       toast(e.message || "Failed", "error");
+    } finally {
+      setSavingItem(false);
     }
   };
 
@@ -1152,7 +1157,7 @@ export default function AddPurchase() {
             <FiUpload size={14} />
           </button> */}
           <button className="g-btn success sm" onClick={onSave} disabled={saving} style={{ minWidth: 90 }}>
-            <FiCheck size={14} />
+            {saving ? <FiRefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> : <FiCheck size={14} />}
             {saving ? "Saving…" : isEdit ? "Update" : "Save"}
           </button>
         </div>
@@ -1749,7 +1754,7 @@ export default function AddPurchase() {
             </div>
 
             <button className="g-btn success lg" onClick={onSave} disabled={saving}>
-              <FiCheck size={16} />
+              {saving ? <FiRefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} /> : <FiCheck size={16} />}
               {saving ? "Saving…" : isEdit ? "Update Purchase" : "Save Purchase"}
             </button>
 
@@ -1810,11 +1815,13 @@ export default function AddPurchase() {
         width={900}
         footer={
           <>
-            <button className="g-btn ghost" onClick={() => setShowAddItem(false)}>
+            <button className="g-btn ghost" onClick={() => setShowAddItem(false)} disabled={savingItem}>
               Cancel
             </button>
-            <button className="g-btn primary" onClick={saveNewItem}>
-              Save Item
+            <button className="g-btn primary" onClick={saveNewItem} disabled={savingItem}>
+              {savingItem
+                ? <><FiRefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> Saving…</>
+                : "Save Item"}
             </button>
           </>
         }

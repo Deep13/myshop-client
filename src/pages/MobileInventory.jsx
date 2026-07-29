@@ -23,6 +23,7 @@ export default function MobileInventory() {
 
   // Selected item + existing batches
   const [selItem, setSelItem] = useState(null);
+  const [stockInfo, setStockInfo] = useState(null); // dead-stock + age info for the selected item
   const [existingBatches, setExistingBatches] = useState([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
 
@@ -85,12 +86,22 @@ export default function MobileInventory() {
     finally { setLoadingBatches(false); }
   };
 
+  const loadStockInfo = async (itemId) => {
+    setStockInfo(null);
+    try {
+      const r = await fetch(`${API}/get_item_stock_info.php?item_id=${itemId}`);
+      const j = await r.json();
+      if (j.status === "success") setStockInfo(j.data);
+    } catch {}
+  };
+
   const pickItem = useCallback((item) => {
     setSelItem(item);
     setShowNewForm(false);
     setIncBatch(null);
     setManualSearch("");
     setSuggestions([]);
+    loadStockInfo(item.id);
     // Defaults for new batch form
     setMrp(String(item.mrp || ""));
     setPurchasePrice(String(item.purchasePrice || item.purchase_price || ""));
@@ -193,7 +204,7 @@ export default function MobileInventory() {
   };
 
   const resetForm = () => {
-    setSelItem(null); setExistingBatches([]); setShowNewForm(false);
+    setSelItem(null); setStockInfo(null); setExistingBatches([]); setShowNewForm(false);
     setIncBatch(null); setAdjMode("inc"); setBatchNo(""); setExpDate(""); setQty("1");
     setMrp(""); setPurchasePrice(""); setSalePrice(""); setTaxPct("");
     setManualSearch("");
@@ -380,6 +391,35 @@ export default function MobileInventory() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{selItem.name}</div>
                   <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{selItem.code}{selItem.hsn ? ` · HSN: ${selItem.hsn}` : ""}</div>
+                  {/* Stock health strip */}
+                  {stockInfo && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                      {stockInfo.total_stock <= 0 ? (
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#f3f4f6", color: "#6b7280" }}>
+                          NO STOCK
+                        </span>
+                      ) : stockInfo.is_dead ? (
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#fee2e2", color: "#b91c1c" }}>
+                          ⚠ DEAD STOCK — {stockInfo.last_sale_date
+                            ? `no sale in ${stockInfo.days_since_last_sale}d`
+                            : "never sold"}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#dcfce7", color: "#15803d" }}>
+                          SELLING — {stockInfo.days_since_last_sale === 0
+                            ? "sold today"
+                            : `last sold ${stockInfo.days_since_last_sale}d ago`}{stockInfo.qty_sold_30d > 0 ? ` · ${stockInfo.qty_sold_30d} in 30d` : ""}
+                        </span>
+                      )}
+                      {stockInfo.total_stock > 0 && stockInfo.days_in_stock != null && (
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12,
+                          background: stockInfo.days_in_stock >= 90 ? "#fef3c7" : "#e0e7ff",
+                          color:      stockInfo.days_in_stock >= 90 ? "#92400e" : "#3730a3" }}>
+                          In stock {stockInfo.days_in_stock === 0 ? "since today" : `${stockInfo.days_in_stock} days`}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                   <button onClick={() => {
