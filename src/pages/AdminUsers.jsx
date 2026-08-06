@@ -94,7 +94,7 @@ export default function AdminUsers() {
 
   const openEdit = (u) => {
     setEditUser(u);
-    setEditForm({ name: u.name, password: "", role: u.role || "user" });
+    setEditForm({ name: u.name, password: "", role: u.role || "user", off_mode: u.off_mode || "rotate" });
     setEditShowPass(false);
     setMsg("");
     setTimeout(() => editNameRef.current?.focus(), 100);
@@ -321,6 +321,32 @@ export default function AdminUsers() {
                 onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
+              </select>
+            </Field>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Field label="Weekly Off Pattern" hint="Drives the Attendance page. Rotating = full day off that shifts each week.">
+              <select className="g-sel" value={editForm.off_mode || "rotate"}
+                onChange={(e) => setEditForm({ ...editForm, off_mode: e.target.value })}>
+                <option value="rotate">Rotating full day off</option>
+                <optgroup label="Fixed full day off">
+                  <option value="full:0">Full day off — Mondays</option>
+                  <option value="full:1">Full day off — Tuesdays</option>
+                  <option value="full:2">Full day off — Wednesdays</option>
+                  <option value="full:3">Full day off — Thursdays</option>
+                  <option value="full:4">Full day off — Fridays</option>
+                  <option value="full:5">Full day off — Saturdays</option>
+                  <option value="full:6">Full day off — Sundays</option>
+                </optgroup>
+                <optgroup label="Standing half day">
+                  <option value="half:0">Half day off — Mondays</option>
+                  <option value="half:1">Half day off — Tuesdays</option>
+                  <option value="half:2">Half day off — Wednesdays</option>
+                  <option value="half:3">Half day off — Thursdays</option>
+                  <option value="half:4">Half day off — Fridays</option>
+                  <option value="half:5">Half day off — Saturdays</option>
+                  <option value="half:6">Half day off — Sundays</option>
+                </optgroup>
               </select>
             </Field>
           </div>

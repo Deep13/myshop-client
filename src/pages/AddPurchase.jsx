@@ -72,7 +72,9 @@ export default function AddPurchase() {
   const purchaseId = sp.get("purchaseId");
   const isEdit = Boolean(purchaseId);
   // Filter for line-item table (only shown in edit mode)
-  const [rowFilter, setRowFilter] = useState("");
+  // Pre-fill from ?filter= so links (e.g. expired-stock page) can land on a
+  // bill with the relevant item's rows already filtered.
+  const [rowFilter, setRowFilter] = useState(() => sp.get("filter") || "");
   usePageMeta(isEdit ? "Edit Purchase" : "New Purchase", "Create or edit a purchase bill");
 
   /* item master — loaded from DB */

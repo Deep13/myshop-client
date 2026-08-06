@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { FiArrowLeft, FiAlertTriangle, FiCheck, FiRefreshCw, FiSearch } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, asNum, fmt2, fmtDate, fmtINR, SortTH } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
@@ -238,8 +238,24 @@ export default function WriteOffExpired() {
                       <input type="checkbox" checked={p.selected} onChange={(e) => update(r.id, { selected: e.target.checked })} />
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{r.item_name}</div>
-                      <div style={{ fontSize: 11, color: C.textSub }}>{r.item_code}{r.purchase_bill_no ? ` · ${r.distributor_name || "—"} #${r.purchase_bill_no}` : ""}</div>
+                      <Link to={`/inventory/${r.item_id}`} style={{ fontWeight: 600, color: C.brand, textDecoration: "none", display: "block" }}>{r.item_name}</Link>
+                      <div style={{ fontSize: 11, color: C.textSub }}>
+                        {r.item_code}
+                        {r.purchase_bill_no && (
+                          <>
+                            {" · "}
+                            {r.distributor_id
+                              ? <Link to={`/distributors/${r.distributor_id}`} style={{ color: C.brand, textDecoration: "none", fontWeight: 600 }}>{r.distributor_name}</Link>
+                              : (r.distributor_name || "—")}
+                            {" "}
+                            <Link to={`/addpurchase?purchaseId=${r.purchase_bill_id}&filter=${encodeURIComponent(r.item_name || "")}`}
+                              title="Open this purchase bill filtered to this item"
+                              style={{ color: C.brand, textDecoration: "none", fontWeight: 700 }}>
+                              #{r.purchase_bill_no}
+                            </Link>
+                          </>
+                        )}
+                      </div>
                     </td>
                     <td style={{ fontSize: 12, color: C.textSub }}>{r.batch_no || "—"}</td>
                     <td style={{ fontSize: 12, fontWeight: 700, color: r._isExpired ? C.red : C.orange }}>

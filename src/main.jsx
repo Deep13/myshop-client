@@ -19,6 +19,7 @@ import Settings from "./pages/Settings.jsx";
 import AdminUsers from "./pages/AdminUsers.jsx";
 import LoginLog from "./pages/LoginLog.jsx";
 import Loyalty from "./pages/Loyalty.jsx";
+import Attendance from "./pages/Attendance.jsx";
 import MobileSale from "./pages/MobileSale.jsx";
 import MobileInventory from "./pages/MobileInventory.jsx";
 import MobileDashboard from "./pages/MobileDashboard.jsx";
@@ -86,6 +87,7 @@ createRoot(document.getElementById("root")).render(
         <Route path="/reports"             element={<Reports />} />
         <Route path="/settings"            element={<Settings />} />
         <Route path="/loyalty"             element={<Loyalty />} />
+        <Route path="/attendance"          element={<Attendance />} />
         <Route path="/admin/users"         element={<AdminUsers />} />
         <Route path="/admin/login-log"     element={<LoginLog />} />
       </Route>

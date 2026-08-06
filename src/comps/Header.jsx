@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { RiShutDownLine } from "react-icons/ri";
-import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield, FiMoon, FiSun, FiAward } from "react-icons/fi";
+import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield, FiMoon, FiSun, FiAward, FiCalendar } from "react-icons/fi";
 import { C, Modal, GLOBAL_CSS, API } from "../ui.jsx";
 import { SHORTCUTS } from "../shortcuts.js";
 
@@ -16,6 +16,7 @@ const MORE_ITEMS = [
   { to: "/customers",    label: "Customers",    icon: <FiUsers size={15} /> },
   { to: "/distributors", label: "Distributors",  icon: <FiTruck size={15} /> },
   { to: "/loyalty",      label: "Loyalty",      icon: <FiAward size={15} /> },
+  { to: "/attendance",   label: "Attendance",   icon: <FiCalendar size={15} /> },
   { to: "/reports",      label: "Reports",       icon: <FiBarChart2 size={15} /> },
   { to: "/settings",     label: "Settings",       icon: <FiSettings size={15} /> },
   { key: "shortcuts",    label: "Shortcuts",     icon: <FiCommand size={15} /> },

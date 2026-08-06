@@ -301,15 +301,15 @@ export function printDualLabel({ itemCode, copies = 1 }) {
     width: 50mm;
     height: 23mm;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     page-break-after: always;
     overflow: hidden;
   }
   .label:last-child { page-break-after: auto; }
   .half {
-    width: 25mm;
-    height: 23mm;
-    padding: 2.5mm 1mm;
+    width: 50mm;
+    height: 11.5mm;
+    padding: 1mm 3mm;
     display: flex;
     align-items: center;
     justify-content: center;

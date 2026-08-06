@@ -395,9 +395,21 @@ export default function MobileInventory() {
                   {stockInfo && (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                       {stockInfo.total_stock <= 0 ? (
-                        <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#f3f4f6", color: "#6b7280" }}>
-                          NO STOCK
-                        </span>
+                        <>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#f3f4f6", color: "#6b7280" }}>
+                            NO STOCK
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#e0e7ff", color: "#3730a3" }}>
+                            {stockInfo.last_sale_date
+                              ? `Last sold ${stockInfo.days_since_last_sale === 0 ? "today" : `${stockInfo.days_since_last_sale}d ago`}`
+                              : "Never sold"}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#fef3c7", color: "#92400e" }}>
+                            {stockInfo.last_purchase_date
+                              ? `Last bought ${stockInfo.days_since_last_purchase === 0 ? "today" : `${stockInfo.days_since_last_purchase}d ago`}`
+                              : "Never purchased"}
+                          </span>
+                        </>
                       ) : stockInfo.is_dead ? (
                         <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 12, background: "#fee2e2", color: "#b91c1c" }}>
                           ⚠ DEAD STOCK — {stockInfo.last_sale_date
