@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
@@ -220,7 +220,7 @@ export default function AddSales() {
         fetch(`${API}/get_inventory.php?include_zero=1`).then((r) => r.json()),
         fetch(`${API}/get_items_all.php?limit=10000`).then((r) => r.json()),
       ]);
-      const invList = invRes.status === "success" ? (invRes.data || []) : [];
+      const invList = invRes.status === "success" ? (invRes.data || []).map(withMasterPricing) : [];
       const master  = masterRes.status === "success" ? (masterRes.data || []) : [];
       // Items already represented in inventory (any batch) — skip those when adding master rows
       const seenItemIds = new Set(invList.map((b) => Number(b.item_id)).filter(Boolean));
@@ -335,6 +335,9 @@ export default function AddSales() {
   const getInvSug = (text) => {
     const q = String(text || "").trim().toLowerCase();
     if (!q) return [];
+    // A scanned barcode lists every batch of that item, uncapped.
+    const scanned = inventory.filter((inv) => (inv.item_code || "").toLowerCase() === q);
+    if (scanned.length) return scanned.sort(compareBatchesForSale);
     // Score: 0 = name or code starts with q (best), 1 = contains anywhere
     const scored = [];
     for (const inv of inventory) {
@@ -347,15 +350,7 @@ export default function AddSales() {
       scored.push({ inv, score });
     }
     return scored
-      .sort((a, b) => {
-        if (a.score !== b.score) return a.score - b.score;
-        // Within same score, prefer earlier expiry
-        const ae = a.inv.exp_date, be = b.inv.exp_date;
-        if (!ae && !be) return 0;
-        if (!ae) return 1;
-        if (!be) return -1;
-        return ae.localeCompare(be);
-      })
+      .sort((a, b) => a.score - b.score || compareBatchesForSale(a.inv, b.inv))
       .slice(0, 15)
       .map((s) => s.inv);
   };
@@ -502,6 +497,7 @@ export default function AddSales() {
           const pp = asNum(inv.purchase_price);
           const t  = asNum(inv.tax_pct);
           const isExclusiveGstBill =
+            !inv.master_cost &&
             inv.purchase_bill_id &&
             String(inv.purchase_bill_type || "GST").toUpperCase() === "GST" &&
             String(inv.purchase_gst_mode || "exclusive").toLowerCase() === "exclusive" &&

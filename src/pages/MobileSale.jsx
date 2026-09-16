@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, fmtDate, todayISO } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
 import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
@@ -38,7 +38,7 @@ export default function MobileSale() {
       try {
         const r = await fetch(`${API}/get_inventory.php?include_zero=1`);
         const j = await r.json();
-        if (j.status === "success") setInventory(j.data || []);
+        if (j.status === "success") setInventory((j.data || []).map(withMasterPricing));
       } catch {}
     })();
     (async () => {
@@ -50,16 +50,17 @@ export default function MobileSale() {
     })();
   }, []);
 
-  // Find item by barcode (item_code)
+  // Find item by barcode (item_code) — the batch to sell first
   const findByCode = useCallback((code) => {
     const q = code.replace(/[\s\r\n\t\x00-\x1f]/g, "").toLowerCase();
     if (!q) return null;
-    return inventory.find(
+    const batches = inventory.filter(
       (it) => {
         const c = (it.item_code || "").toLowerCase();
         return c === q || c === q.replace(/^0+/, "") || q === c.replace(/^0+/, "") || (it.barcode || "").toLowerCase() === q;
       }
     );
+    return batches.sort(compareBatchesForSale)[0] || null;
   }, [inventory]);
 
   // Add item to cart
@@ -143,11 +144,16 @@ export default function MobileSale() {
   useEffect(() => {
     const q = manualSearch.trim().toLowerCase();
     if (!q) { setSuggestions([]); return; }
+    // A full barcode lists every batch of that item; name searches stay capped.
+    const scanned = inventory.filter((it) => (it.item_code || "").toLowerCase() === q);
+    if (scanned.length) { setSuggestions(scanned.sort(compareBatchesForSale)); return; }
+    const startsWith = (it) => ((it.item_name || "").toLowerCase().startsWith(q) || (it.item_code || "").toLowerCase().startsWith(q) ? 0 : 1);
     const results = inventory.filter((it) =>
       (it.item_name || "").toLowerCase().includes(q) ||
       (it.item_code || "").toLowerCase().includes(q)
-    ).slice(0, 8);
-    setSuggestions(results);
+    );
+    results.sort((a, b) => startsWith(a) - startsWith(b) || compareBatchesForSale(a, b));
+    setSuggestions(results.slice(0, 8));
   }, [manualSearch, inventory]);
 
   // Cart calculations

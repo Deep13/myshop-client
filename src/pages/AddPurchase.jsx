@@ -340,6 +340,15 @@ export default function AddPurchase() {
     setRows((prev) => prev.map((r) => ({ ...r, amount: calcRowAmt(r).toFixed(2) })));
   }, [isGST]);
 
+  // The master holds the GST-inclusive landed cost (rice: the raw bill rate).
+  // Pre-fill the rate on the basis this bill is entered in.
+  const billRateFromMaster = (item) => {
+    const cost = asNum(item.purchasePrice), tax = asNum(item.tax);
+    if (!cost) return item.purchasePrice ?? "";
+    if (/^Rice\b/i.test(item.category || "") || (isGST && gstMode === "inclusive") || !tax) return cost;
+    return fmt2(cost / (1 + tax / 100));
+  };
+
   const pickItem = (ri, item) => {
     setActiveSug(null);
     setItemSearch((p) => ({ ...p, [ri]: "" }));
@@ -352,7 +361,7 @@ export default function AddPurchase() {
         hsn: item.hsn || "",
         mrp: item.mrp ?? "",
         salePrice: item.salePrice ?? "",
-        purchasePrice: item.purchasePrice ?? "",
+        purchasePrice: billRateFromMaster(item),
         tax: item.tax ?? "",
         qty: 1,
         discount: "",
@@ -803,7 +812,7 @@ export default function AddPurchase() {
           r.hsn = r.hsn || bestMatch.hsn || "";
           r.mrp = r.mrp || String(bestMatch.mrp || "");
           r.salePrice = r.salePrice || String(bestMatch.salePrice || "");
-          if (!asNum(r.purchasePrice)) r.purchasePrice = String(bestMatch.purchasePrice || "");
+          if (!asNum(r.purchasePrice)) r.purchasePrice = String(billRateFromMaster(bestMatch) || "");
           r.tax = r.tax || String(bestMatch.tax || "");
         }
         r.amount = calcRowAmt(r).toFixed(2);

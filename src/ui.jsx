@@ -444,6 +444,34 @@ const pgBtn = { minWidth: 32, height: 32, border: "1.5px solid #d1d5db", borderR
 
 export const API = import.meta.env.VITE_API_URL || "http://localhost/myshop-backend";
 export const asNum = (x) => { const n = Number(x); return isFinite(n) ? n : 0; };
+
+/* Order in which batches are offered for sale: sellable stock first, soonest
+   expiry first (undated after dated), larger stock breaking ties; then
+   out-of-stock batches, then expired ones. */
+export const compareBatchesForSale = (a, b) => {
+  const rank = (x) => (Number(x.is_expired) === 1 ? 2 : asNum(x.current_qty) > 0 ? 0 : 1);
+  if (rank(a) !== rank(b)) return rank(a) - rank(b);
+  const ae = a.exp_date || "", be = b.exp_date || "";
+  if (ae !== be) return !ae ? 1 : !be ? -1 : ae.localeCompare(be);
+  return asNum(b.current_qty) - asNum(a.current_qty);
+};
+
+/* Stock without a batch number sells at the item-master price (kept current by
+   every purchase bill). Batch-tracked rows keep their own batch prices. Master
+   prices that were never set fall back to the batch values. `master_cost` marks
+   a buy price that is already GST-inclusive, so callers must not add GST again. */
+export const withMasterPricing = (inv) => {
+  if (String(inv.batch_no || "").trim() || inv.master_sale_price == null) return inv;
+  const pick = (master, batch) => (asNum(master) > 0 ? master : batch);
+  return {
+    ...inv,
+    mrp: pick(inv.master_mrp, inv.mrp),
+    sale_price: pick(inv.master_sale_price, inv.sale_price),
+    purchase_price: pick(inv.master_purchase_price, inv.purchase_price),
+    tax_pct: inv.master_tax_pct ?? inv.tax_pct,
+    master_cost: asNum(inv.master_purchase_price) > 0,
+  };
+};
 export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 export const fmtDate = (d) => { if (!d) return "—"; const p = String(d).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d; };
 export const fmt2 = (n) => Number(n || 0).toFixed(2);
