@@ -456,6 +456,40 @@ export const compareBatchesForSale = (a, b) => {
   return asNum(b.current_qty) - asNum(a.current_qty);
 };
 
+/* Short-dated goods are best spotted while the delivery is still on the counter,
+   not weeks later on a write-off report. Flags a date that has already passed or
+   falls inside the next 90 days; returns null when there is no date to judge. */
+export const EXPIRY_WARN_DAYS = 90;
+export const expiryAlert = (expDate) => {
+  const d = String(expDate || "").trim();
+  if (!d) return null;
+  const days = Math.floor((new Date(`${d}T00:00:00`) - new Date(`${todayISO()}T00:00:00`)) / 86400000);
+  if (!isFinite(days)) return null;
+  if (days < 0)                 return { level: "expired", days };
+  if (days <= EXPIRY_WARN_DAYS) return { level: "soon", days };
+  return null;
+};
+
+/* Once an item is batch-tracked, its used-up batches are just clutter at the
+   till: drop the empty ones and keep only what can actually be sold. Items with
+   no batch numbers at all are left alone. If every batch of an item is empty the
+   rows are kept, so a scanned item never disappears and can still be billed. */
+export const hideEmptyBatches = (list) => {
+  const batched = new Set();
+  const hasStock = new Set();
+  for (const b of list) {
+    const id = Number(b.item_id);
+    if (!id) continue;
+    if (String(b.batch_no || "").trim()) batched.add(id);
+    if (asNum(b.current_qty) > 0) hasStock.add(id);
+  }
+  return list.filter((b) => {
+    const id = Number(b.item_id);
+    if (!batched.has(id) || !hasStock.has(id)) return true;
+    return asNum(b.current_qty) > 0;
+  });
+};
+
 /* Stock without a batch number sells at the item-master price (kept current by
    every purchase bill). Batch-tracked rows keep their own batch prices. Master
    prices that were never set fall back to the batch values. `master_cost` marks

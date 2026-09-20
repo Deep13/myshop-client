@@ -5,6 +5,7 @@ import { printLabel, printDualLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
+import BulkItemSelect from "../comps/BulkItemSelect.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -51,6 +52,17 @@ export default function ItemDetail() {
   const [editBatchExp, setEditBatchExp]   = useState("");
   const [editBatchQty, setEditBatchQty]   = useState("");
   const [batchSaving, setBatchSaving]     = useState(false);
+  // Item master, used to pick the bulk item a packet is cut from
+  const [itemMaster, setItemMaster] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/get_items_all.php?limit=10000`);
+        const j = await r.json();
+        if (j.status === "success") setItemMaster(j.data || []);
+      } catch { /* picker just stays empty */ }
+    })();
+  }, []);
   usePageMeta(data ? `${data.item?.name || "Item"} — Detail` : "Item Detail", "Item stock, batches, purchase and sales history");
 
   const startEdit = () => {
@@ -67,6 +79,8 @@ export default function ItemDetail() {
       purchasePrice: String(it.purchasePrice || it.purchase_price || ""),
       tax: String(it.tax || it.tax_pct || ""),
       is_primary: it.is_primary != 0,
+      bulkItemId: it.bulkItemId ?? it.bulk_item_id ?? null,
+      packWeight: (it.packWeight ?? it.pack_weight) != null ? String(it.packWeight ?? it.pack_weight) : "",
     });
     setEditing(true);
   };
@@ -93,6 +107,8 @@ export default function ItemDetail() {
           purchasePrice: asNum(editForm.purchasePrice),
           tax: asNum(editForm.tax),
           is_primary: editForm.is_primary,
+          bulkItemId: editForm.bulkItemId || null,
+          packWeight: editForm.bulkItemId ? asNum(editForm.packWeight) : null,
           updatedBy: user?.id || 1,
         }),
       });
@@ -112,6 +128,10 @@ export default function ItemDetail() {
           salePrice: asNum(editForm.salePrice),
           pack_size:      editForm.packSize     ? asNum(editForm.packSize)     : null,
           packSize:       editForm.packSize     ? asNum(editForm.packSize)     : null,
+          bulk_item_id:   editForm.bulkItemId || null,
+          bulkItemId:     editForm.bulkItemId || null,
+          pack_weight:    editForm.bulkItemId ? asNum(editForm.packWeight) : null,
+          packWeight:     editForm.bulkItemId ? asNum(editForm.packWeight) : null,
           bag_sale_price: editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
           bagSalePrice:   editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
           purchase_price: asNum(editForm.purchasePrice),
@@ -371,6 +391,16 @@ export default function ItemDetail() {
                     <InfoRow label="Bag Sale Price" value={`₹${item.bagSalePrice || item.bag_sale_price || "—"}`} />
                   </>
                 )}
+                {(item.bulkItemId || item.bulk_item_id) && (
+                  <>
+                    <InfoRow label="Cut from" value={
+                      <Link to={`/items/${item.bulkItemId || item.bulk_item_id}`} style={{ color: C.brand, fontWeight: 700 }}>
+                        {(itemMaster.find((m) => Number(m.id) === Number(item.bulkItemId || item.bulk_item_id)) || {}).name || "Bulk item"}
+                      </Link>
+                    } />
+                    <InfoRow label="Pack weight" value={`${item.packWeight || item.pack_weight} kg per packet`} />
+                  </>
+                )}
               </div>
             ) : (
               <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -416,6 +446,34 @@ export default function ItemDetail() {
                     </>
                   )}
                 </div>
+
+                {/* Repacked goods: this item is a fixed packet cut from a bulk
+                    item held in kg. Rice bag-packs use Pack Size above instead. */}
+                {!/^Rice\b/i.test(editForm.category || "") && (
+                  <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 700, color: C.textSub, marginBottom: 6, fontSize: 12 }}>Repacked from bulk</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+                      <Field label="Bulk item" hint="Stock is held here, in kg">
+                        <BulkItemSelect className="g-inp" items={itemMaster}
+                          valueId={editForm.bulkItemId} excludeId={Number(itemId)}
+                          onPick={(it) => setEditForm((p) => ({ ...p, bulkItemId: it ? Number(it.id) : null, packWeight: it ? p.packWeight : "" }))} />
+                      </Field>
+                      <Field label="Pack weight (kg)" hint="0.25 for 250 g">
+                        <input className="g-inp" value={editForm.packWeight || ""} disabled={!editForm.bulkItemId}
+                          onChange={(e) => ef("packWeight", e.target.value)} inputMode="decimal" placeholder="0.250" />
+                      </Field>
+                    </div>
+                    {editForm.bulkItemId > 0 && asNum(editForm.packWeight) > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: C.textSub }}>
+                        Selling 1 × {editForm.name || "this packet"} takes{" "}
+                        <b>{fmt2(asNum(editForm.packWeight))} kg</b> off{" "}
+                        <b>{(itemMaster.find((m) => Number(m.id) === Number(editForm.bulkItemId)) || {}).name || "the bulk item"}</b>.
+                        This packet holds no stock of its own, and its price stays whatever you set above.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/^Rice\b/i.test(editForm.category || "") && asNum(editForm.packSize) > 0 && (
                   <div style={{ padding: "10px 12px", background: "#f1f5f9", borderRadius: 8, fontSize: 12 }}>
                     <div style={{ fontWeight: 700, color: C.textSub, marginBottom: 6 }}>Pricing helper (Rice)</div>

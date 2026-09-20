@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw, FiDollarSign, FiAlertCircle } from "react-icons/fi";
 import * as XLSX from "xlsx";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound, expiryAlert, EXPIRY_WARN_DAYS } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
@@ -350,6 +350,13 @@ export default function AddPurchase() {
   };
 
   const pickItem = (ri, item) => {
+    // Packets are cut from bulk stock — the purchase belongs on the bulk item,
+    // in kg. The server rejects it too; this just says so before typing a row.
+    if (item.bulkItemId) {
+      const bulk = itemMaster.find((m) => Number(m.id) === Number(item.bulkItemId));
+      toast(`${item.name} is a packet. Buy ${bulk ? bulk.name : "the bulk item"} in kg instead.`, "warn");
+      return;
+    }
     setActiveSug(null);
     setItemSearch((p) => ({ ...p, [ri]: "" }));
     setRows((prev) => {
@@ -969,6 +976,17 @@ export default function AddPurchase() {
   }, [saving, onSave]);
 
   const filledCount = rows.filter((r) => String(r.itemName || "").trim()).length;
+  // Short-dated lines on this bill, counted for the banner above the table.
+  const expirySummary = useMemo(() => {
+    let expired = 0, soon = 0;
+    for (const r of rows) {
+      if (!String(r.itemName || "").trim()) continue;
+      const a = expiryAlert(r.expDate);
+      if (a?.level === "expired") expired++;
+      else if (a?.level === "soon") soon++;
+    }
+    return { expired, soon, total: expired + soon };
+  }, [rows]);
 
   /* ══════════════════════════════ RENDER ══════════════════════════════ */
   return (
@@ -1200,6 +1218,22 @@ export default function AddPurchase() {
           }
         />
         {!masterLoaded && <div style={{ padding: "12px 18px", fontSize: 13, color: C.textSub }}>Loading item master…</div>}
+        {expirySummary.total > 0 && (
+          <div style={{
+            margin: "10px 18px 0", padding: "8px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+            display: "flex", alignItems: "center", gap: 8,
+            background: expirySummary.expired > 0 ? C.redLight : C.yellowLight,
+            color: expirySummary.expired > 0 ? C.red : C.yellow,
+          }}>
+            <FiAlertCircle size={14} />
+            <span>
+              {expirySummary.expired > 0 && <b>{expirySummary.expired} line{expirySummary.expired > 1 ? "s" : ""} already expired</b>}
+              {expirySummary.expired > 0 && expirySummary.soon > 0 && " · "}
+              {expirySummary.soon > 0 && <>{expirySummary.soon} line{expirySummary.soon > 1 ? "s" : ""} expiring within {EXPIRY_WARN_DAYS} days</>}
+              {" — check before accepting this delivery."}
+            </span>
+          </div>
+        )}
         <div>
           <table className="g-table" style={{ width: "100%" }}>
             <thead>
@@ -1237,8 +1271,9 @@ export default function AddPurchase() {
                 const searchText = itemSearch[idx] !== undefined ? itemSearch[idx] : r.itemName;
                 const sug = getSug(searchText);
                 const filled = r.itemName.trim();
+                const expAlert = expiryAlert(r.expDate);
                 return (
-                  <tr key={idx}>
+                  <tr key={idx} style={expAlert ? { background: expAlert.level === "expired" ? C.redLight : C.yellowLight } : undefined}>
                     <td style={{ paddingLeft: 8 }}>
                       <div
                         style={{
@@ -1468,7 +1503,18 @@ export default function AddPurchase() {
                       />
                     </td>
                     <td>
-                      <DateInput className="g-td-inp num" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })} style={{ fontSize: 11, textAlign: "left" }} />
+                      <DateInput className="g-td-inp num" value={r.expDate} onChange={(e) => updRow(idx, { expDate: e.target.value })}
+                        style={{ fontSize: 11, textAlign: "left", ...(expAlert ? { borderColor: expAlert.level === "expired" ? C.red : C.yellow } : {}) }} />
+                      {expAlert && (
+                        <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, color: expAlert.level === "expired" ? C.red : C.yellow }}
+                          title={expAlert.level === "expired"
+                            ? "This stock has already expired — do not accept it"
+                            : `Only ${expAlert.days} days of shelf life left — check before accepting`}>
+                          {expAlert.level === "expired"
+                            ? `EXPIRED ${Math.abs(expAlert.days)}d ago`
+                            : `${expAlert.days}d left`}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.mrp} onChange={(e) => updRow(idx, { mrp: e.target.value })} inputMode="decimal" placeholder="0" />

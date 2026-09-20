@@ -52,7 +52,10 @@ export default function Inventory() {
   /* Build per-item summary by aggregating inventory batches */
   const itemRows = useMemo(() => {
     return items.map((it) => {
-      const batches = inventory.filter((b) => asNum(b.item_id) === asNum(it.id));
+      // Packet rows are derived from a bulk item's kg and hold no stock of their
+      // own — counting them here would value the same goods twice.
+      const batches = inventory.filter((b) => asNum(b.item_id) === asNum(it.id) && Number(b.is_pack) !== 1);
+      const packRow = inventory.find((b) => asNum(b.item_id) === asNum(it.id) && Number(b.is_pack) === 1);
       const totalStock     = batches.reduce((a, b) => a + asNum(b.current_qty), 0);
       const stockByPtr     = batches.reduce((a, b) => a + asNum(b.current_qty) * asNum(b.purchase_price), 0);
       const stockByMrp     = batches.reduce((a, b) => a + asNum(b.current_qty) * asNum(b.mrp), 0);
@@ -60,7 +63,9 @@ export default function Inventory() {
       const hasExpired     = batches.some((b) => b.exp_date && b.exp_date < today && asNum(b.current_qty) > 0);
       const hasExpiring    = batches.some((b) => b.exp_date && b.exp_date >= today && b.exp_date <= in90 && asNum(b.current_qty) > 0);
       const nearestExpiry  = batches.filter((b) => b.exp_date && asNum(b.current_qty) > 0).map((b) => b.exp_date).sort()[0] || null;
-      return { ...it, batches, totalStock, stockByPtr, stockByMrp, batchCount, hasExpired, hasExpiring, nearestExpiry };
+      return { ...it, batches, totalStock, stockByPtr, stockByMrp, batchCount, hasExpired, hasExpiring, nearestExpiry,
+               packsAvailable: packRow ? asNum(packRow.current_qty) : null,
+               bulkItemName: packRow ? packRow.bulk_item_name : null };
     });
   }, [items, inventory]);
 
@@ -286,6 +291,11 @@ export default function Inventory() {
                       <div style={{ fontWeight: 600 }}>{r.name}</div>
                       {r.category && (
                         <span style={{ fontSize: 10, fontWeight: 600, color: C.textSub, background: "#f1f5f9", borderRadius: 4, padding: "1px 6px", marginTop: 2, marginRight: 4, display: "inline-block" }}>{r.category}</span>
+                      )}
+                      {r.packsAvailable != null && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: C.brand, background: C.brandLighter, borderRadius: 4, padding: "1px 6px", marginTop: 2, marginRight: 4, display: "inline-block" }}>
+                          {r.packsAvailable} PACKS FROM {r.bulkItemName}
+                        </span>
                       )}
                       {r.hasExpired  && <span style={{ fontSize: 10, fontWeight: 700, color: C.red,    background: C.redLight,    borderRadius: 4, padding: "1px 6px", marginTop: 2, display: "inline-block" }}>EXPIRED</span>}
                       {!r.hasExpired && r.hasExpiring && <span style={{ fontSize: 10, fontWeight: 700, color: C.yellow, background: C.yellowLight, borderRadius: 4, padding: "1px 6px", marginTop: 2, display: "inline-block" }}>EXPIRING</span>}

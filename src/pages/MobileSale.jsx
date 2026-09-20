@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
 import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
@@ -38,7 +38,9 @@ export default function MobileSale() {
       try {
         const r = await fetch(`${API}/get_inventory.php?include_zero=1`);
         const j = await r.json();
-        if (j.status === "success") setInventory((j.data || []).map(withMasterPricing));
+        // Bulk items hold stock in kg and are never sold at the till — their packets
+        // are. Used-up batches of a batch-tracked item are dropped as well.
+        if (j.status === "success") setInventory(hideEmptyBatches((j.data || []).map(withMasterPricing).filter((b) => Number(b.is_bulk) !== 1)));
       } catch {}
     })();
     (async () => {
@@ -66,7 +68,9 @@ export default function MobileSale() {
   // Add item to cart
   const addToCart = useCallback((item) => {
     setCart((prev) => {
-      const existing = prev.findIndex((c) => c.invId === item.id);
+      // Packets all carry invId 0 (no inventory row of their own), so the item
+      // has to be part of the match or two packet sizes merge into one line.
+      const existing = prev.findIndex((c) => c.invId === item.id && Number(c.itemId) === Number(item.item_id));
       if (existing >= 0) {
         const n = [...prev];
         n[existing] = { ...n[existing], qty: n[existing].qty + 1 };

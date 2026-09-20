@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import usePageMeta from "../usePageMeta.js";
@@ -220,13 +220,17 @@ export default function AddSales() {
         fetch(`${API}/get_inventory.php?include_zero=1`).then((r) => r.json()),
         fetch(`${API}/get_items_all.php?limit=10000`).then((r) => r.json()),
       ]);
-      const invList = invRes.status === "success" ? (invRes.data || []).map(withMasterPricing) : [];
+      const allInv  = invRes.status === "success" ? (invRes.data || []).map(withMasterPricing) : [];
       const master  = masterRes.status === "success" ? (masterRes.data || []) : [];
-      // Items already represented in inventory (any batch) — skip those when adding master rows
-      const seenItemIds = new Set(invList.map((b) => Number(b.item_id)).filter(Boolean));
+      // Items already represented in inventory (any batch) — skip those when adding master rows.
+      // Built before the bulk filter below, so hidden bulk items don't come back as synthetic rows.
+      const seenItemIds = new Set(allInv.map((b) => Number(b.item_id)).filter(Boolean));
+      // Bulk items are stock holders in kg, never sold at the till — their packets are.
+      // Used-up batches of a batch-tracked item are dropped as well.
+      const invList = hideEmptyBatches(allInv.filter((b) => Number(b.is_bulk) !== 1));
       // Synthetic "no-stock" rows for items in master that have no inventory batch
       const synthetic = master
-        .filter((it) => !seenItemIds.has(Number(it.id)))
+        .filter((it) => !seenItemIds.has(Number(it.id)) && Number(it.isBulk) !== 1)
         .map((it) => ({
           id: 0,                            // no inventory batch id
           item_id: Number(it.id),
@@ -244,6 +248,9 @@ export default function AddSales() {
           current_qty: 0,
           pack_size:      it.packSize     != null ? Number(it.packSize)     : null,
           bag_sale_price: it.bagSalePrice != null ? Number(it.bagSalePrice) : null,
+          bulk_item_id:   it.bulkItemId   != null ? Number(it.bulkItemId)   : null,
+          pack_weight:    it.packWeight   != null ? Number(it.packWeight)   : null,
+          is_pack: it.bulkItemId ? 1 : 0,
         }));
       setInventory([...invList, ...synthetic]);
     } catch { }
@@ -990,10 +997,14 @@ export default function AddSales() {
                 const filled   = r.itemName.trim();
                 const isExpired = r.expDate && r.expDate < today;
 
-                // Stock for this row
-                const invRec   = r.invId ? inventory.find((inv) => inv.id === r.invId) : null;
+                // Stock for this row. Packets have no inventory row of their own
+                // (invId 0), so match them on the item instead.
+                const invRec   = r.invId
+                  ? inventory.find((inv) => inv.id === r.invId)
+                  : inventory.find((inv) => Number(inv.is_pack) === 1 && Number(inv.item_id) === Number(r.itemId));
                 const stockQty = invRec ? asNum(invRec.current_qty) : null;
                 const isZeroStock = stockQty !== null && stockQty <= 0;
+                const isPackRow = Number(invRec?.is_pack) === 1;
 
                 // Discount % for display
                 const dPct = filled ? discountPct(r.mrp, r.salePrice) : 0;
@@ -1016,7 +1027,12 @@ export default function AddSales() {
                               {r.batchNo && <span>· {r.batchNo}</span>}
                               {stockQty !== null && (
                                 <span style={{ fontWeight: 700, color: isZeroStock ? C.red : C.green }}>
-                                  · {isZeroStock ? "Out of stock" : `${stockQty} left`}
+                                  · {isZeroStock ? "Out of stock" : `${stockQty}${isPackRow ? " packs" : ""} left`}
+                                </span>
+                              )}
+                              {isPackRow && !isZeroStock && (
+                                <span title={`Cut from ${invRec.bulk_item_name}`}>
+                                  · from {fmt2(invRec.bulk_stock_kg)} kg
                                 </span>
                               )}
                             </div>

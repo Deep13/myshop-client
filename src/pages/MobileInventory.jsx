@@ -80,7 +80,9 @@ export default function MobileInventory() {
     try {
       const r = await fetch(`${API}/get_inventory.php?item_id=${itemId}&include_zero=1`);
       const j = await r.json();
-      if (j.status === "success") setExistingBatches(j.data || []);
+      // Packet rows are derived from a bulk item and have no inventory row to
+      // adjust — correcting stock has to happen on the bulk item itself.
+      if (j.status === "success") setExistingBatches((j.data || []).filter((b) => Number(b.is_pack) !== 1));
       else setExistingBatches([]);
     } catch { setExistingBatches([]); }
     finally { setLoadingBatches(false); }
