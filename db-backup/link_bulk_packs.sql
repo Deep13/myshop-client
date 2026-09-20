@@ -21,21 +21,31 @@ START TRANSACTION;
 
 -- ── S1. Create the bulk items (stock in kg, never sold at the till) ─────────
 -- sale_price stays 0: these are not scanned at the counter.
--- !! SET purchase_price TO THE REAL RATE PER KG FROM THE SUPPLIER BILL.
---    Do NOT back-compute it from today's per-packet costs — those disagree with
---    each other (cashew works out at 860, 760 and 948 per kg across three rows),
---    which is the very problem this change removes.
+--
+-- purchase_price is the cost per kg taken from each commodity's MOST RECENT
+-- purchase, divided by that packet's weight, then put on a GST-inclusive footing
+-- the same way item_master_sync.php does it (a NON-GST bill is grossed up by the
+-- item's own rate, so the cost is comparable with a tax-inclusive selling price).
+--
+--   KAJU     09 Sep 2026  237.00 / 0.25kg  and 474.00 / 0.5kg -> 948.00/kg raw
+--                         x 1.05 (5%)                         -> 995.40
+--   KISMISH  10 Aug 2026  190.00 / 0.5kg, bill already GST-inclusive -> 380.00
+--   CHIA     30 Apr 2026   30.00 / 0.1kg -> 300.00/kg raw, x 1.05    -> 315.00
+--                         (that bill is old — check it against the next one)
+--   BADAM    26 Aug 2026  145.00 / 1kg  and  72.50 / 0.5kg -> 145.00/kg,
+--                         0% GST so no gross-up                      -> 145.00
 INSERT INTO items (name, code, hsn, category, mrp, sale_price, purchase_price, tax_pct, is_primary)
-VALUES ('KAJU (BULK)',       'BULK-KAJU',    '0801', 'Dry fruits / Nuts', 0, 0, 880, 5, 1);
+VALUES ('KAJU (BULK)',       'BULK-KAJU',    '0801', 'Dry fruits / Nuts', 0, 0, 995.40, 5, 1);
 SET @kaju := LAST_INSERT_ID();
 INSERT INTO items (name, code, hsn, category, mrp, sale_price, purchase_price, tax_pct, is_primary)
-VALUES ('KISMISH (BULK)',    'BULK-KISMISH', '0806', 'Dry fruits / Nuts', 0, 0, 430, 5, 1);
+VALUES ('KISMISH (BULK)',    'BULK-KISMISH', '0806', 'Dry fruits / Nuts', 0, 0, 380.00, 5, 1);
 SET @kismish := LAST_INSERT_ID();
 INSERT INTO items (name, code, hsn, category, mrp, sale_price, purchase_price, tax_pct, is_primary)
-VALUES ('CHIA SEEDS (BULK)', 'BULK-CHIA',    '1207', 'Dry fruits / Nuts', 0, 0, 450, 5, 1);
+VALUES ('CHIA SEEDS (BULK)', 'BULK-CHIA',    '1207', 'Dry fruits / Nuts', 0, 0, 315.00, 5, 1);
 SET @chia := LAST_INSERT_ID();
+-- BADAM is 0% GST, confirmed by the owner. Its packets stay 0% too.
 INSERT INTO items (name, code, hsn, category, mrp, sale_price, purchase_price, tax_pct, is_primary)
-VALUES ('BADAM (BULK)',      'BULK-BADAM',   '0802', 'Dry fruits / Nuts', 0, 0, 145, 0, 1);
+VALUES ('BADAM (BULK)',      'BULK-BADAM',   '0802', 'Dry fruits / Nuts', 0, 0, 145.00, 0, 1);
 SET @badam := LAST_INSERT_ID();
 
 -- ── S2. Link each packet to its bulk item ──────────────────────────────────
@@ -97,12 +107,9 @@ WHERE p.pack_weight > 0;
 -- UPDATE items SET sale_price = 260, mrp = 270 WHERE id = 4244;
 -- UPDATE items SET sale_price =  95, mrp = 125 WHERE id =  546;
 
--- (d) NOT DONE — needs your accountant's answer first.
---     BADAM packets are at 0% GST. Loose pulses and nuts are exempt, but goods
---     that are pre-packaged and labelled attract 5%. These are weighed, packed
---     and barcoded in the shop, so they may well be liable. Confirm, then:
--- UPDATE items SET tax_pct = 5, is_primary = 1 WHERE id IN (4526, 5474, 5473, 4115);
--- UPDATE items SET tax_pct = 5 WHERE id = @badam;
+-- (d) BADAM stays at 0% GST (owner's decision). BADAM 200GM was the odd one out
+--     at 18% while its own 250g, 500g and 1kg siblings were 0% — bring it in line.
+UPDATE items SET tax_pct = 0 WHERE id = 4115;
 
 COMMIT;
 
