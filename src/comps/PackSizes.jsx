@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { FiPlus, FiLink, FiX, FiPackage } from "react-icons/fi";
+import { FiPlus, FiLink, FiX, FiPackage, FiEdit2 } from "react-icons/fi";
 import { C, API, Field, asNum, fmt2, generateEan13 } from "../ui.jsx";
 import BulkItemSelect from "./BulkItemSelect.jsx";
 import toast from "../toast.js";
@@ -35,7 +35,8 @@ async function post(body) {
 }
 
 export default function PackSizes({ bulk, packs, stockKg, itemMaster, onChanged }) {
-  const [mode, setMode] = useState(null);           // null | "add" | "connect"
+  const [mode, setMode] = useState(null);           // null | "add" | "connect" | "stock"
+  const [countKg, setCountKg] = useState("");
   const [busy, setBusy] = useState(false);
   const [grams, setGrams] = useState("");
   const [name, setName] = useState("");
@@ -48,7 +49,25 @@ export default function PackSizes({ bulk, packs, stockKg, itemMaster, onChanged 
   const shownName = nameTouched ? name : suggested;
   const perKgSale = asNum(bulk.sale_price), perKgMrp = asNum(bulk.mrp);
 
-  const reset = () => { setMode(null); setGrams(""); setName(""); setNameTouched(false); setCode(""); setPick(null); };
+  const reset = () => { setMode(null); setGrams(""); setName(""); setNameTouched(false); setCode(""); setPick(null); setCountKg(""); };
+
+  // Physical count: set the total kg. The server works out the difference.
+  const saveStock = async () => {
+    if (String(countKg).trim() === "" || !(asNum(countKg) >= 0)) return toast.warn("Enter the stock you counted, in kg");
+    const target = asNum(countKg);
+    const diff = target - asNum(stockKg);
+    if (Math.abs(diff) < 0.0005) { reset(); return toast.success("Stock already matches"); }
+    if (!window.confirm(`Set ${bulk.name} stock from ${fmt2(stockKg)} kg to ${fmt2(target)} kg?\n\n` +
+      (diff < 0 ? `${fmt2(-diff)} kg will be taken off, soonest-expiry batch first.`
+                : `${fmt2(diff)} kg will be added as a stock adjustment.`))) return;
+    setBusy(true);
+    try {
+      const j = await post({ action: "setStock", bulkItemId: Number(bulk.id), kg: target });
+      toast.success(`${bulk.name}: ${fmt2(j.beforeKg)} → ${fmt2(j.afterKg)} kg`);
+      reset();
+      onChanged();
+    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
+  };
 
   const addSize = async () => {
     if (!(kg > 0)) return toast.warn("Enter the pack weight in grams");
@@ -96,6 +115,7 @@ export default function PackSizes({ bulk, packs, stockKg, itemMaster, onChanged 
           Pack sizes ({packs.length}) · {fmt2(stockKg)} kg in stock
         </div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button className="g-btn ghost sm" disabled={busy} onClick={() => { reset(); setCountKg(String(asNum(stockKg))); setMode("stock"); }}><FiEdit2 size={13} /> Set stock</button>
           <button className="g-btn ghost sm" disabled={busy} onClick={() => { reset(); setMode("add"); }}><FiPlus size={13} /> Add size</button>
           <button className="g-btn ghost sm" disabled={busy} onClick={() => { reset(); setMode("connect"); }}><FiLink size={13} /> Connect existing item</button>
         </div>
@@ -107,7 +127,31 @@ export default function PackSizes({ bulk, packs, stockKg, itemMaster, onChanged 
         Each purchase of this item reprices them all.
       </div>
 
-      {mode && (
+      {mode === "stock" && (
+        <div style={{ margin: "10px 18px 0", padding: "12px 14px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <Field label="Counted stock (kg)" hint={`System shows ${fmt2(stockKg)} kg`}>
+              <input className="g-inp" style={{ width: 160 }} value={countKg} autoFocus inputMode="decimal"
+                onChange={(e) => setCountKg(e.target.value.replace(/[^0-9.]/g, ""))}
+                onKeyDown={(e) => { if (e.key === "Enter") saveStock(); if (e.key === "Escape") reset(); }} />
+            </Field>
+            {String(countKg).trim() !== "" && Math.abs(asNum(countKg) - asNum(stockKg)) >= 0.0005 && (
+              <div style={{ fontSize: 13, fontWeight: 700, paddingBottom: 9, color: asNum(countKg) < asNum(stockKg) ? C.red : C.green }}>
+                {asNum(countKg) < asNum(stockKg) ? "−" : "+"}{fmt2(Math.abs(asNum(countKg) - asNum(stockKg)))} kg
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+              <button className="g-btn ghost sm" disabled={busy} onClick={reset}>Cancel</button>
+              <button className="g-btn primary sm" disabled={busy} onClick={saveStock}>Save stock</button>
+            </div>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: C.textSub }}>
+            Weigh or count everything — packed and loose — and enter the total. Every pack size's "packs left" updates from it.
+          </div>
+        </div>
+      )}
+
+      {mode && mode !== "stock" && (
         <div style={{ margin: "10px 18px 0", padding: "12px 14px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: mode === "add" ? "110px 1fr 1fr" : "2fr 110px", gap: 10, alignItems: "end" }}>
             {mode === "connect" && (
