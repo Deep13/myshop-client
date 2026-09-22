@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiRefreshCw, FiPrinter, FiDownload, FiDollarSign, FiX } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt } from "../thermalPrint.js";
 import { downloadExcel } from "../excelExport.js";
@@ -9,13 +9,14 @@ import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+const PAGE_SIZE = 20;   // bills per page on this list
 
 export default function Sales() {
   usePageMeta("Sales", "View, filter and manage all sales invoices");
   const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({ from: "", to: "", q: "", payType: "", status: "", dateRange: "This Month" });
+  const [filters, setFilters] = useState({ from: "", to: "", q: "", payType: "", status: "", dateRange: "Today" });
   const [sort, setSort] = useState({ key: "date", direction: "desc" });
   const [page, setPage] = useState(1);
 
@@ -375,7 +376,7 @@ export default function Sales() {
             </tbody>
           </table>
         </div>
-        <Pagination total={sorted.length} page={page} onPage={setPage} />
+        <Pagination total={sorted.length} page={page} onPage={setPage} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Delete Modal */}

@@ -407,11 +407,11 @@ export function applyDateRange(range) {
 }
 
 export const PAGE_SIZE = 100;
-export function Pagination({ total, page, onPage }) {
-  const pages = Math.ceil(total / PAGE_SIZE);
+export function Pagination({ total, page, onPage, pageSize = PAGE_SIZE }) {
+  const pages = Math.ceil(total / pageSize);
   if (pages <= 1) return null;
-  const from = (page - 1) * PAGE_SIZE + 1;
-  const to = Math.min(page * PAGE_SIZE, total);
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1.5px solid #e5e7eb", background: "#fafafa", fontSize: 13 }}>
       <span style={{ color: "#6b7280", fontWeight: 500 }}>Showing {from}–{to} of {total}</span>

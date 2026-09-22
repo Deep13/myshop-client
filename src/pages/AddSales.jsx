@@ -4,6 +4,7 @@ import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrin
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
+import notify from "../toast.js";   // the page's own inline message is already called `toast`
 import usePageMeta from "../usePageMeta.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -199,6 +200,14 @@ export default function AddSales() {
   const [cashGiven, setCashGiven] = useState("");   // cash tendered by customer
 
   const showToast = (msg, duration = 3000) => { setToast(msg); setTimeout(() => setToast(""), duration); };
+
+  // Confirmation for the sale saved just before this screen reloaded.
+  useEffect(() => {
+    const saved = sessionStorage.getItem("saleSaved");
+    if (!saved) return;
+    sessionStorage.removeItem("saleSaved");
+    notify.success(`Invoice ${saved} saved — ready for the next sale`);
+  }, []);
 
   /* ── Shop / Printer settings ── */
   const [showShopSettings, setShowShopSettings] = useState(false);
@@ -739,14 +748,19 @@ export default function AddSales() {
         }
       } catch (le) { console.warn("Loyalty action failed:", le); }
 
+      // A new sale stays on this screen, reloaded fresh for the next customer (new
+      // invoice number, current stock); an edit goes back to the list. The reload
+      // clears React state, so the confirmation is handed over via sessionStorage.
+      const next = isEdit ? "/sales" : "/addsales";
+      if (!isEdit) sessionStorage.setItem("saleSaved", finalInvoiceNo);
       const shouldPrint = andPrint || (!isEdit && getShopSettings().autoPrint);
       if (shouldPrint) {
         const printData = buildPrintData();
         printData.invoiceNo = finalInvoiceNo;
         printReceipt(printData);
-        setTimeout(() => { window.location.href = "/sales"; }, 1500);
+        setTimeout(() => { window.location.href = next; }, 1500);
       } else {
-        window.location.href = "/sales";
+        window.location.href = next;
       }
     } catch (e) { showToast(e.message || "Failed"); } finally { setSaving(false); }
   };

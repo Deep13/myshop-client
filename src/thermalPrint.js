@@ -19,6 +19,11 @@ const DEFAULT_SHOP = {
   lowStockLimit: 5,
 };
 
+// Blank paper below the footer, so the cutter doesn't cut right at the last line.
+// POS receipt drivers skip trailing white space, so the gap ends in a small dot —
+// without something printed at the bottom, the space would be trimmed away.
+const BOTTOM_SPACE = `<div style="height:12mm"></div><div style="text-align:center;font-size:8px;line-height:1">.</div>`;
+
 export function getShopSettings() {
   try {
     const s = JSON.parse(localStorage.getItem("shopSettings") || "null");
@@ -188,6 +193,7 @@ ${data.phone ? `<div class="mr"><span>Phone: ${esc(data.phone)}</span></div>` : 
 ${savedHTML}
 
 <div class="ft">Terms &amp; Conditions<br>${esc(shop.footer)}</div>
+${BOTTOM_SPACE}
 
 </body></html>`;
 
@@ -347,6 +353,7 @@ ${data.phone ? `<div class="mr"><span>Phone: ${esc(data.phone)}</span></div>` : 
 ${savedHTML}
 
 <div class="ft">Terms &amp; Conditions<br>${esc(shop.footer)}</div>
+${BOTTOM_SPACE}
 
 </body></html>`;
 }

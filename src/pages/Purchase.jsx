@@ -1,20 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX, FiClock } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+const PAGE_SIZE = 20;   // bills per page on this list
 
 export default function Purchase() {
   usePageMeta("Purchase", "View, filter and manage all purchase bills");
   const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({ from: "", to: "", q: "", status: "", billType: "", dateRange: "This Month" });
+  const [filters, setFilters] = useState({ from: "", to: "", q: "", status: "", billType: "", dateRange: "Today" });
   const [sort, setSort] = useState({ key: "bill_date", direction: "desc" });
   const [page, setPage] = useState(1);
 
@@ -240,7 +241,7 @@ export default function Purchase() {
             </tbody>
           </table>
         </div>
-        <Pagination total={sorted.length} page={page} onPage={setPage} />
+        <Pagination total={sorted.length} page={page} onPage={setPage} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Pay Modal */}
