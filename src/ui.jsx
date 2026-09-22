@@ -456,6 +456,15 @@ export const compareBatchesForSale = (a, b) => {
   return asNum(b.current_qty) - asNum(a.current_qty);
 };
 
+/* A fresh 13-digit EAN barcode for an item that has none printed: 12 digits from
+   the clock plus two random ones, then the standard EAN-13 check digit. */
+export const generateEan13 = () => {
+  const d = Date.now().toString().slice(-10) + Math.floor(Math.random() * 100).toString().padStart(2, "0");
+  let s = 0;
+  for (let i = 0; i < 12; i++) s += parseInt(d[i], 10) * (i % 2 === 0 ? 1 : 3);
+  return d + ((10 - (s % 10)) % 10);
+};
+
 /* Short-dated goods are best spotted while the delivery is still on the counter,
    not weeks later on a write-off report. Flags a date that has already passed or
    falls inside the next 90 days; returns null when there is no date to judge. */

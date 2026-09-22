@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { FiTrash2, FiX, FiCheck, FiPlus, FiTruck, FiSearch, FiPackage, FiCreditCard, FiUpload, FiPrinter, FiRefreshCw, FiDollarSign, FiAlertCircle } from "react-icons/fi";
 import * as XLSX from "xlsx";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound, expiryAlert, EXPIRY_WARN_DAYS } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, asNum, todayISO, fmt2, fmtDate, smartRound, expiryAlert, EXPIRY_WARN_DAYS, generateEan13 } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
@@ -1272,6 +1272,8 @@ export default function AddPurchase() {
                 const sug = getSug(searchText);
                 const filled = r.itemName.trim();
                 const expAlert = expiryAlert(r.expDate);
+                // A bulk item is bought in kg, and its rates are per kg.
+                const isBulkRow = filled && Number((itemMaster.find((m) => m.code === r.code) || {}).isBulk) === 1;
                 return (
                   <tr key={idx} style={expAlert ? { background: expAlert.level === "expired" ? C.redLight : C.yellowLight } : undefined}>
                     <td style={{ paddingLeft: 8 }}>
@@ -1521,6 +1523,12 @@ export default function AddPurchase() {
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.qty} onChange={(e) => updRow(idx, { qty: e.target.value })} inputMode="decimal" placeholder="0" style={{ textAlign: "center" }} />
+                      {isBulkRow && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: C.brand, textAlign: "center", marginTop: 2 }}
+                          title="Bulk item: enter the quantity in kg, and the buy price, MRP and sale price per kg. Every pack size is repriced from them.">
+                          kg · rates / kg
+                        </div>
+                      )}
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.freeQty} onChange={(e) => updRow(idx, { freeQty: e.target.value })} inputMode="decimal" placeholder="0" style={{ textAlign: "center" }} />
@@ -1892,15 +1900,8 @@ export default function AddPurchase() {
           <Field label="Item Code" required hint="Short unique code">
             <div style={{ display: "flex", gap: 6 }}>
               <input className="g-inp lg" style={{ flex: 1 }} value={newItem.itemCode} onChange={(e) => setNewItem((p) => ({ ...p, itemCode: e.target.value }))} placeholder="e.g. PCM500" />
-              <button type="button" className="g-btn ghost" style={{ whiteSpace: "nowrap", height: 42 }} onClick={() => {
-                const t = Date.now().toString().slice(-10);
-                const r = Math.floor(Math.random() * 100).toString().padStart(2, "0");
-                const d = t + r;
-                let s = 0;
-                for (let i = 0; i < 12; i++) s += parseInt(d[i], 10) * (i % 2 === 0 ? 1 : 3);
-                const check = (10 - (s % 10)) % 10;
-                setNewItem((p) => ({ ...p, itemCode: d + check }));
-              }}>
+              <button type="button" className="g-btn ghost" style={{ whiteSpace: "nowrap", height: 42 }}
+                onClick={() => setNewItem((p) => ({ ...p, itemCode: generateEan13() }))}>
                 Generate
               </button>
             </div>

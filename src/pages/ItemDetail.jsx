@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiRefreshCw, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
 import { printLabel, printDualLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
-import BulkItemSelect from "../comps/BulkItemSelect.jsx";
+import PackSizes from "../comps/PackSizes.jsx";
 import HsnInput from "../comps/HsnInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -79,8 +79,7 @@ export default function ItemDetail() {
       purchasePrice: String(it.purchasePrice || it.purchase_price || ""),
       tax: String(it.tax || it.tax_pct || ""),
       is_primary: it.is_primary != 0,
-      bulkItemId: it.bulkItemId ?? it.bulk_item_id ?? null,
-      packWeight: (it.packWeight ?? it.pack_weight) != null ? String(it.packWeight ?? it.pack_weight) : "",
+      isBulk: Number(it.is_bulk) === 1,
     });
     setEditing(true);
   };
@@ -107,40 +106,15 @@ export default function ItemDetail() {
           purchasePrice: asNum(editForm.purchasePrice),
           tax: asNum(editForm.tax),
           is_primary: editForm.is_primary,
-          bulkItemId: editForm.bulkItemId || null,
-          packWeight: editForm.bulkItemId ? asNum(editForm.packWeight) : null,
+          isBulk: !!editForm.isBulk,
           updatedBy: user?.id || 1,
         }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
-      // Update local data
-      setData((prev) => ({
-        ...prev,
-        item: {
-          ...prev.item,
-          name: editForm.name.trim(),
-          code: editForm.code.trim(),
-          hsn: editForm.hsn.trim(),
-          category: (editForm.category || "").trim(),
-          mrp: asNum(editForm.mrp),
-          sale_price: asNum(editForm.salePrice),
-          salePrice: asNum(editForm.salePrice),
-          pack_size:      editForm.packSize     ? asNum(editForm.packSize)     : null,
-          packSize:       editForm.packSize     ? asNum(editForm.packSize)     : null,
-          bulk_item_id:   editForm.bulkItemId || null,
-          bulkItemId:     editForm.bulkItemId || null,
-          pack_weight:    editForm.bulkItemId ? asNum(editForm.packWeight) : null,
-          packWeight:     editForm.bulkItemId ? asNum(editForm.packWeight) : null,
-          bag_sale_price: editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
-          bagSalePrice:   editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
-          purchase_price: asNum(editForm.purchasePrice),
-          purchasePrice: asNum(editForm.purchasePrice),
-          tax: asNum(editForm.tax),
-          tax_pct: asNum(editForm.tax),
-          is_primary: editForm.is_primary ? 1 : 0,
-        },
-      }));
+      // Reload rather than patch locally: changing a bulk item's per-kg price
+      // reprices its pack sizes on the server.
+      await loadDetail();
       setEditing(false);
     } catch (e) {
       toast.error(e.message || "Failed to update");
@@ -271,17 +245,16 @@ export default function ItemDetail() {
     } catch (e) { toast.error(e.message || "Failed to delete"); }
   };
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API}/get_item_detail.php?item_id=${itemId}`);
-        const j = await r.json();
-        if (j.status === "success") setData(j);
-        else toast.error(j.message);
-      } catch (e) { toast.error("Failed to load"); }
-      finally { setLoading(false); }
-    })();
+  const loadDetail = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/get_item_detail.php?item_id=${itemId}`);
+      const j = await r.json();
+      if (j.status === "success") setData(j);
+      else toast.error(j.message);
+    } catch { toast.error("Failed to load"); }
+    finally { setLoading(false); }
   }, [itemId]);
+  useEffect(() => { loadDetail(); }, [loadDetail]);
 
   if (loading) return (
     <div id="g-root" style={{ padding: "40px", textAlign: "center", color: C.textSub }}>
@@ -291,7 +264,11 @@ export default function ItemDetail() {
 
   if (!data) return null;
 
-  const { item, batches, purchase_history, sales_history } = data;
+  const { item, batches, purchase_history, sales_history, bulk } = data;
+  // A bulk item holds stock in kg and its prices are per kg; a pack is cut from one.
+  const isBulkItem = Number(item.is_bulk) === 1;
+  const isPack     = !!item.bulk_item_id;
+  const perKg      = isBulkItem ? " / kg" : "";
 
   // Aggregate totals
   const totalStock     = batches.reduce((a, b) => a + asNum(b.current_qty), 0);
@@ -381,9 +358,10 @@ export default function ItemDetail() {
                 <InfoRow label="Code"           value={item.code} bold />
                 <InfoRow label="Category"       value={item.category || "—"} />
                 <InfoRow label="HSN"            value={item.hsn || "—"} />
-                <InfoRow label="MRP"            value={`₹${item.mrp}`} bold />
-                <InfoRow label="Sale Price"     value={`₹${item.salePrice || item.sale_price}`} />
-                <InfoRow label="Purchase Price" value={`₹${item.purchasePrice || item.purchase_price}`} />
+                {isBulkItem && <InfoRow label="Type" value="Bulk item — stock in kg, sold as packs" bold />}
+                <InfoRow label={`MRP${perKg}`}            value={`₹${item.mrp}`} bold />
+                <InfoRow label={`Sale Price${perKg}`}     value={`₹${item.salePrice || item.sale_price}`} />
+                <InfoRow label={`Purchase Price${perKg}`} value={`₹${item.purchasePrice || item.purchase_price}`} />
                 <InfoRow label="Tax %"          value={asNum(item.tax || item.tax_pct) > 0 ? `${item.tax || item.tax_pct}%` : "None"} />
                 {/^Rice\b/i.test(item.category || "") && (item.packSize || item.pack_size) && (
                   <>
@@ -394,12 +372,19 @@ export default function ItemDetail() {
                 {(item.bulkItemId || item.bulk_item_id) && (
                   <>
                     <InfoRow label="Cut from" value={
-                      <Link to={`/items/${item.bulkItemId || item.bulk_item_id}`} style={{ color: C.brand, fontWeight: 700 }}>
-                        {(itemMaster.find((m) => Number(m.id) === Number(item.bulkItemId || item.bulk_item_id)) || {}).name || "Bulk item"}
+                      <Link to={`/inventory/${item.bulk_item_id}`} style={{ color: C.brand, fontWeight: 700 }}>
+                        {bulk?.cut_from?.name || "Bulk item"}
                       </Link>
                     } />
-                    <InfoRow label="Pack weight" value={`${item.packWeight || item.pack_weight} kg per packet`} />
+                    <InfoRow label="Pack weight" value={`${asNum(item.pack_weight)} kg per pack`} />
+                    <InfoRow label="Packs available" value={`${bulk?.packs_available ?? 0} (from ${fmt2(bulk?.stock_kg ?? 0)} kg)`} bold />
                   </>
+                )}
+                {isPack && (
+                  <div style={{ margin: "8px 0 10px", padding: "8px 10px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12, color: C.textSub }}>
+                    This pack holds no stock of its own. Its price follows the bulk item's per-kg price:
+                    you can change it here, but the next purchase of the bulk item resets it.
+                  </div>
                 )}
               </div>
             ) : (
@@ -423,13 +408,14 @@ export default function ItemDetail() {
                     placeholder="HSN code" />
                 </Field>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <Field label="MRP (₹)">
+                  <Field label={`MRP (₹)${editForm.isBulk ? " / kg" : ""}`}>
                     <input className="g-inp" value={editForm.mrp} onChange={(e) => ef("mrp", e.target.value)} inputMode="decimal" />
                   </Field>
-                  <Field label="Sale Price (₹)" hint="Per-kg loose rate">
+                  <Field label={`Sale Price (₹)${editForm.isBulk ? " / kg" : ""}`}
+                    hint={editForm.isBulk ? "Every pack size follows this" : /^Rice\b/i.test(editForm.category || "") ? "Per-kg loose rate" : undefined}>
                     <input className="g-inp" value={editForm.salePrice} onChange={(e) => ef("salePrice", e.target.value)} inputMode="decimal" />
                   </Field>
-                  <Field label="Purchase Price (₹)">
+                  <Field label={`Purchase Price (₹)${editForm.isBulk ? " / kg" : ""}`}>
                     <input className="g-inp" value={editForm.purchasePrice} onChange={(e) => ef("purchasePrice", e.target.value)} inputMode="decimal" />
                   </Field>
                   <Field label="Tax %">
@@ -447,31 +433,21 @@ export default function ItemDetail() {
                   )}
                 </div>
 
-                {/* Repacked goods: this item is a fixed packet cut from a bulk
-                    item held in kg. Rice bag-packs use Pack Size above instead. */}
-                {!/^Rice\b/i.test(editForm.category || "") && (
-                  <div style={{ padding: "10px 12px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-                    <div style={{ fontWeight: 700, color: C.textSub, marginBottom: 6, fontSize: 12 }}>Repacked from bulk</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
-                      <Field label="Bulk item" hint="Stock is held here, in kg">
-                        <BulkItemSelect className="g-inp" items={itemMaster}
-                          valueId={editForm.bulkItemId} excludeId={Number(itemId)}
-                          onPick={(it) => setEditForm((p) => ({ ...p, bulkItemId: it ? Number(it.id) : null, packWeight: it ? p.packWeight : "" }))} />
-                      </Field>
-                      <Field label="Pack weight (kg)" hint="0.25 for 250 g">
-                        <input className="g-inp" value={editForm.packWeight || ""} disabled={!editForm.bulkItemId}
-                          onChange={(e) => ef("packWeight", e.target.value)} inputMode="decimal" placeholder="0.250" />
-                      </Field>
-                    </div>
-                    {editForm.bulkItemId > 0 && asNum(editForm.packWeight) > 0 && (
-                      <div style={{ marginTop: 8, fontSize: 12, color: C.textSub }}>
-                        Selling 1 × {editForm.name || "this packet"} takes{" "}
-                        <b>{fmt2(asNum(editForm.packWeight))} kg</b> off{" "}
-                        <b>{(itemMaster.find((m) => Number(m.id) === Number(editForm.bulkItemId)) || {}).name || "the bulk item"}</b>.
-                        This packet holds no stock of its own, and its price stays whatever you set above.
-                      </div>
-                    )}
-                  </div>
+                {/* Bulk switch. A pack (cut from another bulk item) can't be one,
+                    and Rice bag items are priced per bag by their own formula. */}
+                {!isPack && !(/^Rice\b/i.test(editForm.category || "") && asNum(editForm.packSize) > 0) && (
+                  <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 8, cursor: "pointer",
+                                  background: editForm.isBulk ? "#eff6ff" : "#f8fafc", border: `1px solid ${editForm.isBulk ? "#bfdbfe" : "#e2e8f0"}` }}>
+                    <input type="checkbox" checked={!!editForm.isBulk} onChange={(e) => ef("isBulk", e.target.checked)}
+                      style={{ marginTop: 2, width: 16, height: 16, cursor: "pointer" }} />
+                    <span style={{ fontSize: 12.5, color: C.text }}>
+                      <b>Bulk item</b> — bought and stocked in kg, sold as pack sizes
+                      <span style={{ display: "block", color: C.textSub, marginTop: 2 }}>
+                        Its prices are per kg and every pack size follows them. A bulk item is not sold
+                        at the till — add its pack sizes after saving.
+                      </span>
+                    </span>
+                  </label>
                 )}
 
                 {/^Rice\b/i.test(editForm.category || "") && asNum(editForm.packSize) > 0 && (
@@ -523,13 +499,24 @@ export default function ItemDetail() {
           </div>
         </div>
 
-        {/* RIGHT — batches, purchase history, sales history */}
+        {/* RIGHT — pack sizes (bulk items), batches, purchase history, sales history */}
         <div>
 
+          {isBulkItem && (
+            <PackSizes bulk={item} packs={bulk?.packs || []} stockKg={asNum(bulk?.stock_kg)}
+              itemMaster={itemMaster} onChanged={loadDetail} />
+          )}
+
           {/* Batches */}
-          <SectionCard icon={<FiPackage size={15} />} title={`Inventory Batches (${batches.length})`}>
+          <SectionCard icon={<FiPackage size={15} />} title={`Inventory Batches (${batches.length})${isBulkItem ? " — stock in kg" : ""}`}>
             {batches.length === 0 ? (
-              <div style={{ padding: "20px 18px", color: C.textSub, fontSize: 13 }}>No inventory batches found. Add stock via Purchase.</div>
+              <div style={{ padding: "20px 18px", color: C.textSub, fontSize: 13 }}>
+                {isPack
+                  ? <>This pack holds no stock of its own — it is cut from{" "}
+                      <Link to={`/inventory/${item.bulk_item_id}`} style={{ color: C.brand, fontWeight: 700 }}>{bulk?.cut_from?.name || "its bulk item"}</Link>.
+                      Buy that item, in kg, to restock.</>
+                  : "No inventory batches found. Add stock via Purchase."}
+              </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table className="g-table">

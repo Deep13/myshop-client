@@ -23,9 +23,16 @@ import Attendance from "./pages/Attendance.jsx";
 import MobileSale from "./pages/MobileSale.jsx";
 import MobileInventory from "./pages/MobileInventory.jsx";
 import MobileDashboard from "./pages/MobileDashboard.jsx";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "./Layout";
 import ProtectedRoute from "./ProtectedRoute.jsx";
+
+/* Item pages live at /inventory/:itemId. A packet's "Cut from" link briefly
+   pointed at /items/:itemId, so keep that address working for anything saved. */
+function ItemsRedirect() {
+  const { itemId } = useParams();
+  return <Navigate to={`/inventory/${itemId}`} replace />;
+}
 
 /* Detect mobile device */
 const isMobile = () => {
@@ -80,6 +87,7 @@ createRoot(document.getElementById("root")).render(
         <Route path="/inventory"             element={<Inventory />} />
         <Route path="/inventory/writeoff"    element={<WriteOffExpired />} />
         <Route path="/inventory/:itemId"     element={<ItemDetail />} />
+        <Route path="/items/:itemId"         element={<ItemsRedirect />} />
         <Route path="/customers"           element={<Customers />} />
         <Route path="/customers/:name"     element={<CustomerDetail />} />
         <Route path="/distributors"        element={<Distributors />} />

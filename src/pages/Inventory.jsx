@@ -93,6 +93,7 @@ export default function Inventory() {
     if (filterExp === "expiring")    rows = rows.filter((r) => r.hasExpiring && !r.hasExpired);
     if (filterExp === "instock")     rows = rows.filter((r) => r.totalStock > 0);
     if (filterExp === "outofstock")  rows = rows.filter((r) => r.totalStock <= 0);
+    if (filterExp === "bulk")        rows = rows.filter((r) => Number(r.isBulk) === 1 || r.bulkItemId);
     if (filterTax !== "")            rows = rows.filter((r) => String(asNum(r.tax)) === filterTax);
     if (filterCat === "__none__")    rows = rows.filter((r) => !r.category || r.category === "Uncategorized");
     else if (filterCat !== "")       rows = rows.filter((r) => (r.category || "") === filterCat);
@@ -218,6 +219,7 @@ export default function Inventory() {
           <option value="all">All Items</option>
           <option value="instock">In Stock Only</option>
           <option value="outofstock">Out of Stock</option>
+          <option value="bulk">Bulk items &amp; their packs</option>
           <option value="expiring">Expiring (90d)</option>
           <option value="expired">Expired</option>
         </select>
@@ -291,6 +293,11 @@ export default function Inventory() {
                       <div style={{ fontWeight: 600 }}>{r.name}</div>
                       {r.category && (
                         <span style={{ fontSize: 10, fontWeight: 600, color: C.textSub, background: "#f1f5f9", borderRadius: 4, padding: "1px 6px", marginTop: 2, marginRight: 4, display: "inline-block" }}>{r.category}</span>
+                      )}
+                      {Number(r.isBulk) === 1 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: C.brand, borderRadius: 4, padding: "1px 6px", marginTop: 2, marginRight: 4, display: "inline-block" }}>
+                          BULK · {Number(r.totalStock.toFixed(3))} KG
+                        </span>
                       )}
                       {r.packsAvailable != null && (
                         <span style={{ fontSize: 10, fontWeight: 700, color: C.brand, background: C.brandLighter, borderRadius: 4, padding: "1px 6px", marginTop: 2, marginRight: 4, display: "inline-block" }}>

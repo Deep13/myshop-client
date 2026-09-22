@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
 /* ── BulkItemSelect ────────────────────────────────────────
-   Picks the bulk item a packet is cut from. The bulk item is an
-   ordinary item that holds its stock in kg (e.g. "KAJU BULK");
-   packets themselves are excluded, since links are one level deep.
+   Picks an existing item to connect to a bulk item as one of its
+   pack sizes. Only ordinary items qualify: not the bulk item itself,
+   not another bulk item, not an item that is already a pack, and not
+   a Rice bag item (priced per bag by its own formula).
 
    Props:
-     items    - item master list (from get_items_all.php)
-     valueId  - currently linked bulk item id (number | null)
-     excludeId- this item's own id, so it can't point at itself
-     onPick   - called with the chosen item, or null when cleared
+     items     - item master list (from get_items_all.php)
+     valueId   - currently picked item id (number | null)
+     excludeId - the bulk item's own id
+     onPick    - called with the chosen item, or null when cleared
 */
+const connectable = (it, excludeId) =>
+  Number(it.id) !== Number(excludeId) &&
+  !it.bulkItemId &&
+  Number(it.isBulk) !== 1 &&
+  !(/^Rice\b/i.test(it.category || "") && Number(it.packSize) > 0);
+
 export default function BulkItemSelect({ items, valueId, excludeId, onPick, className, inputStyle }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
@@ -26,7 +33,7 @@ export default function BulkItemSelect({ items, valueId, excludeId, onPick, clas
   const selected = (items || []).find((it) => Number(it.id) === Number(valueId)) || null;
   const q = (search || "").toLowerCase().trim();
   const filtered = (items || [])
-    .filter((it) => Number(it.id) !== Number(excludeId) && !it.bulkItemId)
+    .filter((it) => connectable(it, excludeId))
     .filter((it) => !q || (it.name || "").toLowerCase().includes(q) || (it.code || "").toLowerCase().includes(q))
     .slice(0, 50);
 
@@ -55,13 +62,13 @@ export default function BulkItemSelect({ items, valueId, excludeId, onPick, clas
           else if (e.key === "Enter" && highlight >= 0) { e.preventDefault(); pick(filtered[highlight]); }
           else if (e.key === "Escape") { setOpen(false); }
         }}
-        placeholder="Not a packet — search to link one"
+        placeholder="Search an item by name or barcode"
         style={{ width: "100%", boxSizing: "border-box", cursor: "pointer", ...inputStyle }}
       />
       {selected && !open && (
         <button type="button"
           onClick={(e) => { e.stopPropagation(); pick(null); }}
-          title="Unlink from the bulk item"
+          title="Clear"
           style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", cursor: "pointer", color: "#64748b", fontSize: 16, lineHeight: 1 }}>×</button>
       )}
       {open && filtered.length > 0 && (
