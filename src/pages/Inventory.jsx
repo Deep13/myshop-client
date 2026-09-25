@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent, FiTag, FiX, FiAlertTriangle } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, fmtDate, Pagination, PAGE_SIZE } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, fmtDate, Pagination } from "../ui.jsx";
+
+const PAGE_SIZE = 20;   // items per page on this list
 import CategorySelect from "../comps/CategorySelect.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
@@ -331,7 +333,7 @@ export default function Inventory() {
             </tbody>
           </table>
         </div>
-        <Pagination total={filtered.length} page={page} onPage={setPage} />
+        <Pagination total={filtered.length} page={page} onPage={setPage} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Bulk GST Modal */}
