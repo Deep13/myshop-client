@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
 import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
@@ -62,10 +62,7 @@ export default function MobileSale() {
     const q = code.replace(/[\s\r\n\t\x00-\x1f]/g, "").toLowerCase();
     if (!q) return null;
     const batches = inventory.filter(
-      (it) => {
-        const c = (it.item_code || "").toLowerCase();
-        return c === q || c === q.replace(/^0+/, "") || q === c.replace(/^0+/, "") || (it.barcode || "").toLowerCase() === q;
-      }
+      (it) => sameBarcode(it.item_code, q) || sameBarcode(it.barcode, q)
     );
     return batches.sort(compareBatchesForSale)[0] || null;
   }, [inventory]);
@@ -156,7 +153,7 @@ export default function MobileSale() {
     const q = manualSearch.trim().toLowerCase();
     if (!q) { setSuggestions([]); return; }
     // A full barcode lists every batch of that item; name searches stay capped.
-    const scanned = inventory.filter((it) => (it.item_code || "").toLowerCase() === q);
+    const scanned = inventory.filter((it) => sameBarcode(it.item_code, q));
     if (scanned.length) { setSuggestions(scanned.sort(compareBatchesForSale)); return; }
     const startsWith = (it) => ((it.item_name || "").toLowerCase().startsWith(q) || (it.item_code || "").toLowerCase().startsWith(q) ? 0 : 1);
     const results = inventory.filter((it) =>

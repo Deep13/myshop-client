@@ -519,6 +519,23 @@ export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}
 export const fmtDate = (d) => { if (!d) return "—"; const p = String(d).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d; };
 export const fmt2 = (n) => Number(n || 0).toFixed(2);
 export const fmtINR = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* ── Barcode matching ──────────────────────────────────────────
+   A UPC-A barcode is 12 digits, and the very same symbol read as EAN-13
+   carries a leading zero: 0780803868402 and 780803868402 are one barcode.
+   Scanners disagree on which form they send — some strip the zero, some add
+   it — so a numeric code is compared on its 12-digit core. Anything that
+   isn't a plain 12-to-14-digit number (internal codes, names) compares as
+   before, case-insensitively. */
+export const normalizeBarcode = (s) => {
+  const t = String(s ?? "").replace(/[\s\r\n\t]/g, "");
+  if (!/^\d{12,14}$/.test(t)) return t.toLowerCase();
+  return t.replace(/^0+(?=\d{12}$)/, "");
+};
+export const sameBarcode = (a, b) => {
+  const x = normalizeBarcode(a);
+  return x !== "" && x === normalizeBarcode(b);
+};
+
 /* ── "Buy N for ₹X" offer pricing ──────────────────────────────
    An item can carry a quantity offer (offer_qty pieces for offer_price,
    tax-inclusive). A line is priced as whole sets at the offer price plus

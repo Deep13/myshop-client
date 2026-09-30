@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import notify from "../toast.js";   // the page's own inline message is already called `toast`
@@ -283,6 +283,8 @@ export default function AddSales() {
           bulk_item_id:   it.bulkItemId   != null ? Number(it.bulkItemId)   : null,
           pack_weight:    it.packWeight   != null ? Number(it.packWeight)   : null,
           is_pack: it.bulkItemId ? 1 : 0,
+          offer_qty:   Number(it.offerQty   || 0),
+          offer_price: Number(it.offerPrice || 0),
         }));
       setInventory([...invList, ...synthetic]);
     } catch { }
@@ -374,8 +376,9 @@ export default function AddSales() {
   const getInvSug = (text) => {
     const q = String(text || "").trim().toLowerCase();
     if (!q) return [];
-    // A scanned barcode lists every batch of that item, uncapped.
-    const scanned = inventory.filter((inv) => (inv.item_code || "").toLowerCase() === q);
+    // A scanned barcode lists every batch of that item, uncapped. UPC-A and
+    // EAN-13 forms of the same barcode match (see sameBarcode).
+    const scanned = inventory.filter((inv) => sameBarcode(inv.item_code, text));
     if (scanned.length) return scanned.sort(compareBatchesForSale);
     // Score: 0 = name or code starts with q (best), 1 = contains anywhere
     const scored = [];
@@ -571,7 +574,7 @@ export default function AddSales() {
     const q = val.trim().toLowerCase();
     if (!q) return;
     const matches = inventory.filter((inv) =>
-      (inv.item_code || "").toLowerCase() === q ||
+      sameBarcode(inv.item_code, val) ||
       (inv.item_name || "").toLowerCase() === q
     );
     if (matches.length === 1) {
