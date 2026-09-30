@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import notify from "../toast.js";   // the page's own inline message is already called `toast`
@@ -26,6 +26,7 @@ const blankRow = () => ({
   batchNo: "", expDate: "", mrp: "", qty: "", salePrice: "",
   discount: "", tax: "", amount: "",
   packSize: null, bagSalePrice: null,
+  offerQty: 0, offerPrice: 0, baseSalePrice: "", offerOff: false,
   purchasePrice: 0, stockQty: 0, category: "",
 });
 
@@ -46,7 +47,29 @@ function calcRowAmount(row) {
     const n = Math.round(qty / ps);
     if (n >= 1 && Math.abs(qty - n * ps) < 1e-6) return n * bsp;
   }
+  // "Buy N for ₹X" offer — priced off the item's ordinary sale price, which is
+  // kept in baseSalePrice because salePrice itself shows the effective rate.
+  const oq = asNum(row.offerQty), op = asNum(row.offerPrice);
+  if (!row.offerOff && oq >= 2 && op > 0 && qty > 0) {
+    const base = asNum(row.baseSalePrice) > 0 ? asNum(row.baseSalePrice) : sp;
+    return offerTotal(qty, base, oq, op);
+  }
   return qty * sp;
+}
+
+/* Re-price a row for its quantity offer at the row's current qty: the sale
+   price shown becomes the effective per-piece rate, so qty × price = amount
+   and the receipt and GST split stay consistent. Editing the price or the
+   discount by hand turns the offer off for that line (offerOff). */
+function applyOfferPrice(u) {
+  const oq = asNum(u.offerQty), op = asNum(u.offerPrice);
+  if (u.offerOff || !(oq >= 2 && op > 0)) return u;
+  const base = asNum(u.baseSalePrice) > 0 ? asNum(u.baseSalePrice) : asNum(u.salePrice);
+  const q = asNum(u.qty);
+  u.salePrice = fmt2(q > 0 ? offerTotal(q, base, oq, op) / q : base);
+  const mrpN = asNum(u.mrp);
+  u.discount = mrpN > 0 ? fmt2(Math.max(0, mrpN - asNum(u.salePrice))) : "";
+  return u;
 }
 
 /* Tax portion inside the inclusive sale price */
@@ -384,7 +407,8 @@ export default function AddSales() {
   const onSalePriceChange = (i, val) => {
     setRows((prev) => {
       const n = [...prev];
-      const u = { ...n[i], salePrice: val };
+      // A hand-typed price wins over the item's quantity offer.
+      const u = { ...n[i], salePrice: val, offerOff: true };
       const mrp = asNum(u.mrp), sp = asNum(val);
       u.discount = mrp > 0 ? fmt2(Math.max(0, mrp - sp)) : "";
       // For bag-pack (rice) items: if user is editing in loose mode (qty not a bag multiple),
@@ -405,7 +429,7 @@ export default function AddSales() {
   const onDiscountChange = (i, val) => {
     setRows((prev) => {
       const n = [...prev];
-      const u = { ...n[i], discount: val };
+      const u = { ...n[i], discount: val, offerOff: true };
       const mrp = asNum(u.mrp);
       const disc = asNum(val);
       if (mrp > 0) {
@@ -442,6 +466,7 @@ export default function AddSales() {
         const mrpN = asNum(u.mrp), spN = asNum(u.salePrice);
         u.discount = mrpN > 0 ? fmt2(Math.max(0, mrpN - spN)) : "";
       }
+      applyOfferPrice(u);
       u.amount = fmt2(calcRowAmount({ ...u, qty }));
       n[i] = u;
       return n;
@@ -464,6 +489,7 @@ export default function AddSales() {
         const existing = { ...n[existingIdx] };
         const newQty = asNum(existing.qty) + 1;
         existing.qty = String(newQty);
+        applyOfferPrice(existing);
         existing.amount = fmt2(calcRowAmount(existing));
         n[existingIdx] = existing;
         // Clear the current row search
@@ -504,6 +530,9 @@ export default function AddSales() {
         tax: String(inv.tax_pct || ""), qty: "1",
         packSize: ps,
         bagSalePrice: bsp,
+        offerQty: asNum(inv.offer_qty), offerPrice: asNum(inv.offer_price),
+        baseSalePrice: fmt2(sp),                                                 // price before any quantity offer
+        offerOff: false,
         looseSalePrice: fmt2(sp),                                                // remembered loose per-kg rate
         // Snapshot for the row-hover tooltip — buy price + stock at pick time.
         // Effective buy price = stored purchase_price + GST when the bill was
@@ -1274,6 +1303,20 @@ export default function AddSales() {
                         return (
                           <div style={{ fontSize: 9, textAlign: "center", fontWeight: 800, color: C.brand, background: C.brandLighter, borderRadius: 3, padding: "1px 4px", marginTop: 2 }}>
                             {n > 1 ? `BAG×${n}` : "BAG"}
+                          </div>
+                        );
+                      })()}
+                      {/* Quantity offer — solid once enough pieces are on the line */}
+                      {(() => {
+                        const lbl = offerLabel(r.offerQty, r.offerPrice);
+                        if (!lbl) return null;
+                        const q = asNum(r.qty);
+                        const live = !r.offerOff && q >= asNum(r.offerQty) && Number.isInteger(q);
+                        return (
+                          <div title={r.offerOff ? "Offer off — price was edited by hand" : `Offer price: ${lbl}`}
+                            style={{ fontSize: 9, textAlign: "center", fontWeight: 800, borderRadius: 3, padding: "1px 4px", marginTop: 2,
+                              color: live ? "#fff" : C.textSub, background: live ? C.green : "#f1f5f9" }}>
+                            {lbl}
                           </div>
                         );
                       })()}

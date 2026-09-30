@@ -519,6 +519,26 @@ export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}
 export const fmtDate = (d) => { if (!d) return "—"; const p = String(d).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d; };
 export const fmt2 = (n) => Number(n || 0).toFixed(2);
 export const fmtINR = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* ── "Buy N for ₹X" offer pricing ──────────────────────────────
+   An item can carry a quantity offer (offer_qty pieces for offer_price,
+   tax-inclusive). A line is priced as whole sets at the offer price plus
+   any leftover pieces at the ordinary sale price — so 3 tees on "2 for 699"
+   with a 399 sale price come to 699 + 399 = 1098.
+   Fractional quantities never take the offer (it is a per-piece deal). */
+export const offerTotal = (qty, unitPrice, offerQty, offerPrice) => {
+  const q = asNum(qty), u = asNum(unitPrice);
+  const oq = asNum(offerQty), op = asNum(offerPrice);
+  if (!(oq >= 2 && op > 0 && q > 0) || !Number.isInteger(q)) return q * u;
+  const sets = Math.floor(q / oq);
+  return sets * op + (q - sets * oq) * u;
+};
+/* Short label for the till and the item page — "2 for ₹699". */
+export const offerLabel = (offerQty, offerPrice) => {
+  const oq = asNum(offerQty), op = asNum(offerPrice);
+  if (!(oq >= 2 && op > 0)) return "";
+  return `${oq} for ₹${op % 1 === 0 ? op : fmt2(op)}`;
+};
+
 // Half-up at >0.5: 100.5 -> 100, 100.51 -> 101, 100.49 -> 100.
 export const smartRound = (v) => {
   const n = Number(v) || 0;

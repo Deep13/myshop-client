@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
 import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
@@ -11,6 +11,11 @@ const C = {
 };
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
+
+/* What a cart line costs, after any "buy N for ₹X" offer on the item. */
+const lineTotal = (c) => offerTotal(c.qty, c.salePrice, c.offerQty, c.offerPrice);
+/* Effective per-piece rate — what goes on the bill line so qty × price = amount. */
+const linePrice = (c) => (c.qty > 0 ? lineTotal(c) / c.qty : asNum(c.salePrice));
 
 export default function MobileSale() {
   usePageMeta("Quick Sale", "Scan or search items for a quick sale");
@@ -86,6 +91,8 @@ export default function MobileSale() {
         expDate: item.exp_date || "",
         mrp: asNum(item.mrp),
         salePrice: asNum(item.sale_price),
+        offerQty: asNum(item.offer_qty),
+        offerPrice: asNum(item.offer_price),
         tax: asNum(item.tax_pct),
         gstFlag: item.gst_flag,
         qty: 1,
@@ -160,8 +167,9 @@ export default function MobileSale() {
     setSuggestions(results.slice(0, 8));
   }, [manualSearch, inventory]);
 
-  // Cart calculations
-  const cartTotal = useMemo(() => cart.reduce((s, c) => s + c.salePrice * c.qty, 0), [cart]);
+  // Cart calculations — a line takes the item's "buy N for ₹X" offer when it holds
+  // enough pieces; leftovers stay at the ordinary sale price.
+  const cartTotal = useMemo(() => cart.reduce((s, c) => s + lineTotal(c), 0), [cart]);
   const roundedTotal = useMemo(() => Math.round(cartTotal), [cartTotal]);
   const itemCount = useMemo(() => cart.reduce((s, c) => s + c.qty, 0), [cart]);
 
@@ -192,10 +200,10 @@ export default function MobileSale() {
         expDate: c.expDate,
         mrp: c.mrp,
         qty: c.qty,
-        price: c.salePrice,
-        discount: fmt2(Math.max(0, c.mrp - c.salePrice)),
+        price: Number(fmt2(linePrice(c))),
+        discount: fmt2(Math.max(0, c.mrp - linePrice(c))),
         tax: c.tax,
-        amount: c.salePrice * c.qty,
+        amount: lineTotal(c),
       }));
       const totals = {
         grandTotal: fmt2(cartTotal),
@@ -375,7 +383,7 @@ export default function MobileSale() {
                     phone: savedInvoice.phone,
                     items: savedInvoice.items.map((c) => ({
                       name: c.itemName, mrp: c.mrp, qty: c.qty,
-                      price: c.salePrice, amount: c.salePrice * c.qty, tax: c.tax,
+                      price: linePrice(c), amount: lineTotal(c), tax: c.tax,
                     })),
                     totalQty: savedInvoice.items.reduce((s, c) => s + c.qty, 0),
                     subTotal: savedInvoice.total,
@@ -495,8 +503,14 @@ export default function MobileSale() {
                     {c.itemName}
                   </div>
                   <div style={{ fontSize: 12, color: C.sub }}>
-                    ₹{fmt2(c.salePrice)} × {c.qty} = <b style={{ color: C.text }}>₹{fmt2(c.salePrice * c.qty)}</b>
+                    ₹{fmt2(linePrice(c))} × {c.qty} = <b style={{ color: C.text }}>₹{fmt2(lineTotal(c))}</b>
                   </div>
+                  {offerLabel(c.offerQty, c.offerPrice) && (
+                    <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2,
+                      color: c.qty >= asNum(c.offerQty) ? C.green : C.sub }}>
+                      Offer: {offerLabel(c.offerQty, c.offerPrice)}
+                    </div>
+                  )}
                 </div>
                 {/* Qty controls */}
                 <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0 }}>
@@ -645,7 +659,7 @@ export default function MobileSale() {
                   padding: "4px 0", borderBottom: i < cart.length - 1 ? "1px solid #e5e7eb" : "none",
                 }}>
                   <span style={{ color: C.sub }}>{c.itemName} × {c.qty}</span>
-                  <span style={{ fontWeight: 700 }}>₹{fmt2(c.salePrice * c.qty)}</span>
+                  <span style={{ fontWeight: 700 }}>₹{fmt2(lineTotal(c))}</span>
                 </div>
               ))}
               <div style={{

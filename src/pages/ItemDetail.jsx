@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiRefreshCw, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
 import { printLabel, printDualLabel } from "../printLabel.js";
-import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2 } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2, offerLabel } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
 import PackSizes from "../comps/PackSizes.jsx";
@@ -77,6 +77,8 @@ export default function ItemDetail() {
       packSize: it.packSize != null ? String(it.packSize) : (it.pack_size != null ? String(it.pack_size) : ""),
       bagSalePrice: it.bagSalePrice != null ? String(it.bagSalePrice) : (it.bag_sale_price != null ? String(it.bag_sale_price) : ""),
       purchasePrice: String(it.purchasePrice || it.purchase_price || ""),
+      offerQty:   asNum(it.offer_qty)   > 0 ? String(it.offer_qty)   : "",
+      offerPrice: asNum(it.offer_price) > 0 ? String(it.offer_price) : "",
       tax: String(it.tax || it.tax_pct || ""),
       is_primary: it.is_primary != 0,
       isBulk: Number(it.is_bulk) === 1,
@@ -104,6 +106,8 @@ export default function ItemDetail() {
           packSize:     editForm.packSize     ? asNum(editForm.packSize)     : null,
           bagSalePrice: editForm.bagSalePrice ? asNum(editForm.bagSalePrice) : null,
           purchasePrice: asNum(editForm.purchasePrice),
+          offerQty:   asNum(editForm.offerQty),
+          offerPrice: asNum(editForm.offerPrice),
           tax: asNum(editForm.tax),
           is_primary: editForm.is_primary,
           isBulk: !!editForm.isBulk,
@@ -363,6 +367,16 @@ export default function ItemDetail() {
                 <InfoRow label={`Sale Price${perKg}`}     value={`₹${item.salePrice || item.sale_price}`} />
                 <InfoRow label={`Purchase Price${perKg}`} value={`₹${item.purchasePrice || item.purchase_price}`} />
                 <InfoRow label="Tax %"          value={asNum(item.tax || item.tax_pct) > 0 ? `${item.tax || item.tax_pct}%` : "None"} />
+                {offerLabel(item.offer_qty, item.offer_price) && (
+                  <InfoRow label="Offer" bold value={
+                    <span>
+                      {offerLabel(item.offer_qty, item.offer_price)}
+                      <span style={{ color: C.textSub, fontWeight: 500 }}>
+                        {" "}— ₹{fmt2(asNum(item.offer_price) / asNum(item.offer_qty))} each
+                      </span>
+                    </span>
+                  } />
+                )}
                 {/^Rice\b/i.test(item.category || "") && (item.packSize || item.pack_size) && (
                   <>
                     <InfoRow label="Pack Size"      value={`${item.packSize || item.pack_size} kg / bag`} />
@@ -432,6 +446,32 @@ export default function ItemDetail() {
                     </>
                   )}
                 </div>
+
+                {/* Quantity offer — "buy N for ₹X" at the till. Not for bulk items:
+                    those are stocked in kg and never sold at the counter. */}
+                {!editForm.isBulk && (
+                  <div style={{ padding: "10px 12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: C.text, marginBottom: 8 }}>
+                      Quantity offer <span style={{ fontWeight: 500, color: C.textSub }}>— leave blank for none</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <Field label="Buy how many" hint="2 or more">
+                        <input className="g-inp" value={editForm.offerQty} onChange={(e) => ef("offerQty", e.target.value)} inputMode="numeric" placeholder="e.g. 2" />
+                      </Field>
+                      <Field label="For price (₹)" hint="Total for that many">
+                        <input className="g-inp" value={editForm.offerPrice} onChange={(e) => ef("offerPrice", e.target.value)} inputMode="decimal" placeholder="e.g. 699" />
+                      </Field>
+                    </div>
+                    {asNum(editForm.offerQty) >= 2 && asNum(editForm.offerPrice) > 0 && (
+                      <div style={{ marginTop: 6, fontSize: 11.5, color: C.textSub }}>
+                        ₹{fmt2(asNum(editForm.offerPrice) / asNum(editForm.offerQty))} each — customer saves
+                        ₹{fmt2(Math.max(0, asNum(editForm.offerQty) * asNum(editForm.salePrice) - asNum(editForm.offerPrice)))}
+                        {" "}against {editForm.offerQty} × ₹{fmt2(asNum(editForm.salePrice))}.
+                        Odd pieces beyond the offer sell at the sale price.
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Bulk switch. A pack (cut from another bulk item) can't be one,
                     and Rice bag items are priced per bag by their own formula. */}
