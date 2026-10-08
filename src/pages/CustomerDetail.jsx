@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiUser, FiEdit2, FiCheck, FiX, FiDollarSign, FiFileText, FiPhone } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, fmt2, fmtDate, fmtINR } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, fmt2, fmtDate, fmtINR, Pagination } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
+
+const PAGE_SIZE = 20;
 
 export default function CustomerDetail() {
   const { name: nameParam } = useParams();
@@ -14,6 +16,7 @@ export default function CustomerDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving]   = useState(false);
+  const [invPage, setInvPage] = useState(1);
   usePageMeta(data ? `${data.customer?.name || "Customer"} — Detail` : "Customer Detail", "Customer invoices, payments and balance");
 
   const load = async () => {
@@ -139,7 +142,7 @@ export default function CustomerDetail() {
             <tbody>
               {invoices.length === 0 ? (
                 <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No invoices</td></tr>
-              ) : invoices.map((inv) => {
+              ) : invoices.slice((invPage - 1) * PAGE_SIZE, invPage * PAGE_SIZE).map((inv) => {
                 const total = Number(inv.rounded_final_total || inv.final_total || 0);
                 const recv = Number(inv.received || 0);
                 const bal = Number(inv.balance || 0);
@@ -157,6 +160,7 @@ export default function CustomerDetail() {
             </tbody>
           </table>
         </div>
+        <Pagination total={invoices.length} page={invPage} onPage={setInvPage} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Payments */}

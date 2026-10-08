@@ -1,7 +1,12 @@
 // ─── Global Keyboard Shortcuts ───
 
+/* The walk-in customer. A bill needs a name and a 10-digit phone, and most
+   counter sales have neither, so these stand in for them. */
+export const WALK_IN = { name: "Unknown", phone: "9675474716" };
+
 export const SHORTCUTS = [
   { key: "ctrl+s",       display: "Ctrl + S",   label: "Save invoice / purchase bill",  action: "save" },
+  { key: "f9",           display: "F9",         label: `Save sale as ${WALK_IN.name} (${WALK_IN.phone})`, action: "quick-save" },
   { key: "ctrl+p",       display: "Ctrl + P",   label: "New Purchase Bill",             action: "navigate", path: "/addpurchase" },
   { key: "ctrl+shift+s", display: "Ctrl + Shift + S", label: "New Sale Invoice",        action: "navigate", path: "/addsales" },
   { key: "ctrl+shift+p", display: "Ctrl + Shift + P", label: "Purchase Bills List",     action: "navigate", path: "/purchase" },

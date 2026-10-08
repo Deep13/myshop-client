@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiTruck, FiEdit2, FiCheck, FiX, FiDollarSign, FiFileText } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, fmt2, fmtDate, fmtINR } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, fmt2, fmtDate, fmtINR, Pagination } from "../ui.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
+
+const PAGE_SIZE = 20;
 
 export default function DistributorDetail() {
   const { id } = useParams();
@@ -13,6 +15,7 @@ export default function DistributorDetail() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving]   = useState(false);
+  const [billPage, setBillPage] = useState(1);
   usePageMeta(data ? `${data.distributor?.name || "Distributor"} — Detail` : "Distributor Detail", "Distributor bills, payments and balance");
 
   const load = async () => {
@@ -132,7 +135,7 @@ export default function DistributorDetail() {
             <tbody>
               {bills.length === 0 ? (
                 <tr><td colSpan={8} style={{ textAlign: "center", padding: 24, color: C.textSub }}>No bills</td></tr>
-              ) : bills.map((b) => {
+              ) : bills.slice((billPage - 1) * PAGE_SIZE, billPage * PAGE_SIZE).map((b) => {
                 const total = Number(b.round_off_enabled == "1" ? b.rounded_grand_total : b.grand_total) || 0;
                 const paid = Number(b.paid_amount || 0);
                 const bal = total - paid;
@@ -153,6 +156,7 @@ export default function DistributorDetail() {
             </tbody>
           </table>
         </div>
+        <Pagination total={bills.length} page={billPage} onPage={setBillPage} pageSize={PAGE_SIZE} />
       </div>
 
       {/* Payments */}

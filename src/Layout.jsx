@@ -11,10 +11,12 @@ export default function Layout() {
       const sc = matchShortcut(e);
       if (!sc) return;
 
-      // Don't intercept when typing in inputs (except for Ctrl+S save)
+      // Don't intercept when typing in inputs — except the two save shortcuts,
+      // which are pressed with the cursor still in the item or qty box.
       const tag = (e.target.tagName || "").toLowerCase();
       const isInput = tag === "input" || tag === "textarea" || tag === "select";
-      if (isInput && sc.action !== "save") return;
+      const isSave = sc.action === "save" || sc.action === "quick-save";
+      if (isInput && !isSave) return;
 
       e.preventDefault();
       e.stopPropagation();
@@ -24,6 +26,8 @@ export default function Layout() {
       } else if (sc.action === "save") {
         // Dispatch custom event — AddSales / AddPurchase listen for this
         window.dispatchEvent(new CustomEvent("shortcut-save"));
+      } else if (sc.action === "quick-save") {
+        window.dispatchEvent(new CustomEvent("shortcut-quick-save"));
       } else if (sc.action === "shortcuts") {
         window.dispatchEvent(new CustomEvent("open-shortcuts"));
       }

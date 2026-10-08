@@ -4,6 +4,7 @@ import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrin
 import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
+import { WALK_IN } from "../shortcuts.js";
 import notify from "../toast.js";   // the page's own inline message is already called `toast`
 import usePageMeta from "../usePageMeta.js";
 
@@ -679,8 +680,12 @@ export default function AddSales() {
     printReceipt(data);
   };
 
-  /* ── Save ── */
-  const onSave = async (andPrint = false) => {
+  /* ── Save ──
+     `cust` overrides the customer boxes for this one save. The F9 walk-in
+     shortcut passes it because setState has not landed by the time we save. */
+  const onSave = async (andPrint = false, cust = null) => {
+    const billName  = cust ? cust.name  : custName;
+    const billPhone = cust ? cust.phone : phone;
     if (!invoiceNo.trim()) return showToast("Invoice number required");
     const cleanRows = rows.map((r) => ({
       invId: asNum(r.invId),               // inventory record PK — used to resolve gst_flag
@@ -699,20 +704,20 @@ export default function AddSales() {
     if (!cleanRows.length) return showToast("Add at least one item");
     // New sales: customer name AND phone are always required.
     if (!isEdit) {
-      const trimmedName = (custName || "").trim();
+      const trimmedName = (billName || "").trim();
       const isCashName = !trimmedName || /^cash( sale)?$/i.test(trimmedName);
       if (isCashName) return setMissingCustModal("Customer name is required to save this bill.");
-      if (!String(phone || "").trim()) return setMissingCustModal("Customer phone number is required to save this bill.");
+      if (!String(billPhone || "").trim()) return setMissingCustModal("Customer phone number is required to save this bill.");
     }
     // Edit: keep the existing credit-sale guard (name+phone required on unpaid bills).
     if (isEdit && asNum(balance) > 0.01) {
-      const trimmedName = (custName || "").trim();
+      const trimmedName = (billName || "").trim();
       const isCashName = !trimmedName || /^cash( sale)?$/i.test(trimmedName);
       if (isCashName) return setMissingCustModal("Credit sales need a customer name (cannot be saved as Cash).");
-      if (!String(phone || "").trim()) return setMissingCustModal("Credit sales need a customer phone number.");
+      if (!String(billPhone || "").trim()) return setMissingCustModal("Credit sales need a customer phone number.");
     }
     // Phone format guard: if a phone is provided, it must be exactly 10 digits
-    const phoneDigits = String(phone || "").replace(/\D/g, "");
+    const phoneDigits = String(billPhone || "").replace(/\D/g, "");
     if (phoneDigits.length > 0 && phoneDigits.length !== 10) {
       return showToast("Phone number must be 10 digits");
     }
@@ -738,8 +743,8 @@ export default function AddSales() {
       const body = {
         invoiceNo, invoiceDate,
         customerType: custType,
-        customerName: custName || "Cash",
-        phone, customerGstin: custGstin.trim(),
+        customerName: billName || "Cash",
+        phone: billPhone, customerGstin: custGstin.trim(),
         rows: cleanRows, payments: payList, totals,
         ...(isEdit ? { invoiceId: Number(invoiceId), updatedBy: user?.id || 1 } : { createdBy: user?.id || 1 }),
       };
@@ -803,6 +808,20 @@ export default function AddSales() {
     window.addEventListener("shortcut-save", fn);
     return () => window.removeEventListener("shortcut-save", fn);
   }, [saving, onSave]);
+
+  // F9 — save a counter sale as the walk-in customer without typing anything.
+  // The boxes are filled too so the cashier can see what went on the bill, but
+  // the save reads the override, not the state, which has not landed yet.
+  useEffect(() => {
+    const fn = () => {
+      if (saving || isEdit) return;
+      setCustName(WALK_IN.name);
+      setPhone(WALK_IN.phone);
+      onSave(false, WALK_IN);
+    };
+    window.addEventListener("shortcut-quick-save", fn);
+    return () => window.removeEventListener("shortcut-quick-save", fn);
+  }, [saving, isEdit, onSave]);
 
   const filledCount = rows.filter((r) => String(r.itemName || "").trim()).length;
   const today = todayISO();
