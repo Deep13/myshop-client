@@ -114,10 +114,14 @@ export function printReceipt(data) {
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Receipt</title>
 <style>
-@page{size:${shop.paperWidth} auto;margin:0mm}
+/* The page is the PRINTABLE width, not the paper width: 80mm paper prints 72mm,
+   58mm paper prints 48mm. Setting the page to the paper width and centring a
+   narrower body inside it pushed everything right by half the difference — a 4mm
+   gap down the left and the last 4mm of every line clipped off the right. */
+@page{size:${pw} auto;margin:0mm}
 *{margin:0;padding:0;box-sizing:border-box}
 html{margin:0 !important;padding:0 !important}
-body{width:${pw};margin:0 auto;font-family:'Courier New',Courier,monospace;font-size:${is58 ? "11px" : "13px"};color:#000;padding:2px 2px 4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-weight:700}
+body{width:${pw};margin:0;font-family:'Courier New',Courier,monospace;font-size:${is58 ? "11px" : "13px"};color:#000;padding:2px 2px 4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-weight:700}
 table{width:100%;border-collapse:collapse}
 th{font-weight:900;padding:2px 0}
 td{font-weight:700}
