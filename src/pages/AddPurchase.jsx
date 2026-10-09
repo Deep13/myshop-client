@@ -11,7 +11,7 @@ import toast from "../toast.js";
 import { printLabel } from "../printLabel.js";
 
 /* ── helpers ── */
-const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "", packSize: "", category: "" });
+const blankRow = () => ({ itemId: 0, itemName: "", code: "", hsn: "", batchNo: "", expDate: "", mrp: "", qty: "", freeQty: "", purchasePrice: "", salePrice: "", discount: "", tax: "", amount: "", packSize: "", category: "", srcName: "" });
 const blankNewItem = () => ({ itemName: "", itemCode: "", hsn: "", category: "", mrp: "", salePrice: "", packSize: "", bagSalePrice: "", purchasePrice: "", tax: "", is_primary: true });
 const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => {
@@ -558,6 +558,41 @@ export default function AddPurchase() {
     return autoMap;
   };
 
+  /* ── Remembered column mapping, per distributor ──────────────
+     Every distributor lays their bill out differently, so the mapping is asked
+     for once and reused for every bill after. It is still shown for review
+     before importing — a supplier can change their format without warning. */
+  const saveMappingForDist = async (distId, headers, map) => {
+    if (!distId || !headers?.length) return;
+    try {
+      await fetch(`${API}/save_distributor_mapping.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ distributorId: distId, headers, colMap: map }),
+      });
+    } catch { /* a lost mapping only costs one re-map next time */ }
+  };
+
+  const findSavedMapping = async (distId) => {
+    if (!distId) return null;
+    try {
+      const r = await fetch(`${API}/get_distributor_mapping.php?distributorId=${distId}`);
+      const j = await r.json().catch(() => ({}));
+      if (j.status === "success" && j.colMap && Object.keys(j.colMap).length) return j.colMap;
+    } catch { /* fall back to auto-detect */ }
+    return null;
+  };
+
+  // Saved mapping first, falling back to guessing from the header names.
+  const mappingFor = async (headers, distId) => {
+    const saved = await findSavedMapping(distId);
+    if (saved) {
+      toast("Using this distributor's saved column mapping — check it and apply", "success");
+      return saved;
+    }
+    return autoDetectMapping(headers);
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -567,7 +602,7 @@ export default function AddPurchase() {
     if (["xlsx", "xls", "csv"].includes(ext)) {
       // Excel/CSV: parse client-side
       const reader = new FileReader();
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
         try {
           const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
@@ -578,8 +613,8 @@ export default function AddPurchase() {
           const dataRows = json.slice(1).filter((r) => r.some((c) => String(c).trim()));
           setUploadHeaders(headers);
           setUploadRows(dataRows);
-          setColMap(autoDetectMapping(headers));
           tryDetectDistributor(json, headers);
+          setColMap(await mappingFor(headers, selDist?.id));
           setShowMapping(true);
         } catch (err) {
           toast("Failed to parse file: " + err.message, "error");
@@ -754,82 +789,49 @@ export default function AddPurchase() {
           r.purchasePrice = fmt2(price - (price * discVal) / 100);
         }
 
-        // Try to match item from master by name or code
-        const nameL = (r.itemName || "").toLowerCase().trim();
+        // The distributor's own description is kept as a hint beside the row, but
+        // never as our item name: their wording rarely matches our master, and a
+        // near-enough guess puts stock against the wrong item. The name is left
+        // blank so it can be scanned in, which is the only reliable identification.
+        r.srcName = (r.itemName || "").trim();
+        r.itemName = "";
+        r.itemId = 0;
+
         const codeL = (r.code || "").toLowerCase().trim();
 
-        // Normalize: strip common suffixes/noise, split into words for fuzzy matching
-        const normalize = (s) =>
-          s
-            .toLowerCase()
-            .replace(/[^a-z0-9 ]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-        const billWords = normalize(nameL)
-          .split(" ")
-          .filter((w) => w.length > 1);
-
-        // Score each master item: higher = better match
-        let bestMatch = null,
-          bestScore = 0;
-        for (const it of itemMaster) {
-          const masterName = normalize(it.name);
-          const masterCode = it.code.toLowerCase().trim();
-
-          // Exact code match — best possible
-          if (codeL && masterCode === codeL) {
-            bestMatch = it;
-            bestScore = 100;
-            break;
+        // A barcode on the bill is the one identification that can be trusted, so
+        // it is matched; anything less certain is left for the scanner.
+        if (codeL) {
+          const hit = itemMaster.find((it) => String(it.code).toLowerCase().trim() === codeL);
+          if (hit) {
+            r.itemId = hit.id;
+            r.itemName = hit.name;
+            r.code = hit.code;
+            r.hsn = r.hsn || hit.hsn || "";
+            r.tax = r.tax || String(hit.tax || "");
           }
-
-          // Exact name match
-          if (masterName === normalize(nameL)) {
-            bestMatch = it;
-            bestScore = 99;
-            continue;
-          }
-
-          // Word-based matching: count how many bill words appear in master name
-          if (billWords.length > 0) {
-            const masterWords = masterName.split(" ");
-            const matchedWords = billWords.filter((w) => masterWords.some((mw) => mw.includes(w) || w.includes(mw)));
-            const score = (matchedWords.length / Math.max(billWords.length, masterWords.length)) * 90;
-            if (score > bestScore && score >= 50) {
-              bestScore = score;
-              bestMatch = it;
-            }
-          }
-
-          // Substring match (one contains the other)
-          if (bestScore < 60) {
-            if (masterName.includes(normalize(nameL)) || normalize(nameL).includes(masterName)) {
-              if (60 > bestScore) {
-                bestScore = 60;
-                bestMatch = it;
-              }
-            }
-          }
-        }
-
-        if (bestMatch) {
-          r.itemId = bestMatch.id;
-          r.itemName = bestMatch.name;
-          r.code = bestMatch.code;
-          r.hsn = r.hsn || bestMatch.hsn || "";
-          r.mrp = r.mrp || String(bestMatch.mrp || "");
-          r.salePrice = r.salePrice || String(bestMatch.salePrice || "");
-          if (!asNum(r.purchasePrice)) r.purchasePrice = String(billRateFromMaster(bestMatch) || "");
-          r.tax = r.tax || String(bestMatch.tax || "");
         }
         r.amount = calcRowAmt(r).toFixed(2);
         return r;
       })
-      .filter((r) => r.itemName);
+      // Every line on the bill is kept, named or not — the whole point is to
+      // type the numbers once and scan the names in afterwards.
+      .filter((r) => r.srcName || r.code || r.batchNo || asNum(r.qty) > 0 || asNum(r.purchasePrice) > 0);
 
     if (!newRows.length) return toast("No valid rows found after mapping.", "warn");
+
+    // Remember the mapping so this distributor is never mapped twice.
+    if (selDist?.id && uploadHeaders.length) saveMappingForDist(selDist.id, uploadHeaders, colMap);
+
     setRows([...newRows, blankRow()]);
     setShowMapping(false);
+    const toName = newRows.filter((r) => !r.itemName).length;
+    toast(
+      toName
+        ? `${newRows.length} rows imported · scan ${toName} item${toName === 1 ? "" : "s"} to name them`
+        : `${newRows.length} rows imported`,
+      "success"
+    );
     // Upload file for reference
     if (uploadFile) uploadFileToServer(uploadFile);
   };
@@ -1181,10 +1183,12 @@ export default function AddPurchase() {
         )}
 
         <div style={{ flex: "0 0 auto", display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
-          {/* <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }} onChange={handleFileUpload} />
-          <button className="g-btn ghost sm" onClick={() => fileInputRef.current?.click()} title="Import from Excel, CSV, PDF or upload image">
-            <FiUpload size={14} />
-          </button> */}
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp"
+            style={{ display: "none" }} onChange={handleFileUpload} />
+          <button className="g-btn ghost sm" onClick={() => fileInputRef.current?.click()}
+            title="Upload the distributor's bill (Excel, CSV or PDF) and fill the rows from it">
+            <FiUpload size={14} /> Upload bill
+          </button>
           <button className="g-btn success sm" onClick={onSave} disabled={saving} style={{ minWidth: 90 }}>
             {saving ? <FiRefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> : <FiCheck size={14} />}
             {saving ? "Saving…" : isEdit ? "Update" : "Save"}
@@ -1355,6 +1359,15 @@ export default function AddPurchase() {
                               autoComplete="off"
                             />
                           </div>
+                          {/* What the distributor called it. Without this an imported
+                              row is a set of numbers with nothing to identify it by. */}
+                          {!r.itemName && r.srcName && (
+                            <div title={r.srcName}
+                              style={{ fontSize: 10.5, color: C.textSub, marginTop: 2, maxWidth: 300,
+                                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              on bill: {r.srcName}
+                            </div>
+                          )}
                           {/* Suggestions dropdown */}
                           {activeSug === idx && sug.length > 0 && (
                             <div
