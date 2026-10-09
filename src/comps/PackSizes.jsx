@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { FiPlus, FiLink, FiX, FiPackage, FiEdit2 } from "react-icons/fi";
+import { FiPlus, FiLink, FiX, FiPackage, FiEdit2, FiPrinter } from "react-icons/fi";
 import { C, API, Field, asNum, fmt2, generateEan13 } from "../ui.jsx";
 import BulkItemSelect from "./BulkItemSelect.jsx";
+import { printLabel } from "../printLabel.js";
 import toast from "../toast.js";
 
 /* ── PackSizes ─────────────────────────────────────────────
@@ -95,6 +96,16 @@ export default function PackSizes({ bulk, packs, stockKg, itemMaster, onChanged 
       reset();
       onChanged();
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
+  };
+
+  /* A pack is what actually goes on the shelf, so its label carries the pack's
+     own barcode and price — not the bulk item's per-kg figures. */
+  const printPackLabel = (p) => {
+    if (!String(p.code || "").trim()) return toast.warn(`${p.name} has no barcode to print`);
+    const input = window.prompt(`How many labels for ${p.name}?`, "1");
+    if (input === null) return;
+    const copies = Math.max(1, Math.min(99, parseInt(input, 10) || 1));
+    printLabel({ itemName: p.name, salePrice: p.sale_price || p.mrp, itemCode: p.code, copies });
   };
 
   const disconnect = async (p) => {
@@ -212,7 +223,11 @@ export default function PackSizes({ bulk, packs, stockKg, itemMaster, onChanged 
                   <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmt2(p.sale_price)}</td>
                   <td style={{ textAlign: "right", color: C.textSub }}>₹{fmt2(p.purchase_price)}</td>
                   <td style={{ textAlign: "right", fontWeight: 700, color: asNum(p.packs_available) > 0 ? C.green : C.red }}>{p.packs_available}</td>
-                  <td style={{ textAlign: "right", paddingRight: 12 }}>
+                  <td style={{ textAlign: "right", paddingRight: 12, whiteSpace: "nowrap" }}>
+                    <button className="g-btn ghost sm" style={{ marginRight: 6 }}
+                      title={`Print barcode labels for ${p.name}`} onClick={() => printPackLabel(p)}>
+                      <FiPrinter size={12} />
+                    </button>
                     <button className="g-btn ghost sm" disabled={busy} title="Disconnect this size" onClick={() => disconnect(p)}><FiX size={12} /></button>
                   </td>
                 </tr>
