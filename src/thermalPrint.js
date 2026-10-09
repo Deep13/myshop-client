@@ -49,7 +49,16 @@ export function saveShopSettings(settings) {
 export function printReceipt(data) {
   const shop = getShopSettings();
   const is58 = shop.paperWidth === "58mm";
-  const pw = is58 ? "48mm" : "72mm";
+  // Two different widths, and mixing them up is what clipped receipts for days.
+  //   pageW  — the paper the Windows driver is set to. The @page must equal it
+  //            exactly, or Chrome repositions the sheet and everything shifts.
+  //   printW — how much of that paper the printer actually marks, which is its
+  //            "Print Width" setting. Ours is set to 70mm, not the 72mm the head
+  //            can reach, so content wider than this falls off the right edge.
+  // If the printer is ever set to the full 72mm, widen printW to match.
+  const pageW  = is58 ? "48mm" : "72mm";
+  const printW = is58 ? "46mm" : "70mm";
+  const pw = printW;
 
   const time = data.invoiceTime || new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
 
@@ -118,7 +127,7 @@ export function printReceipt(data) {
    58mm paper prints 48mm. Setting the page to the paper width and centring a
    narrower body inside it pushed everything right by half the difference — a 4mm
    gap down the left and the last 4mm of every line clipped off the right. */
-@page{size:${pw} auto;margin:0mm}
+@page{size:${pageW} auto;margin:0mm}
 *{margin:0;padding:0;box-sizing:border-box}
 html{margin:0 !important;padding:0 !important}
 body{width:${pw};margin:0;font-family:'Courier New',Courier,monospace;font-size:${is58 ? "11px" : "13px"};color:#000;padding:2px 2px 4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-weight:700}
