@@ -684,7 +684,10 @@ export default function AddSales() {
      `cust` overrides the customer boxes for this one save. The F9 walk-in
      shortcut passes it because setState has not landed by the time we save. */
   const onSave = async (andPrint = false, cust = null) => {
-    const billName  = cust ? cust.name  : custName;
+    // A stray mark fumbled on the end of a name — a backtick or quote, the keys
+    // around Enter — makes a whole second customer in the reports. Trailing
+    // punctuation is never part of a real name, so it goes.
+    const billName  = String((cust ? cust.name : custName) || "").trim().replace(/[`'"^~]+$/, "").trim();
     const billPhone = cust ? cust.phone : phone;
     if (!invoiceNo.trim()) return showToast("Invoice number required");
     const cleanRows = rows.map((r) => ({
