@@ -56,7 +56,12 @@ export function printReceipt(data) {
   //            "Print Width" setting. Ours is set to 70mm, not the 72mm the head
   //            can reach, so content wider than this falls off the right edge.
   // If the printer is ever set to the full 72mm, widen printW to match.
-  const pageW  = is58 ? "48mm" : "72mm";
+  // `size: <width> auto` is NOT valid CSS. Chrome drops the whole @page rule and
+  // falls back to its default paper — Letter — so for a long time the receipt was
+  // being laid out on a 216mm page and only the left part of it reached the roll.
+  // A page size needs two lengths. 297mm is one of the driver's own paper forms
+  // and is longer than any receipt; the driver ends the page at the content.
+  const pageW  = is58 ? "48mm 297mm" : "72mm 297mm";
   const printW = is58 ? "46mm" : "70mm";
   const pw = printW;
 
