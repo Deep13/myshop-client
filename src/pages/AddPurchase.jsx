@@ -95,7 +95,7 @@ export default function AddPurchase() {
   const [dueDate, setDueDate] = useState(todayISO());
   const [billType, setBillType] = useState("GST"); // GST | NON-GST
   const isGST = billType === "GST";
-  const [gstMode, setGstMode] = useState("exclusive"); // "inclusive" | "exclusive"
+  const [gstMode, setGstMode] = useState("inclusive"); // "inclusive" | "exclusive" — most bills here quote a rate that already includes GST
   const [audit, setAudit] = useState(null); // { createdByName, updatedByName, createdAt, updatedAt }
   const isAdmin = user?.role === "admin";
 
@@ -347,6 +347,22 @@ export default function AddPurchase() {
     if (!cost) return item.purchasePrice ?? "";
     if (/^Rice\b/i.test(item.category || "") || (isGST && gstMode === "inclusive") || !tax) return cost;
     return fmt2(cost / (1 + tax / 100));
+  };
+
+  /* What a row will actually earn at the sale price entered.
+     The bill rate is taken net of any discount and grossed up by GST when the
+     bill is entered exclusive, so it compares like with like against a sale
+     price, which is always tax-inclusive. Rice bags are skipped: they are bought
+     per bag and sold per kg, so the two figures are not comparable. */
+  const rowMargin = (r) => {
+    const sale = asNum(r.salePrice), price = asNum(r.purchasePrice);
+    if (sale <= 0 || price <= 0) return null;
+    if (/^Rice\b/i.test(r.category || "")) return null;
+    const net = price - parseDiscount(r.discount, price);
+    const tax = asNum(r.tax);
+    const landed = isGST && gstMode === "exclusive" && tax > 0 ? net * (1 + tax / 100) : net;
+    const amt = sale - landed;
+    return { amt, pct: (amt / sale) * 100 };
   };
 
   const pickItem = (ri, item) => {
@@ -1554,6 +1570,17 @@ export default function AddPurchase() {
                     </td>
                     <td>
                       <input className="g-td-inp num" value={r.salePrice} onChange={(e) => updRow(idx, { salePrice: e.target.value })} inputMode="decimal" placeholder="0" />
+                      {(() => {
+                        const m = rowMargin(r);
+                        if (!m) return null;
+                        return (
+                          <div title="Margin at this sale price, against the landed cost"
+                            style={{ fontSize: 9.5, fontWeight: 700, textAlign: "right", paddingRight: 4, marginTop: 1,
+                                     color: m.amt <= 0 ? C.red : C.green }}>
+                            {m.pct.toFixed(0)}% · ₹{fmt2(m.amt)}
+                          </div>
+                        );
+                      })()}
                     </td>
                     {isGST && (
                       <td>

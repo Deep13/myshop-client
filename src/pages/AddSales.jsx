@@ -429,13 +429,18 @@ export default function AddSales() {
     });
   };
 
-  /* ── When discount changes → update sale price ── */
+  /* ── When discount changes → update sale price ──
+     The box holds rupees, but a percentage is often what you have in mind. Typing
+     "10%" converts it to rupees off MRP in the box itself the moment the % is
+     pressed, so what is stored, printed and totalled is always an amount. */
   const onDiscountChange = (i, val) => {
     setRows((prev) => {
       const n = [...prev];
       const u = { ...n[i], discount: val, offerOff: true };
       const mrp = asNum(u.mrp);
-      const disc = asNum(val);
+      const asPct = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(String(val ?? ""));
+      if (asPct && mrp > 0) u.discount = fmt2((mrp * Number(asPct[1])) / 100);
+      const disc = asNum(u.discount);
       if (mrp > 0) {
         const newSP = Math.max(0, mrp - disc);
         u.salePrice = fmt2(newSP);
@@ -1153,7 +1158,7 @@ export default function AddSales() {
                             <div onMouseDown={(e) => e.stopPropagation()}
                               style={{ position: "absolute", top: "100%", left: 0, width: 720, zIndex: 30, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.15)", maxHeight: 380, overflow: "hidden" }}>
                               {/* Header row */}
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 75px 70px 70px 45px", gap: 0, padding: "8px 16px", background: "#f1f5f9", borderBottom: "1.5px solid #e2e8f0" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 104px 78px 70px 70px 45px", gap: "0 10px", padding: "8px 16px", background: "#f1f5f9", borderBottom: "1.5px solid #e2e8f0" }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Item</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Batch</span>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Expiry</span>
@@ -1172,7 +1177,7 @@ export default function AddSales() {
                                     ref={(el) => { if (isHl && el) el.scrollIntoView({ block: "nearest" }); }}
                                     onMouseDown={() => pickBatch(idx, inv)}
                                     style={{
-                                      display: "grid", gridTemplateColumns: "1fr 80px 75px 70px 70px 45px", gap: 0,
+                                      display: "grid", gridTemplateColumns: "1fr 104px 78px 70px 70px 45px", gap: "0 10px",
                                       padding: "10px 16px", cursor: "pointer",
                                       borderBottom: "1px solid #f3f4f6",
                                       background: isHl ? "linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)" : "#fff",
@@ -1192,9 +1197,14 @@ export default function AddSales() {
                                         {inv.item_code}
                                       </div>
                                     </div>
-                                    {/* Batch */}
-                                    <div style={{ fontSize: 12, color: isHl ? "rgba(255,255,255,0.9)" : C.textSub, display: "flex", alignItems: "center" }}>
-                                      {inv.batch_no || "—"}
+                                    {/* Batch. Distributor batch codes run long, so this
+                                        truncates rather than spilling over the expiry date. */}
+                                    <div title={inv.batch_no || ""}
+                                      style={{ fontSize: 12, color: isHl ? "rgba(255,255,255,0.9)" : C.textSub,
+                                               display: "flex", alignItems: "center", minWidth: 0 }}>
+                                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {inv.batch_no || "—"}
+                                      </span>
                                     </div>
                                     {/* Expiry */}
                                     <div style={{ fontSize: 12, display: "flex", alignItems: "center",
