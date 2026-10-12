@@ -568,7 +568,9 @@ export default function AddSales() {
       return n;
     });
     // Move focus to qty
-    setTimeout(() => qtyRefs.current[ri]?.focus(), 0);
+    // select(), not just focus(): the box already holds "1", and without this the
+    // cashier has to clear it before typing the real quantity.
+    setTimeout(() => { const el = qtyRefs.current[ri]; if (el) { el.focus(); el.select(); } }, 0);
   };
 
   /* ── Auto-pick if search matches exactly one batch ── */
@@ -620,6 +622,9 @@ export default function AddSales() {
 
   /* Sums before bill discount */
   const rowTotal       = useMemo(() => rowBreakdown.reduce((a, r) => a + r.amount,   0), [rowBreakdown]);
+  // Units in the basket, not lines — 3 of one item is 3, so the cashier can
+  // check it against what is on the counter before taking the money.
+  const totalQty       = useMemo(() => rows.reduce((a, r) => a + (String(r.itemName || "").trim() ? asNum(r.qty) : 0), 0), [rows]);
   const preTaxable     = useMemo(() => rowBreakdown.reduce((a, r) => a + r.taxable,  0), [rowBreakdown]);
   const preTax         = useMemo(() => rowBreakdown.reduce((a, r) => a + r.tax,      0), [rowBreakdown]);
   const totalSavings   = useMemo(() => rowBreakdown.reduce((a, r) => a + r.savings,  0), [rowBreakdown]);
@@ -1638,6 +1643,16 @@ export default function AddSales() {
         <div className="g-card" style={{ marginBottom: 0 }}>
           <div className="g-card-head"><div className="g-card-title">Summary</div></div>
           <div className="g-card-body">
+
+            {/* ── How much is in the basket ── */}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, paddingBottom: 10, marginBottom: 10 }}>
+              <span style={{ color: C.textSub }}>Items</span>
+              <span style={{ fontWeight: 700 }}>
+                {filledCount} line{filledCount === 1 ? "" : "s"}
+                <span style={{ color: C.textSub, fontWeight: 600 }}> · </span>
+                {fmt2(totalQty).replace(/\.00$/, "")} qty
+              </span>
+            </div>
 
             {/* ── Row total (tax-inclusive) ── */}
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, paddingBottom: 10, borderBottom: "1px solid #f3f4f6", marginBottom: 10 }}>
