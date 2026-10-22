@@ -26,6 +26,12 @@ import MobileDashboard from "./pages/MobileDashboard.jsx";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "./Layout";
 import ProtectedRoute from "./ProtectedRoute.jsx";
+import { expireIfStale, startSessionWatch } from "./session.js";
+
+// Logins lapse at midnight. Check once before the first render, then keep
+// watching so a till left open overnight drops out on its own.
+expireIfStale();
+startSessionWatch();
 
 /* Item pages live at /inventory/:itemId. A packet's "Cut from" link briefly
    pointed at /items/:itemId, so keep that address working for anything saved. */
@@ -44,12 +50,14 @@ const isMobile = () => {
 
 /* Redirect desktop away from /m/*, redirect mobile away from desktop routes */
 function MobileGuard({ children }) {
+  expireIfStale();
   const isLoggedIn = localStorage.getItem("auth");
   if (!isLoggedIn) return <Navigate to="/login" replace />;
   return children;
 }
 
 function AdminMobileGuard({ children }) {
+  expireIfStale();
   const isLoggedIn = localStorage.getItem("auth");
   if (!isLoggedIn) return <Navigate to="/login" replace />;
   const user = JSON.parse(localStorage.getItem("user") || "null");

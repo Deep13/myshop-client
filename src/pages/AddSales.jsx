@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode, normalizeBarcode } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import { WALK_IN } from "../shortcuts.js";
@@ -33,6 +33,26 @@ const blankRow = () => ({
 
 /* Bag-pack pricing only applies to Rice categories. */
 const isBagPackCategory = (cat) => /^Rice\b/i.test(String(cat || ""));
+
+/* What a unit of this batch actually cost, all in.
+   The stored purchase_price excludes the GST we paid when the bill was GST and
+   quoted exclusive of tax, so that case is grossed up; every other bill type
+   already stores the landed figure. Used by the batch dropdown and the row
+   tooltip, which must agree. */
+function effectiveBuyPrice(inv) {
+  if (!inv) return 0;
+  const pp = asNum(inv.purchase_price);
+  if (pp <= 0) return 0;
+  const t = asNum(inv.tax_pct);
+  const isExclusiveGstBill =
+    !inv.master_cost &&
+    inv.purchase_bill_id &&
+    String(inv.purchase_bill_type || "GST").toUpperCase() === "GST" &&
+    String(inv.purchase_gst_mode || "exclusive").toLowerCase() === "exclusive" &&
+    Number(inv.gst_flag) === 1 &&
+    t > 0;
+  return isExclusiveGstBill ? Math.round(pp * (100 + t)) / 100 : pp;
+}
 
 /* Sale price inclusive of tax — amount = qty × salePrice.
    Special case: if the item has a packSize + bagSalePrice and the
@@ -293,6 +313,36 @@ export default function AddSales() {
   };
   useEffect(() => { loadInventory(); }, []);
 
+  /* Batches grouped by item code. Rows loaded from a saved invoice carry no
+     inventory id — only the code and batch they were sold from — so the hover
+     tooltip has to find the cost again through this. */
+  const invByCode = useMemo(() => {
+    const m = new Map();
+    for (const inv of inventory) {
+      const k = normalizeBarcode(inv.item_code);
+      if (!k) continue;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(inv);
+    }
+    return m;
+  }, [inventory]);
+
+  /* The batch a saved line was sold from, or — when that batch is gone or was
+     never recorded — the dearest batch of the same item. Costing off the
+     dearest batch is the house rule: it is the one that can leave a line
+     selling under water. The caller flags the guess in the tooltip. */
+  const findCostRec = (code, batchNo) => {
+    const list = invByCode.get(normalizeBarcode(code));
+    if (!list?.length) return { rec: null, exact: false };
+    const b = String(batchNo || "").trim();
+    if (b) {
+      const hit = list.find((x) => String(x.batch_no || "").trim() === b);
+      if (hit) return { rec: hit, exact: true };
+    }
+    const dearest = list.reduce((a, x) => (effectiveBuyPrice(x) > effectiveBuyPrice(a) ? x : a), list[0]);
+    return { rec: dearest, exact: false };
+  };
+
   /* ── Load customer list for AddSales name autocomplete ── */
   useEffect(() => {
     (async () => {
@@ -544,21 +594,7 @@ export default function AddSales() {
         offerOff: false,
         looseSalePrice: fmt2(sp),                                                // remembered loose per-kg rate
         // Snapshot for the row-hover tooltip — buy price + stock at pick time.
-        // Effective buy price = stored purchase_price + GST when the bill was
-        // GST + exclusive (the unit price doesn't include the GST you paid),
-        // otherwise the stored value is already the all-in cost.
-        purchasePrice: (() => {
-          const pp = asNum(inv.purchase_price);
-          const t  = asNum(inv.tax_pct);
-          const isExclusiveGstBill =
-            !inv.master_cost &&
-            inv.purchase_bill_id &&
-            String(inv.purchase_bill_type || "GST").toUpperCase() === "GST" &&
-            String(inv.purchase_gst_mode || "exclusive").toLowerCase() === "exclusive" &&
-            Number(inv.gst_flag) === 1 &&
-            t > 0;
-          return isExclusiveGstBill ? Math.round(pp * (100 + t)) / 100 : pp;
-        })(),
+        purchasePrice: effectiveBuyPrice(inv),
         stockQty: asNum(inv.current_qty),
       };
       fill.amount = fmt2(calcRowAmount(fill));
@@ -1084,6 +1120,15 @@ export default function AddSales() {
                 const isZeroStock = stockQty !== null && stockQty <= 0;
                 const isPackRow = Number(invRec?.is_pack) === 1;
 
+                // Buy price for the hover tooltip. New rows carry it from the
+                // batch they were picked from; rows loaded for an edit have to
+                // be matched back to a batch by code.
+                const costHit = asNum(r.purchasePrice) > 0 ? null : findCostRec(r.code, r.batchNo);
+                const buyPrice = asNum(r.purchasePrice) > 0
+                  ? asNum(r.purchasePrice)
+                  : effectiveBuyPrice(costHit?.rec);
+                const buyIsGuess = Boolean(costHit && !costHit.exact && buyPrice > 0);
+
                 // Discount % for display
                 const dPct = filled ? discountPct(r.mrp, r.salePrice) : 0;
 
@@ -1120,22 +1165,32 @@ export default function AddSales() {
                             style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, padding: 3, borderRadius: 4, display: "flex", flexShrink: 0 }}>
                             <FiX size={13} />
                           </button>
-                          {hoverRow === idx && (asNum(r.purchasePrice) > 0 || r.hsn) && (
+                          {hoverRow === idx && (buyPrice > 0 || r.hsn) && (
                             <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 40, background: "#fff", border: `1.5px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", padding: "10px 14px", minWidth: 220, pointerEvents: "none" }}>
                               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: 12 }}>
                                 {r.hsn && (<><span style={{ color: C.textSub }}>HSN</span><span style={{ fontWeight: 600 }}>{r.hsn}</span></>)}
-                                {asNum(r.purchasePrice) > 0 && (
-                                  <>
-                                    <span style={{ color: C.textSub }}>Buy Price</span>
-                                    <span style={{ fontWeight: 600 }}>₹{fmt2(r.purchasePrice)}</span>
-                                    {asNum(r.salePrice) > 0 && (
-                                      <>
-                                        <span style={{ color: C.textSub }}>Margin</span>
-                                        <span style={{ fontWeight: 600, color: C.green }}>₹{fmt2(asNum(r.salePrice) - asNum(r.purchasePrice))} ({fmt2((asNum(r.salePrice) - asNum(r.purchasePrice)) / asNum(r.purchasePrice) * 100)}%)</span>
-                                      </>
-                                    )}
-                                  </>
-                                )}
+                                {buyPrice > 0 && (() => {
+                                  const margin = asNum(r.salePrice) - buyPrice;
+                                  return (
+                                    <>
+                                      <span style={{ color: C.textSub }}>Buy Price</span>
+                                      <span style={{ fontWeight: 600 }}>₹{fmt2(buyPrice)}</span>
+                                      {asNum(r.salePrice) > 0 && (
+                                        <>
+                                          <span style={{ color: C.textSub }}>Margin</span>
+                                          <span style={{ fontWeight: 600, color: margin < 0 ? C.red : C.green }}>
+                                            ₹{fmt2(margin)} ({fmt2((margin / buyPrice) * 100)}%)
+                                          </span>
+                                        </>
+                                      )}
+                                      {buyIsGuess && (
+                                        <span style={{ gridColumn: "1 / -1", color: C.textSub, fontSize: 11, marginTop: 2 }}>
+                                          Not this line's own batch — costed off the dearest batch of this item
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </div>
                           )}
@@ -1226,15 +1281,8 @@ export default function AddSales() {
                                     <div style={{ fontSize: 12, fontWeight: 600, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end",
                                       color: isHl ? "rgba(255,255,255,0.85)" : C.textSub }}>
                                       {(() => {
-                                        const pp = asNum(inv.purchase_price);
-                                        if (pp <= 0) return "—";
-                                        const t = asNum(inv.tax_pct);
-                                        const isExclGst = inv.purchase_bill_id &&
-                                          String(inv.purchase_bill_type || "GST").toUpperCase() === "GST" &&
-                                          String(inv.purchase_gst_mode || "exclusive").toLowerCase() === "exclusive" &&
-                                          Number(inv.gst_flag) === 1 && t > 0;
-                                        const eff = isExclGst ? Math.round(pp * (100 + t)) / 100 : pp;
-                                        return `₹${fmt2(eff)}`;
+                                        const eff = effectiveBuyPrice(inv);
+                                        return eff > 0 ? `₹${fmt2(eff)}` : "—";
                                       })()}
                                     </div>
                                     {/* Stock */}

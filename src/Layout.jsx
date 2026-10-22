@@ -16,13 +16,17 @@ export default function Layout() {
       const tag = (e.target.tagName || "").toLowerCase();
       const isInput = tag === "input" || tag === "textarea" || tag === "select";
       const isSave = sc.action === "save" || sc.action === "quick-save";
-      if (isInput && !isSave) return;
+      // A new-tab shortcut has to work mid-bill — the cursor is in the item box
+      // almost all the time on the sales page, which is exactly when a second
+      // till window is wanted.
+      if (isInput && !isSave && !sc.newTab) return;
 
       e.preventDefault();
       e.stopPropagation();
 
       if (sc.action === "navigate") {
-        navigate(sc.path);
+        if (sc.newTab) window.open(sc.path, "_blank", "noopener");
+        else navigate(sc.path);
       } else if (sc.action === "save") {
         // Dispatch custom event — AddSales / AddPurchase listen for this
         window.dispatchEvent(new CustomEvent("shortcut-save"));

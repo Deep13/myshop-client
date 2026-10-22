@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { FiPackage, FiUser, FiLock, FiEye, FiEyeOff, FiLogIn } from "react-icons/fi";
 import storeImg from "../assets/store.png";
 import { API } from "../ui.jsx";
+import { stampSession } from "../session.js";
 import usePageMeta from "../usePageMeta.js";
 
 const C = {
@@ -54,6 +55,7 @@ export default function Login() {
       if (data.status === "success") {
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.setItem("auth", "true");
+        stampSession();   // this login is good until midnight
         window.location.href = isMobile ? mobileLandingFor(data.user) : "/";
       } else {
         setResponseMsg(data.message || "Invalid credentials");

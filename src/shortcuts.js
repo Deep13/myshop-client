@@ -8,7 +8,8 @@ export const SHORTCUTS = [
   { key: "ctrl+s",       display: "Ctrl + S",   label: "Save invoice / purchase bill",  action: "save" },
   { key: "f9",           display: "F9",         label: `Save sale as ${WALK_IN.name} (${WALK_IN.phone})`, action: "quick-save" },
   { key: "ctrl+p",       display: "Ctrl + P",   label: "New Purchase Bill",             action: "navigate", path: "/addpurchase" },
-  { key: "ctrl+shift+s", display: "Ctrl + Shift + S", label: "New Sale Invoice",        action: "navigate", path: "/addsales" },
+  // Opens in its own tab so a half-finished bill on screen is not thrown away.
+  { key: "ctrl+shift+s", display: "Ctrl + Shift + S", label: "New Sale Invoice (new tab)", action: "navigate", path: "/addsales", newTab: true },
   { key: "ctrl+shift+p", display: "Ctrl + Shift + P", label: "Purchase Bills List",     action: "navigate", path: "/purchase" },
   { key: "ctrl+shift+l", display: "Ctrl + Shift + L", label: "Sales List",              action: "navigate", path: "/sales" },
   { key: "ctrl+i",       display: "Ctrl + I",   label: "Inventory",                     action: "navigate", path: "/inventory" },

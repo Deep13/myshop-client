@@ -35,6 +35,35 @@ function calcRowAmt(row) {
   return asNum(row.qty) * (price - disc);
 }
 
+/* calcRowAmt run backwards: the owner types the line total off the bill and we
+   work out what one piece cost.
+
+   The figure he types is the gross — the money actually paid for that line. On
+   an exclusive GST bill the rate column is quoted before tax and the Amount
+   cell holds the taxable value, so the GST comes off first; on an inclusive or
+   NON-GST bill the gross IS the amount and nothing is stripped.
+
+   Returns null when the line can't be inverted (no qty, nothing typed, or a
+   100% discount), and the caller leaves the buy price alone. */
+function rateFromAmount(row, typed, isGST, gstMode) {
+  const qty = asNum(row.qty);
+  const gross = asNum(typed);
+  if (qty <= 0 || gross <= 0) return null;
+
+  const tax = asNum(row.tax);
+  const stripGst = isGST && gstMode === "exclusive" && tax > 0;
+  const taxable = stripGst ? gross / (1 + tax / 100) : gross;
+
+  // Undo the discount the same way parseDiscount applies it.
+  const s = String(row.discount || "").trim();
+  if (s.endsWith("%")) {
+    const pct = parseFloat(s) || 0;
+    if (pct >= 100) return null;
+    return taxable / (qty * (1 - pct / 100));
+  }
+  return taxable / qty + (parseFloat(s) || 0);
+}
+
 function SectionHead({ num, title, icon, actions, aside }) {
   return (
     <div style={{ padding: "12px 18px", borderBottom: "1.5px solid #e5e7eb", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -107,6 +136,10 @@ export default function AddPurchase() {
   const batchRefs = useRef({});
   const [activeSug, setActiveSug] = useState(null);
   const [highlightIdx, setHighlightIdx] = useState(-1);
+  /* Raw text of the Amount box while it is being typed in, keyed by row.
+     The cell normally shows a derived figure, so without this buffer each
+     keystroke would be overwritten by the recalculated amount mid-word. */
+  const [amtEdit, setAmtEdit] = useState({});
 
   // ── Unsaved-changes guard (new-bill mode only) ──
   const hasUnsavedRows = useMemo(() => {
@@ -1269,7 +1302,10 @@ export default function AddPurchase() {
                 <th style={{ minWidth: 100, textAlign: "right" }}>Disc</th>
                 <th style={{ minWidth: 100, textAlign: "right" }}>Sale ₹</th>
                 {isGST && <th style={{ minWidth: 100, textAlign: "right" }}>Tax%</th>}
-                <th style={{ minWidth: 100, textAlign: "right", paddingRight: 10 }}>Amount</th>
+                <th style={{ minWidth: 110, textAlign: "right", paddingRight: 10 }}
+                  title="Editable. Type the line total off the bill and the buy price is worked back from the quantity.">
+                  Amount
+                </th>
                 <th style={{ width: 32 }}></th>
               </tr>
               {isEdit && (
@@ -1588,7 +1624,45 @@ export default function AddPurchase() {
                       </td>
                     )}
                     <td style={{ textAlign: "right", paddingRight: 10 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: filled ? C.text : "#d1d5db" }}>{filled ? `₹${fmt2(r.amount)}` : "—"}</span>
+                      {filled ? (() => {
+                        const tax = asNum(r.tax);
+                        const stripGst = isGST && gstMode === "exclusive" && tax > 0;
+                        const gross = stripGst ? asNum(r.amount) * (1 + tax / 100) : asNum(r.amount);
+                        const noQty = asNum(r.qty) <= 0;
+                        return (
+                          <>
+                            <input className="g-td-inp num"
+                              value={amtEdit[idx] !== undefined ? amtEdit[idx] : fmt2(r.amount)}
+                              onFocus={() => setAmtEdit((p) => ({ ...p, [idx]: fmt2(gross) }))}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setAmtEdit((p) => ({ ...p, [idx]: val }));
+                                const rate = rateFromAmount(r, val, isGST, gstMode);
+                                if (rate !== null) updRow(idx, { purchasePrice: fmt2(rate) });
+                              }}
+                              onBlur={() => setAmtEdit((p) => { const n = { ...p }; delete n[idx]; return n; })}
+                              inputMode="decimal" placeholder="0"
+                              title={noQty
+                                ? "Enter the quantity first — the per-piece rate is worked out from it"
+                                : stripGst
+                                  ? "Line total as printed on the bill, GST included. Typing here works back to the buy price."
+                                  : "Line total. Typing here works back to the buy price."}
+                              style={{ fontWeight: 700, color: noQty ? C.textLight : C.text }} />
+                            {/* On an exclusive bill the cell holds the taxable value but the
+                                bill prints the gross, so the gross is shown underneath — it
+                                is both what to tick off against the bill and what the box
+                                expects you to type. */}
+                            {stripGst && (
+                              <div title={`Taxable ₹${fmt2(r.amount)} + ${fmt2(tax)}% GST`}
+                                style={{ fontSize: 9.5, color: C.textSub, textAlign: "right", paddingRight: 4, marginTop: 1 }}>
+                                = ₹{fmt2(gross)} incl. GST
+                              </div>
+                            )}
+                          </>
+                        );
+                      })() : (
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#d1d5db" }}>—</span>
+                      )}
                     </td>
                     <td style={{ paddingRight: 6 }}>
                       <button

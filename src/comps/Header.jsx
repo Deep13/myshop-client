@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { RiShutDownLine } from "react-icons/ri";
 import { FiHome, FiShoppingCart, FiTruck, FiPackage, FiMoreHorizontal, FiUsers, FiBarChart2, FiCommand, FiSettings, FiShield, FiMoon, FiSun, FiAward, FiCalendar } from "react-icons/fi";
-import { C, Modal, GLOBAL_CSS, API } from "../ui.jsx";
+import { C, Modal, GLOBAL_CSS } from "../ui.jsx";
 import { SHORTCUTS } from "../shortcuts.js";
+import { endSession } from "../session.js";
 
 const LINKS = [
   { to: "/",          label: "Home",      icon: <FiHome size={16} /> },
@@ -53,18 +54,9 @@ export default function Header() {
   }, []);
 
   const logout = () => {
-    // Fire-and-forget logout log. sendBeacon is preferred (survives navigation)
-    // and falls back to fetch with keepalive if not available.
-    try {
-      const payload = JSON.stringify({ userId: user?.id || 0, userName: user?.name || "" });
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(`${API}/log_logout.php`, new Blob([payload], { type: "application/json" }));
-      } else {
-        fetch(`${API}/log_logout.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
-      }
-    } catch {}
-    localStorage.removeItem("user");
-    localStorage.removeItem("auth");
+    // Logs the logout and clears every auth key — shared with the midnight
+    // expiry so the two can't drift apart.
+    endSession();
     window.location.href = "/login";
   };
 
