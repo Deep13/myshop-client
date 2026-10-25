@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiRefreshCw, FiX, FiPrinter, FiTrash2 } from "react-icons/fi";
+import { FiArrowLeft, FiPackage, FiTruck, FiShoppingCart, FiAlertTriangle, FiEdit2, FiCheck, FiRefreshCw, FiX, FiPrinter, FiTrash2, FiPlus } from "react-icons/fi";
 import { printLabel, printDualLabel } from "../printLabel.js";
 import { C, GLOBAL_CSS, API, Field, asNum, todayISO, fmtINR, fmtDate, fmt2, offerLabel } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
@@ -24,14 +24,15 @@ function InfoRow({ label, value, bold }) {
   );
 }
 
-function SectionCard({ icon, title, children, color }) {
+function SectionCard({ icon, title, children, color, actions }) {
   return (
     <div className="g-card" style={{ marginBottom: 20 }}>
-      <div className="g-card-head">
+      <div className="g-card-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div className="g-card-title">
           <span style={{ color: color || C.brand }}>{icon}</span>
           {title}
         </div>
+        {actions}
       </div>
       <div className="g-card-body" style={{ padding: 0 }}>{children}</div>
     </div>
@@ -52,6 +53,8 @@ export default function ItemDetail() {
   const [editBatchExp, setEditBatchExp]   = useState("");
   const [editBatchQty, setEditBatchQty]   = useState("");
   const [batchSaving, setBatchSaving]     = useState(false);
+  const [addingBatch, setAddingBatch]     = useState(false);
+  const [newBatch, setNewBatch]           = useState(null);
   // Item master, used to pick the bulk item a packet is cut from
   const [itemMaster, setItemMaster] = useState([]);
   useEffect(() => {
@@ -183,7 +186,11 @@ export default function ItemDetail() {
     finally { setSaving(false); }
   };
 
-  /* ── Edit a single inventory batch (only for rows without a purchase bill) ─ */
+  /* ── Edit a single inventory batch ──────────────────────────────
+     Stock and expiry can be corrected on any batch: a recount or a mis-read
+     expiry date should not mean reopening a months-old purchase bill. The
+     batch NUMBER stays owned by the bill on rows that came from one, so the
+     inventory row and the bill snapshot cannot drift apart. */
   const startEditBatch = (b) => {
     setEditBatchId(Number(b.id));
     setEditBatchNo(b.batch_no || "");
@@ -199,6 +206,9 @@ export default function ItemDetail() {
     if (editBatchQty.trim() !== "" && (!isFinite(qtyNum) || qtyNum < 0)) {
       return toast.error("Stock must be 0 or greater");
     }
+    // A six-figure count is a typo here, not a stock level — this is how ten
+    // million bottles of Campa Cola once got onto the books.
+    if (qtyNum > 100000) return toast.error("That quantity looks mis-typed. Enter 100000 or less.");
     setBatchSaving(true);
     try {
       const r = await fetch(`${API}/update_inventory_batch.php`, {
@@ -213,14 +223,16 @@ export default function ItemDetail() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j.status !== "success") throw new Error(j.message || "Update failed");
-      // Patch local data
+      // Patch local data from what the server says it stored, not from the
+      // inputs — a bill-linked row keeps the bill's batch number and the box
+      // must not go on showing something the database refused.
       setData((prev) => ({
         ...prev,
         batches: prev.batches.map((b) =>
           Number(b.id) === editBatchId
             ? {
                 ...b,
-                batch_no: editBatchNo.trim(),
+                batch_no: j.data?.batch_no ?? editBatchNo.trim(),
                 exp_date: editBatchExp || null,
                 current_qty: editBatchQty.trim() === "" ? b.current_qty : qtyNum,
               }
@@ -230,6 +242,59 @@ export default function ItemDetail() {
       toast.success("Batch updated");
       cancelEditBatch();
     } catch (e) { toast.error(e.message || "Failed to update"); }
+    finally { setBatchSaving(false); }
+  };
+
+  /* ── Add a batch by hand ────────────────────────────────────────
+     For stock that never came through a purchase bill — an opening count, a
+     sample, something bought over the counter. Batch number and expiry are
+     both optional; prices default to the item master so the usual case is to
+     type a quantity and save. add_inventory.php folds the quantity into an
+     existing batch when the number and expiry already match. */
+  const startAddBatch = () => {
+    setEditBatchId(null);
+    setNewBatch({
+      batch_no: "",
+      exp_date: "",
+      qty: "",
+      purchase_price: String(asNum(item.purchasePrice || item.purchase_price) || ""),
+      mrp:            String(asNum(item.mrp) || ""),
+      sale_price:     String(asNum(item.salePrice || item.sale_price) || ""),
+      tax_pct:        String(asNum(item.tax || item.tax_pct) || 0),
+      gst_flag:       1,
+    });
+    setAddingBatch(true);
+  };
+  const cancelAddBatch = () => { setAddingBatch(false); setNewBatch(null); };
+  const saveNewBatch = async () => {
+    const qtyNum = asNum(newBatch.qty);
+    if (!(qtyNum > 0)) return toast.error("Enter how many units you are adding");
+    if (qtyNum > 100000) return toast.error("That quantity looks mis-typed. Enter 100000 or less.");
+    if (newBatch.exp_date && newBatch.exp_date < today
+        && !window.confirm("That expiry date has already passed. Add it anyway?")) return;
+    setBatchSaving(true);
+    try {
+      const r = await fetch(`${API}/add_inventory.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemId: Number(itemId),
+          batchNo: newBatch.batch_no.trim(),
+          expDate: newBatch.exp_date || "",
+          qty: qtyNum,
+          mrp: asNum(newBatch.mrp),
+          purchasePrice: asNum(newBatch.purchase_price),
+          salePrice: asNum(newBatch.sale_price),
+          taxPct: asNum(newBatch.tax_pct),
+          gstFlag: Number(newBatch.gst_flag) === 1 ? 1 : 0,
+          userId: user?.id || 0,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Could not add stock");
+      toast.success("Stock added");
+      cancelAddBatch();
+      loadDetail();          // reload rather than patch — the server may have merged into an existing batch
+    } catch (e) { toast.error(e.message || "Could not add stock"); }
     finally { setBatchSaving(false); }
   };
 
@@ -548,14 +613,82 @@ export default function ItemDetail() {
           )}
 
           {/* Batches */}
-          <SectionCard icon={<FiPackage size={15} />} title={`Inventory Batches (${batches.length})${isBulkItem ? " — stock in kg" : ""}`}>
-            {batches.length === 0 ? (
+          <SectionCard icon={<FiPackage size={15} />} title={`Inventory Batches (${batches.length})${isBulkItem ? " — stock in kg" : ""}`}
+            actions={!isPack && !addingBatch && (
+              <button className="g-btn primary sm" onClick={startAddBatch}
+                title="Add stock that did not come in on a purchase bill">
+                <FiPlus size={13} /> Add Batch
+              </button>
+            )}>
+
+            {/* Add a batch by hand. Batch number and expiry are optional — loose
+                goods and over-the-counter buys often have neither. */}
+            {addingBatch && newBatch && (
+              <div style={{ padding: "14px 18px", borderBottom: `1.5px solid ${C.border}`, background: "#f0f9ff" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+                  <Field label="Batch No (optional)">
+                    <input className="g-inp sm" style={{ width: 140 }} autoFocus
+                      value={newBatch.batch_no} placeholder="—"
+                      onChange={(e) => setNewBatch((n) => ({ ...n, batch_no: e.target.value }))} />
+                  </Field>
+                  <Field label="Expiry (optional)">
+                    <div style={{ width: 140 }}>
+                      <DateInput className="g-inp sm" value={newBatch.exp_date}
+                        onChange={(e) => setNewBatch((n) => ({ ...n, exp_date: e.target.value }))} />
+                    </div>
+                  </Field>
+                  <Field label={isBulkItem ? "Stock (kg)" : "Stock"}>
+                    <input className="g-inp sm" type="number" min="0" step="any" style={{ width: 90, textAlign: "right" }}
+                      value={newBatch.qty} placeholder="0"
+                      onChange={(e) => setNewBatch((n) => ({ ...n, qty: e.target.value }))} />
+                  </Field>
+                  <Field label={isBulkItem ? "PTR / kg" : "PTR"}>
+                    <input className="g-inp sm" type="number" min="0" step="any" style={{ width: 90, textAlign: "right" }}
+                      value={newBatch.purchase_price}
+                      onChange={(e) => setNewBatch((n) => ({ ...n, purchase_price: e.target.value }))} />
+                  </Field>
+                  <Field label="MRP">
+                    <input className="g-inp sm" type="number" min="0" step="any" style={{ width: 90, textAlign: "right" }}
+                      value={newBatch.mrp}
+                      onChange={(e) => setNewBatch((n) => ({ ...n, mrp: e.target.value }))} />
+                  </Field>
+                  <Field label="Sale ₹">
+                    <input className="g-inp sm" type="number" min="0" step="any" style={{ width: 90, textAlign: "right" }}
+                      value={newBatch.sale_price}
+                      onChange={(e) => setNewBatch((n) => ({ ...n, sale_price: e.target.value }))} />
+                  </Field>
+                  <Field label="Tax %">
+                    <input className="g-inp sm" type="number" min="0" step="any" style={{ width: 70, textAlign: "right" }}
+                      value={newBatch.tax_pct}
+                      onChange={(e) => setNewBatch((n) => ({ ...n, tax_pct: e.target.value }))} />
+                  </Field>
+                  <Field label="Type">
+                    <select className="g-inp sm" style={{ width: 100 }} value={newBatch.gst_flag}
+                      onChange={(e) => setNewBatch((n) => ({ ...n, gst_flag: Number(e.target.value) }))}>
+                      <option value={1}>GST</option>
+                      <option value={0}>NON-GST</option>
+                    </select>
+                  </Field>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="g-btn primary sm" disabled={batchSaving} onClick={saveNewBatch}>
+                      {batchSaving ? "Saving…" : "Add Stock"}
+                    </button>
+                    <button className="g-btn ghost sm" disabled={batchSaving} onClick={cancelAddBatch}>Cancel</button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: C.textSub, marginTop: 8 }}>
+                  Prices are prefilled from the item. If a batch with this same number and expiry already exists, the quantity is added to it.
+                </div>
+              </div>
+            )}
+
+            {batches.length === 0 && addingBatch ? null : batches.length === 0 ? (
               <div style={{ padding: "20px 18px", color: C.textSub, fontSize: 13 }}>
                 {isPack
                   ? <>This pack holds no stock of its own — it is cut from{" "}
                       <Link to={`/inventory/${item.bulk_item_id}`} style={{ color: C.brand, fontWeight: 700 }}>{bulk?.cut_from?.name || "its bulk item"}</Link>.
                       Buy that item, in kg, to restock.</>
-                  : "No inventory batches found. Add stock via Purchase."}
+                  : "No inventory batches. Enter a purchase bill, or use Add Batch for stock that never came in on one."}
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -586,7 +719,10 @@ export default function ItemDetail() {
                         <tr key={i} style={{ background: isEditing ? "#eff6ff" : isExp ? "#fff5f5" : isExpNear ? "#fffbeb" : undefined }}>
                           <td style={{ fontWeight: 600 }}>
                             {isEditing
-                              ? <input className="g-inp sm" value={editBatchNo} onChange={(e) => setEditBatchNo(e.target.value)} placeholder="Batch no" style={{ width: 130 }} autoFocus />
+                              ? <input className="g-inp sm" value={editBatchNo} onChange={(e) => setEditBatchNo(e.target.value)}
+                                  placeholder="Batch no" style={{ width: 130 }} autoFocus
+                                  disabled={!canEdit}
+                                  title={canEdit ? "" : "This batch number comes from purchase bill " + (b.purchase_bill_no || "") + " — edit the bill to change it"} />
                               : (b.batch_no || "—")}
                           </td>
                           <td style={{ color: isExp ? C.red : isExpNear ? C.yellow : C.text, fontWeight: isExp || isExpNear ? 700 : 400, fontSize: 13 }}>
@@ -647,13 +783,13 @@ export default function ItemDetail() {
                               </>
                             ) : (
                               <>
-                                {canEdit && (
-                                  <button title="Edit batch number / expiry"
-                                    onClick={() => startEditBatch(b)}
-                                    style={{ background: "none", border: "none", cursor: "pointer", color: C.brand, padding: 4, borderRadius: 4, display: "inline-flex" }}>
-                                    <FiEdit2 size={14} />
-                                  </button>
-                                )}
+                                <button title={canEdit
+                                    ? "Edit batch number, expiry and stock"
+                                    : "Edit expiry and stock (batch number is set by the purchase bill)"}
+                                  onClick={() => startEditBatch(b)}
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: C.brand, padding: 4, borderRadius: 4, display: "inline-flex" }}>
+                                  <FiEdit2 size={14} />
+                                </button>
                                 <button title="Delete this batch"
                                   onClick={() => deleteBatch(b.id, `${b.batch_no || "no batch"} · ${b.exp_date ? fmtDate(b.exp_date) : "no exp"}`)}
                                   style={{ background: "none", border: "none", cursor: "pointer", color: C.red, padding: 4, borderRadius: 4, display: "inline-flex" }}>
