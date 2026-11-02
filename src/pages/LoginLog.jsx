@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiRefreshCw, FiCheck, FiX as FiXIcon, FiShield, FiLogOut } from "react-icons/fi";
-import { C, API, GLOBAL_CSS, DATE_RANGES, applyDateRange, todayISO } from "../ui.jsx";
+import { FiRefreshCw, FiCheck, FiX as FiXIcon, FiShield, FiLogOut, FiTrash2 } from "react-icons/fi";
+import { C, API, GLOBAL_CSS, DATE_RANGES, applyDateRange, todayISO, Modal } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
+import toast from "../toast.js";
 
 export default function LoginLog() {
   usePageMeta("Login Activity", "Track user sign-in attempts");
@@ -15,6 +16,11 @@ export default function LoginLog() {
   const [from, setFrom] = useState(todayISO());
   const [to, setTo]     = useState(todayISO());
   const [status, setStatus] = useState("");
+  // Trimming the log: ask the server how many rows are old enough first, so the
+  // confirmation shows a real number instead of asking the user to approve a guess.
+  const [purge, setPurge] = useState(null);     // { matched, oldest } once previewed
+  const [purging, setPurging] = useState(false);
+  const KEEP_DAYS = 30;
 
   // Admin-only route
   useEffect(() => {
@@ -42,6 +48,37 @@ export default function LoginLog() {
 
   useEffect(() => { if (from && to) load(); }, [from, to, status]);
 
+  const askPurge = async () => {
+    try {
+      setPurging(true);
+      const res = await fetch(`${API}/delete_login_log.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: KEEP_DAYS }),       // no confirm — counts only
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.status !== "success") throw new Error(j.message || "Could not check the log");
+      if (!j.matched) { toast.success(`Nothing older than ${KEEP_DAYS} days`); return; }
+      setPurge({ matched: j.matched, oldest: j.oldest });
+    } catch (e) { toast.error(e.message || "Could not check the log"); }
+    finally { setPurging(false); }
+  };
+
+  const doPurge = async () => {
+    try {
+      setPurging(true);
+      const res = await fetch(`${API}/delete_login_log.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: KEEP_DAYS, confirm: true, deletedBy: user?.id || 0 }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.status !== "success") throw new Error(j.message || "Delete failed");
+      toast.success(`${j.deleted} event${j.deleted === 1 ? "" : "s"} deleted · ${j.remaining} kept`);
+      setPurge(null);
+      load();
+    } catch (e) { toast.error(e.message || "Delete failed"); }
+    finally { setPurging(false); }
+  };
+
   const fmtDT = (s) => {
     if (!s) return "";
     const d = new Date(s.replace(" ", "T"));
@@ -67,6 +104,11 @@ export default function LoginLog() {
             {rows.length} events · <span style={{ color: C.green, fontWeight: 700 }}>{succCount} login</span> · <span style={{ color: C.brand, fontWeight: 700 }}>{logoutCount} logout</span> · <span style={{ color: C.red, fontWeight: 700 }}>{failCount} failed</span>
           </p>
         </div>
+        <button className="g-btn ghost sm" onClick={askPurge} disabled={purging}
+          title={`Permanently delete sign-in events older than ${KEEP_DAYS} days`}
+          style={{ color: C.red, borderColor: C.red }}>
+          <FiTrash2 size={14} /> Clear older than {KEEP_DAYS} days
+        </button>
       </div>
 
       {/* Filters */}
@@ -136,6 +178,27 @@ export default function LoginLog() {
           </table>
         </div>
       </div>
+
+      {/* Deleting audit history cannot be undone, so the count and the cut-off
+          date are both shown before anything is removed. */}
+      <Modal show={!!purge} title="Clear old login activity" onClose={() => setPurge(null)} width={460}>
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: C.text }}>
+          <p style={{ margin: 0 }}>
+            This permanently deletes <b>{purge?.matched} sign-in event{purge?.matched === 1 ? "" : "s"}</b> older
+            than {KEEP_DAYS} days, back to {purge?.oldest ? fmtDT(purge.oldest) : "the start of the log"}.
+          </p>
+          <p style={{ margin: "10px 0 0", color: C.textSub, fontSize: 13 }}>
+            The last {KEEP_DAYS} days are kept. There is no undo.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+          <button className="g-btn ghost sm" onClick={() => setPurge(null)} disabled={purging}>Cancel</button>
+          <button className="g-btn sm" onClick={doPurge} disabled={purging}
+            style={{ background: C.red, borderColor: C.red, color: "#fff" }}>
+            {purging ? "Deleting…" : `Delete ${purge?.matched} event${purge?.matched === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
