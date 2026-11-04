@@ -6,7 +6,6 @@ import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
-const isAdmin = user?.role === "admin";
 
 /* ── Card visual: the 5-stamp wheel + ₹100 OFF badge ── */
 function LoyaltyCardVisual({ card, onClickCircle, onClickFilled, onClickRedeem, busy }) {
@@ -239,7 +238,7 @@ function MiniCard({ card, onDelete, isCurrent }) {
             <div>Issued {fmtDate(card.issued_at)}</div>
             {card.status === "redeemed" && <div>Redeemed {fmtDate(card.redeemed_at)}{card.redeemed_invoice_no ? ` · ${card.redeemed_invoice_no}` : ""}</div>}
           </div>
-          {isAdmin && onDelete && (
+          {onDelete && (
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(card); }}
               title="Delete this card"
@@ -449,8 +448,10 @@ export default function Loyalty() {
   };
 
   /* Stamp */
-  const confirmStamp = async () => {
+  // withBill=false stamps without attaching an invoice
+  const confirmStamp = async (withBill = true) => {
     if (!data?.current) return;
+    const invoiceNo = withBill ? stampInvNo.trim() : "";
     setBusy(true);
     try {
       const r = await fetch(`${API}/add_loyalty_stamp.php`, {
@@ -458,7 +459,7 @@ export default function Loyalty() {
         body: JSON.stringify({
           cardId: data.current.id,
           stampedBy: user?.id || 0,
-          invoiceNo: stampInvNo.trim() || "",
+          invoiceNo,
         }),
       });
       const j = await r.json();
@@ -785,7 +786,12 @@ export default function Loyalty() {
         footer={
           <div style={{ display: "flex", gap: 8 }}>
             <button className="g-btn ghost" onClick={() => { setStampNo(0); setStampInvNo(""); }} disabled={busy}>Cancel</button>
-            <button className="g-btn primary" onClick={confirmStamp} disabled={busy || !stampInvNo}>
+            <button className={`g-btn ${(data?.eligible_invoices || []).length ? "ghost" : "primary"}`}
+              onClick={() => confirmStamp(false)} disabled={busy}
+              title="Add the stamp without attaching a bill">
+              <FiCheck size={13} /> Stamp without bill
+            </button>
+            <button className="g-btn primary" onClick={() => confirmStamp(true)} disabled={busy || !stampInvNo}>
               <FiCheck size={13} /> Stamp on #{stampInvNo || "—"}
             </button>
           </div>
@@ -793,7 +799,7 @@ export default function Loyalty() {
         <div style={{ padding: "10px 4px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "10px 12px", background: "#fefce8", borderRadius: 8, border: "1px solid #fde68a" }}>
             <FiAlertCircle size={18} style={{ color: "#92400e" }} />
-            <span style={{ fontSize: 12, color: "#78350f" }}>Pick today's bill (₹200+) to attach the stamp. Already-stamped bills and the last redemption are hidden.</span>
+            <span style={{ fontSize: 12, color: "#78350f" }}>Pick today's bill (₹200+) to attach the stamp, or use <b>Stamp without bill</b>. Already-stamped bills and the last redemption are hidden.</span>
           </div>
           <label style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase" }}>Eligible invoices today</label>
           <div style={{ marginTop: 8, maxHeight: 320, overflowY: "auto", border: "1.5px solid #e5e7eb", borderRadius: 8 }}>

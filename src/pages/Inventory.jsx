@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent, FiTag, FiX, FiAlertTriangle } from "react-icons/fi";
+import { FiPackage, FiRefreshCw, FiSearch, FiChevronRight, FiPercent, FiTag, FiX, FiAlertTriangle, FiEdit3 } from "react-icons/fi";
 import { C, GLOBAL_CSS, API, Modal, asNum, todayISO, fmtINR, fmtDate, Pagination } from "../ui.jsx";
 
 const PAGE_SIZE = 20;   // items per page on this list
 import CategorySelect from "../comps/CategorySelect.jsx";
 import usePageMeta from "../usePageMeta.js";
+import QuickStockEdit from "../comps/QuickStockEdit.jsx";
 import toast from "../toast.js";
 
 const today = todayISO();
@@ -23,6 +24,7 @@ export default function Inventory() {
   const [filterTax,  setFilterTax]  = useState("");       // "" | "0" | "5" | "12" | "18" | "28"
   const [filterCat,  setFilterCat]  = useState("");       // "" | category name | "__none__"
   const [page, setPage] = useState(1);
+  const [quickEdit, setQuickEdit] = useState(false); // scan-and-update grid for MRP / sale / stock
 
   // Bulk GST update
   const [showBulkGst, setShowBulkGst] = useState(false);
@@ -206,11 +208,23 @@ export default function Inventory() {
             {stats.expiring > 0 && <span style={{ color: C.yellow, fontWeight: 700, marginLeft: 8, cursor: "pointer" }} onClick={() => setFilterExp("expiring")}>{stats.expiring} expiring</span>}
           </p>
         </div>
-        <button className="g-btn ghost" onClick={load} disabled={loading}>
-          <FiRefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} /> Refresh
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {!quickEdit && (
+            <button className="g-btn primary" onClick={() => setQuickEdit(true)} title="Scan and update MRP, sale price and stock batch by batch">
+              <FiEdit3 size={14} /> Quick Edit
+            </button>
+          )}
+          <button className="g-btn ghost" onClick={load} disabled={loading}>
+            <FiRefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} /> Refresh
+          </button>
+        </div>
       </div>
 
+      {quickEdit ? (
+        loading && !inventory.length
+          ? <div className="g-card" style={{ padding: 32, textAlign: "center", color: C.textSub }}>Loading…</div>
+          : <QuickStockEdit inventory={inventory} onSaved={load} onClose={() => setQuickEdit(false)} />
+      ) : (<>
       {/* Filters */}
       <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", alignItems: "center", marginBottom: 18 }}>
         <div style={{ position: "relative", flex: 2, minWidth: 220 }}>
@@ -335,6 +349,7 @@ export default function Inventory() {
         </div>
         <Pagination total={filtered.length} page={page} onPage={setPage} pageSize={PAGE_SIZE} />
       </div>
+      </>)}
 
       {/* Bulk GST Modal */}
       <Modal show={showBulkGst} title="Bulk Update GST %" onClose={() => setShowBulkGst(false)} width={440}

@@ -532,16 +532,31 @@ export default function AddSales() {
     });
   };
 
+  /* Flash a row whose qty was bumped by a repeat scan, so the biller sees which
+     line changed. `n` alternates between two identical animations so a second
+     scan of the same item restarts the flash instead of being ignored. */
+  const [flash, setFlash] = useState(null); // { idx, n }
+  const flashTimer = useRef(null);
+  const flashRow = (idx) => {
+    setFlash((p) => ({ idx, n: (p?.n || 0) + 1 }));
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 1200);
+  };
+
   /* ── Pick a batch ── */
   const pickBatch = (ri, inv) => {
     setActiveSug(null);
     setSearchText((p) => ({ ...p, [ri]: "" }));
     const invId  = asNum(inv.id);
     const itemId = asNum(inv.item_id);
+    // Match by invId (real batch) or by itemId when invId is 0 (master-only synthetic row)
+    const findExisting = (list) => list.findIndex((r, i) => i !== ri && String(r.itemName || "").trim() &&
+      ((invId > 0 && r.invId === invId) || (invId === 0 && itemId > 0 && r.invId === 0 && r.itemId === itemId)));
+    const mergeIdx = findExisting(rows);
+    const merging = mergeIdx >= 0;
+    if (merging) flashRow(mergeIdx);
     setRows((prev) => {
-      // Match by invId (real batch) or by itemId when invId is 0 (master-only synthetic row)
-      const existingIdx = prev.findIndex((r, i) => i !== ri && String(r.itemName || "").trim() &&
-        ((invId > 0 && r.invId === invId) || (invId === 0 && itemId > 0 && r.invId === 0 && r.itemId === itemId)));
+      const existingIdx = findExisting(prev);
       if (existingIdx >= 0) {
         // Increment qty of existing row instead of filling a new one
         const n = [...prev];
@@ -603,6 +618,12 @@ export default function AddSales() {
       if (ri === n.length - 1) n.push(blankRow());
       return n;
     });
+    // Already on the bill: its qty went up and this row was cleared, so stay in
+    // this row's item box, ready for the next scan.
+    if (merging) {
+      setTimeout(() => searchRefs.current[ri]?.focus(), 0);
+      return;
+    }
     // Move focus to qty
     // select(), not just focus(): the box already holds "1", and without this the
     // cashier has to clear it before typing the real quantity.
@@ -881,6 +902,12 @@ export default function AddSales() {
   return (
     <div id="g-root" style={{ padding: "18px 24px", background: C.bg, minHeight: "100vh" }}>
       <style>{GLOBAL_CSS}</style>
+      <style>{`
+        @keyframes rowFlashA { 0%, 35% { background: #fde68a; } 100% { background: transparent; } }
+        @keyframes rowFlashB { 0%, 35% { background: #fde68a; } 100% { background: transparent; } }
+        .row-flash-a > td { animation: rowFlashA 1.2s ease-out; }
+        .row-flash-b > td { animation: rowFlashB 1.2s ease-out; }
+      `}</style>
 
       {/* Toast */}
       {toast && (
@@ -1112,10 +1139,15 @@ export default function AddSales() {
                 const isExpired = r.expDate && r.expDate < today;
 
                 // Stock for this row. Packets have no inventory row of their own
-                // (invId 0), so match them on the item instead.
+                // (invId 0), so match them on the item instead. Rows loaded for an
+                // edit carry neither, so they are matched back to their own batch by
+                // code + batch number (no stock shown if that batch can't be found).
+                const editHit  = !r.invId && !r.itemId && filled && r.code ? findCostRec(r.code, r.batchNo) : null;
                 const invRec   = r.invId
                   ? inventory.find((inv) => inv.id === r.invId)
-                  : inventory.find((inv) => Number(inv.is_pack) === 1 && Number(inv.item_id) === Number(r.itemId));
+                  : editHit
+                    ? (editHit.exact ? editHit.rec : null)
+                    : inventory.find((inv) => Number(inv.is_pack) === 1 && Number(inv.item_id) === Number(r.itemId));
                 const stockQty = invRec ? asNum(invRec.current_qty) : null;
                 const isZeroStock = stockQty !== null && stockQty <= 0;
                 const isPackRow = Number(invRec?.is_pack) === 1;
@@ -1133,7 +1165,8 @@ export default function AddSales() {
                 const dPct = filled ? discountPct(r.mrp, r.salePrice) : 0;
 
                 return (
-                  <tr key={idx} style={{ background: isZeroStock && filled ? "#fff5f5" : undefined }}>
+                  <tr key={idx} style={{ background: isZeroStock && filled ? "#fff5f5" : undefined }}
+                    className={flash?.idx === idx ? (flash.n % 2 ? "row-flash-a" : "row-flash-b") : undefined}>
                     <td style={{ paddingLeft: 8 }}>
                       <div style={{ width: 20, height: 20, borderRadius: "50%", background: filled ? C.greenLight : "#f3f4f6", color: filled ? C.green : C.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{idx + 1}</div>
                     </td>

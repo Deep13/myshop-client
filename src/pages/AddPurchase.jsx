@@ -29,6 +29,17 @@ function parseDiscount(val, price) {
   return parseFloat(s) || 0;
 }
 
+/* Buy prices and line amounts keep 4 decimals: a rate worked back from the
+   bill's line total (₹100 ÷ 3) must still multiply back to that total. */
+const round4 = (n) => Number(asNum(n).toFixed(4));
+const rowAmt = (row) => String(round4(calcRowAmt(row)));
+// For display: at least 2 decimals, up to 4 when the figure has them.
+const fmtDec = (n) => {
+  const s = String(round4(n));
+  const dec = (s.split(".")[1] || "").length;
+  return round4(n).toFixed(Math.max(2, dec));
+};
+
 function calcRowAmt(row) {
   const price = asNum(row.purchasePrice);
   const disc = parseDiscount(row.discount, price);
@@ -182,10 +193,28 @@ export default function AddPurchase() {
   }, [hasUnsavedRows]);
   const [itemSearch, setItemSearch] = useState({}); // per-row search text
 
+  /* Last few purchases of the item on the row being worked on */
+  const [histItem, setHistItem] = useState(null); // { id, name }
+  const [histRows, setHistRows] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+  const histItemId = histItem?.id || 0;
+  useEffect(() => {
+    if (!histItemId) { setHistRows([]); return; }
+    let live = true;
+    setHistLoading(true);
+    fetch(`${API}/get_item_purchase_history.php?item_id=${histItemId}&limit=5&exclude_id=${purchaseId || 0}`)
+      .then((r) => r.json())
+      .then((j) => { if (live) setHistRows(j.status === "success" ? j.data || [] : []); })
+      .catch(() => { if (live) setHistRows([]); })
+      .finally(() => { if (live) setHistLoading(false); });
+    return () => { live = false; };
+  }, [histItemId, purchaseId]);
+
   /* payment */
   const [multiPay, setMultiPay] = useState(false);
   const [payMode, setPayMode] = useState("Cash");
-  const [received, setReceived] = useState("0");
+  // Editing: the box is for a new payment only, so it starts empty
+  const [received, setReceived] = useState(isEdit ? "" : "0");
   const [recTouched, setRecTouched] = useState(false);
   const [payments, setPayments] = useState([{ type: "Cash", amount: "" }]);
   const [payHist, setPayHist] = useState([]); // historical payments (read-only) when editing
@@ -296,7 +325,7 @@ export default function AddPurchase() {
               mrp: r.mrp,
               qty: r.qty,
               freeQty: r.free_qty || "",
-              purchasePrice: r.purchase_price,
+              purchasePrice: String(round4(r.purchase_price)), // "33.3300" → "33.33"
               salePrice: r.sale_price,
               discount: r.discount,
               tax: r.tax,
@@ -307,7 +336,6 @@ export default function AddPurchase() {
           }),
         );
         setRoundOff(Boolean(h.round_off_enabled));
-        if (j.payments?.length) setPayments(j.payments.map((p) => ({ type: p.mode, amount: String(p.amount) })));
       } catch (e) {
         toast(e.message || "Failed to load", "error");
       }
@@ -348,7 +376,9 @@ export default function AddPurchase() {
       .map((s) => s.it);
   };
 
-  const updRow = (i, patch) =>
+  /* amountOverride: the exact amount typed into the Amount box, so the line
+     keeps it rather than re-deriving it from the (rounded) buy price. */
+  const updRow = (i, patch, amountOverride) =>
     setRows((prev) => {
       const n = [...prev];
       const u = { ...n[i], ...patch };
@@ -363,14 +393,14 @@ export default function AddPurchase() {
           u.mrp       = calc.mrp;   // per-kg × pack size
         }
       }
-      u.amount = calcRowAmt(u).toFixed(2);
+      u.amount = amountOverride !== undefined ? String(round4(amountOverride)) : rowAmt(u);
       n[i] = u;
       return n;
     });
 
   /* Recalculate amounts when billType changes */
   useEffect(() => {
-    setRows((prev) => prev.map((r) => ({ ...r, amount: calcRowAmt(r).toFixed(2) })));
+    setRows((prev) => prev.map((r) => ({ ...r, amount: rowAmt(r) })));
   }, [isGST]);
 
   // The master holds the GST-inclusive landed cost (rice: the raw bill rate).
@@ -379,7 +409,7 @@ export default function AddPurchase() {
     const cost = asNum(item.purchasePrice), tax = asNum(item.tax);
     if (!cost) return item.purchasePrice ?? "";
     if (/^Rice\b/i.test(item.category || "") || (isGST && gstMode === "inclusive") || !tax) return cost;
-    return fmt2(cost / (1 + tax / 100));
+    return String(round4(cost / (1 + tax / 100)));
   };
 
   /* What a row will actually earn at the sale price entered.
@@ -407,6 +437,7 @@ export default function AddPurchase() {
       return;
     }
     setActiveSug(null);
+    setHistItem({ id: item.id, name: item.name });
     setItemSearch((p) => ({ ...p, [ri]: "" }));
     setRows((prev) => {
       // Always fill the current row — allow same item with different batch
@@ -427,7 +458,7 @@ export default function AddPurchase() {
       };
       const n = [...prev];
       n[ri] = { ...n[ri], ...fill };
-      n[ri].amount = calcRowAmt(n[ri]).toFixed(2);
+      n[ri].amount = rowAmt(n[ri]);
       if (ri === n.length - 1) n.push(blankRow());
       return n;
     });
@@ -494,10 +525,12 @@ export default function AddPurchase() {
   const roundDiff = useMemo(() => roundedTotal - grandTotal, [roundedTotal, grandTotal]);
   const sumPay = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
   const totalPaid = useMemo(() => (multiPay ? sumPay : asNum(received)), [multiPay, sumPay, received]);
-  const balance = useMemo(() => roundedTotal - totalPaid, [roundedTotal, totalPaid]);
+  // Editing: payments already on the bill (listed under Payment History) stay as they are
+  const alreadyPaid = useMemo(() => payHist.reduce((s, p) => s + asNum(p.amount), 0), [payHist]);
+  const balance = useMemo(() => roundedTotal - alreadyPaid - totalPaid, [roundedTotal, alreadyPaid, totalPaid]);
   useEffect(() => {
-    if (!multiPay && !recTouched) setReceived(roundedTotal.toFixed(2));
-  }, [roundedTotal, multiPay, recTouched]);
+    if (!isEdit && !multiPay && !recTouched) setReceived(roundedTotal.toFixed(2));
+  }, [roundedTotal, multiPay, recTouched, isEdit]);
 
   /* ── Save distributor ── */
   const saveDist = async () => {
@@ -835,7 +868,7 @@ export default function AddPurchase() {
         // Apply discount to purchase price if discount is mapped
         if (discVal > 0 && asNum(r.purchasePrice) > 0) {
           const price = asNum(r.purchasePrice);
-          r.purchasePrice = fmt2(price - (price * discVal) / 100);
+          r.purchasePrice = String(round4(price - (price * discVal) / 100));
         }
 
         // The distributor's own description is kept as a hint beside the row, but
@@ -860,7 +893,7 @@ export default function AddPurchase() {
             r.tax = r.tax || String(hit.tax || "");
           }
         }
-        r.amount = calcRowAmt(r).toFixed(2);
+        r.amount = rowAmt(r);
         return r;
       })
       // Every line on the bill is kept, named or not — the whole point is to
@@ -943,6 +976,8 @@ export default function AddPurchase() {
       rows: cleanRows,
       totals,
       payments: payList,
+      // Editing: payList holds only new payments — the server keeps the existing ones
+      appendPayments: isEdit,
     };
     return base;
   };
@@ -1330,8 +1365,16 @@ export default function AddPurchase() {
                 const expAlert = expiryAlert(r.expDate);
                 // A bulk item is bought in kg, and its rates are per kg.
                 const isBulkRow = filled && Number((itemMaster.find((m) => m.code === r.code) || {}).isBulk) === 1;
+                const showRowHistory = () => {
+                  if (r.itemId && Number(r.itemId) !== Number(histItemId)) setHistItem({ id: r.itemId, name: r.itemName });
+                };
                 return (
-                  <tr key={idx} style={expAlert ? { background: expAlert.level === "expired" ? C.redLight : C.yellowLight } : undefined}>
+                  <tr key={idx}
+                    style={expAlert
+                      ? { background: expAlert.level === "expired" ? C.redLight : C.yellowLight }
+                      : r.itemId && Number(r.itemId) === Number(histItemId) ? { background: C.brandLighter } : undefined}
+                    // Clicking or tabbing into a row shows that item's purchase history below
+                    onClickCapture={showRowHistory} onFocusCapture={showRowHistory}>
                     <td style={{ paddingLeft: 8 }}>
                       <div
                         style={{
@@ -1632,13 +1675,15 @@ export default function AddPurchase() {
                         return (
                           <>
                             <input className="g-td-inp num"
-                              value={amtEdit[idx] !== undefined ? amtEdit[idx] : fmt2(r.amount)}
-                              onFocus={() => setAmtEdit((p) => ({ ...p, [idx]: fmt2(gross) }))}
+                              value={amtEdit[idx] !== undefined ? amtEdit[idx] : fmtDec(r.amount)}
+                              onFocus={() => setAmtEdit((p) => ({ ...p, [idx]: fmtDec(gross) }))}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setAmtEdit((p) => ({ ...p, [idx]: val }));
                                 const rate = rateFromAmount(r, val, isGST, gstMode);
-                                if (rate !== null) updRow(idx, { purchasePrice: fmt2(rate) });
+                                // Keep the typed total as-is; the rate is only rounded to 4 places.
+                                if (rate !== null) updRow(idx, { purchasePrice: String(round4(rate)) },
+                                  stripGst ? asNum(val) / (1 + tax / 100) : asNum(val));
                               }}
                               onBlur={() => setAmtEdit((p) => { const n = { ...p }; delete n[idx]; return n; })}
                               inputMode="decimal" placeholder="0"
@@ -1653,9 +1698,9 @@ export default function AddPurchase() {
                                 is both what to tick off against the bill and what the box
                                 expects you to type. */}
                             {stripGst && (
-                              <div title={`Taxable ₹${fmt2(r.amount)} + ${fmt2(tax)}% GST`}
+                              <div title={`Taxable ₹${fmtDec(r.amount)} + ${fmt2(tax)}% GST`}
                                 style={{ fontSize: 9.5, color: C.textSub, textAlign: "right", paddingRight: 4, marginTop: 1 }}>
-                                = ₹{fmt2(gross)} incl. GST
+                                = ₹{fmtDec(gross)} incl. GST
                               </div>
                             )}
                           </>
@@ -1705,7 +1750,8 @@ export default function AddPurchase() {
 
       {/* ── STEP 3: PAYMENT + SUMMARY ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 18, alignItems: "start" }}>
-        {/* Payment */}
+        {/* Payment, with the selected item's purchase history under it */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
         <div className="g-card" style={{ marginBottom: 0 }}>
           <SectionHead
             num="3"
@@ -1754,7 +1800,7 @@ export default function AddPurchase() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Amount Paid (₹)">
+                <Field label={isEdit ? `New Payment (₹)${alreadyPaid > 0 ? ` · ₹${fmt2(alreadyPaid)} already paid` : ""}` : "Amount Paid (₹)"}>
                   <input
                     className="g-inp"
                     value={received}
@@ -1835,6 +1881,52 @@ export default function AddPurchase() {
               </div>
             )}
           </div>
+        </div>
+
+        {histItem && (
+          <div className="g-card" style={{ marginBottom: 0 }}>
+            <div className="g-card-head">
+              <div className="g-card-title">
+                <FiTruck size={14} style={{ color: C.brand }} /> Last Purchases — {histItem.name}
+              </div>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="g-table">
+                <thead>
+                  <tr>
+                    <th>Bill No</th>
+                    <th style={{ textAlign: "right" }}>Purchase Price</th>
+                    <th style={{ textAlign: "right" }}>MRP</th>
+                    <th>Date of Purchase</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {histLoading || histRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", fontSize: 12, color: C.textLight, padding: 14 }}>
+                        {histLoading ? "Loading…" : "No earlier purchases of this item."}
+                      </td>
+                    </tr>
+                  ) : histRows.map((h, i) => (
+                    <tr key={i}>
+                      <td>
+                        {/* New tab, so the bill being typed in isn't lost */}
+                        <Link to={`/addpurchase?purchaseId=${h.bill_id}`} target="_blank" rel="noopener"
+                          title={h.distributor_name || ""}
+                          style={{ color: C.brand, fontWeight: 600, textDecoration: "none" }}>
+                          {h.bill_no || `#${h.bill_id}`}
+                        </Link>
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmtDec(h.purchase_price)}</td>
+                      <td style={{ textAlign: "right" }}>₹{fmt2(h.mrp)}</td>
+                      <td>{fmtDate(h.bill_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         </div>
 
         {/* Payment history (read-only) — only when editing an existing bill with payments */}

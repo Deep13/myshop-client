@@ -30,7 +30,8 @@ export default function MobileInventory() {
   // Adjust qty modal
   const [incBatch, setIncBatch] = useState(null); // batch to adjust
   const [incQty, setIncQty] = useState("1");
-  const [adjMode, setAdjMode] = useState("inc"); // "inc" or "dec"
+  const [adjMode, setAdjMode] = useState("inc"); // "inc" | "dec" | "edit"
+  const [editVals, setEditVals] = useState({ mrp: "", salePrice: "", currentQty: "" }); // quick edit of one batch
 
   // New batch form
   const [showNewForm, setShowNewForm] = useState(false);
@@ -75,17 +76,58 @@ export default function MobileInventory() {
   }, [items]);
 
   // Fetch existing batches for selected item
-  const loadBatches = async (itemId) => {
+  const loadBatches = async (itemId, autoEdit = false) => {
     setLoadingBatches(true);
     try {
       const r = await fetch(`${API}/get_inventory.php?item_id=${itemId}&include_zero=1`);
       const j = await r.json();
       // Packet rows are derived from a bulk item and have no inventory row to
       // adjust — correcting stock has to happen on the bulk item itself.
-      if (j.status === "success") setExistingBatches((j.data || []).filter((b) => Number(b.is_pack) !== 1));
-      else setExistingBatches([]);
+      const list = j.status === "success" ? (j.data || []).filter((b) => Number(b.is_pack) !== 1) : [];
+      setExistingBatches(list);
+      // Scan-and-update: with a single batch there's nothing to choose, so open its edit boxes.
+      if (autoEdit && list.length === 1) openEdit(list[0]);
     } catch { setExistingBatches([]); }
     finally { setLoadingBatches(false); }
+  };
+
+  const openEdit = (b) => {
+    setIncBatch(b); setAdjMode("edit"); setShowNewForm(false);
+    setEditVals({ mrp: String(Number(asNum(b.mrp))), salePrice: String(Number(asNum(b.sale_price))), currentQty: String(Number(asNum(b.current_qty))) });
+  };
+
+  // Save MRP / sale price / stock of one batch (same endpoint as the desktop Quick Edit grid)
+  const onSaveEdit = async () => {
+    if (!incBatch) return;
+    const changes = { inventoryId: incBatch.id };
+    if (asNum(editVals.mrp) !== asNum(incBatch.mrp)) changes.mrp = editVals.mrp;
+    if (asNum(editVals.salePrice) !== asNum(incBatch.sale_price)) changes.salePrice = editVals.salePrice;
+    if (asNum(editVals.currentQty) !== asNum(incBatch.current_qty)) changes.currentQty = editVals.currentQty;
+    if (Object.keys(changes).length === 1) { toast.warn("Nothing changed"); return; }
+    for (const k of ["mrp", "salePrice", "currentQty"]) {
+      const v = editVals[k];
+      if (String(v).trim() === "" || isNaN(Number(v)) || Number(v) < 0) return toast.warn("Enter numbers, 0 or more");
+    }
+    setSaving(true);
+    try {
+      const r = await fetch(`${API}/bulk_update_inventory.php`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes: [changes], updatedBy: user?.id || 0 }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.status !== "success") throw new Error(j.message || "Failed");
+      setSavedItems((prev) => [{
+        name: incBatch.item_name, code: incBatch.item_code,
+        batchNo: incBatch.batch_no || "", qty: asNum(editVals.currentQty),
+        type: "edit",
+        time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+      }, ...prev].slice(0, 20));
+      toast.success("Updated");
+      setIncBatch(null); setAdjMode("inc");
+      loadBatches(asNum(incBatch.item_id));
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    } catch (e) { toast.error(e.message || "Failed"); }
+    finally { setSaving(false); }
   };
 
   const loadStockInfo = async (itemId) => {
@@ -110,7 +152,7 @@ export default function MobileInventory() {
     setSalePrice(String(item.salePrice || item.sale_price || ""));
     setTaxPct(String(item.tax || item.tax_pct || ""));
     setBatchNo(""); setExpDate(""); setQty("1");
-    loadBatches(item.id);
+    loadBatches(item.id, true);
   }, []);
 
   // Barcode scan
@@ -503,6 +545,15 @@ export default function MobileInventory() {
                             }}>
                               {b.current_qty}
                             </div>
+                            <button onClick={() => { if (isSelected && adjMode === "edit") setIncBatch(null); else openEdit(b); }}
+                              title="Edit MRP, sale price and stock"
+                              style={{
+                                width: 32, height: 32, border: `1.5px solid ${isSelected && adjMode === "edit" ? C.brand : "#d1d5db"}`,
+                                borderRadius: 8, background: isSelected && adjMode === "edit" ? C.brand : "#fff",
+                                color: isSelected && adjMode === "edit" ? "#fff" : C.brand,
+                                fontSize: 15, fontWeight: 700, cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                              }}>✎</button>
                             <button onClick={() => { setIncBatch(isSelected && adjMode === "dec" ? null : b); setIncQty("1"); setAdjMode("dec"); setShowNewForm(false); }}
                               style={{
                                 width: 32, height: 32, border: `1.5px solid ${isSelected && adjMode === "dec" ? C.red : "#d1d5db"}`,
@@ -522,8 +573,43 @@ export default function MobileInventory() {
                           </div>
                         </div>
 
+                        {/* Inline quick edit: MRP / sale price / stock */}
+                        {isSelected && adjMode === "edit" && (
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                              {[
+                                { k: "mrp", label: "MRP", was: b.mrp },
+                                { k: "salePrice", label: "Sale ₹", was: b.sale_price },
+                                { k: "currentQty", label: "Stock", was: b.current_qty },
+                              ].map(({ k, label, was }) => {
+                                const changed = asNum(editVals[k]) !== asNum(was) || String(editVals[k]).trim() === "";
+                                return (
+                                  <label key={k} style={{ display: "block" }}>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: C.sub }}>{label}</span>
+                                    <input value={editVals[k]} inputMode="decimal"
+                                      onChange={(e) => setEditVals((p) => ({ ...p, [k]: e.target.value }))}
+                                      onFocus={(e) => e.target.select()}
+                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSaveEdit(); } }}
+                                      style={{ width: "100%", height: 40, boxSizing: "border-box", border: `1.5px solid ${changed ? "#f59e0b" : "#d1d5db"}`,
+                                        background: changed ? "#fef3c7" : "#fff", borderRadius: 8, textAlign: "center",
+                                        fontSize: 16, fontWeight: 800, color: C.text, outline: "none" }} />
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <button onClick={onSaveEdit} disabled={saving}
+                              style={{
+                                width: "100%", padding: "10px", border: "none", borderRadius: 8,
+                                background: saving ? C.sub : C.brand, color: "#fff",
+                                fontSize: 15, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer",
+                              }}>
+                              {saving ? "Saving..." : "Save"}
+                            </button>
+                          </div>
+                        )}
+
                         {/* Inline adjust qty */}
-                        {isSelected && (
+                        {isSelected && adjMode !== "edit" && (
                           <div style={{ marginTop: 10 }}>
                             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>{adjMode === "inc" ? "Add" : "Remove"}:</span>
@@ -630,12 +716,12 @@ export default function MobileInventory() {
                   </div>
                 </div>
                 <div style={{
-                  background: s.type === "dec" ? "#fee2e2" : "#dcfce7",
-                  color: s.type === "dec" ? C.red : C.green,
+                  background: s.type === "dec" ? "#fee2e2" : s.type === "edit" ? "#dbeafe" : "#dcfce7",
+                  color: s.type === "dec" ? C.red : s.type === "edit" ? C.brand : C.green,
                   fontWeight: 800, fontSize: 14,
                   padding: "4px 12px", borderRadius: 6,
                 }}>
-                  {s.type === "dec" ? "−" : "+"}{s.qty}
+                  {s.type === "edit" ? `Stock ${s.qty}` : `${s.type === "dec" ? "−" : "+"}${s.qty}`}
                 </div>
               </div>
             ))}
