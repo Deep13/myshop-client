@@ -483,6 +483,15 @@ export const expiryAlert = (expDate) => {
    till: drop the empty ones and keep only what can actually be sold. Items with
    no batch numbers at all are left alone. If every batch of an item is empty the
    rows are kept, so a scanned item never disappears and can still be billed. */
+/* An item that became a packet (cut from a bulk item) can still have an old
+   stock row of its own from before — usually empty, with the old prices. The
+   till must sell the packet row, so drop those empty leftovers: a scan then
+   finds the one packet row and fills the line, instead of offering both. */
+export const hideReplacedByPacks = (list) => {
+  const packItems = new Set(list.filter((b) => Number(b.is_pack) === 1).map((b) => Number(b.item_id)));
+  return list.filter((b) => Number(b.is_pack) === 1 || !packItems.has(Number(b.item_id)) || asNum(b.current_qty) > 0);
+};
+
 export const hideEmptyBatches = (list) => {
   const batched = new Set();
   const hasStock = new Set();

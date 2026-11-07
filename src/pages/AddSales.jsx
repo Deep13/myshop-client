@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiCheck, FiPlus, FiShoppingCart, FiX, FiTrash2, FiSearch, FiTag, FiPrinter, FiSettings, FiRefreshCw, FiAlertCircle, FiAward } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode, normalizeBarcode } from "../ui.jsx";
+import { C, GLOBAL_CSS, API, Field, Modal, asNum, todayISO, fmt2, fmtDate, smartRound, withMasterPricing, compareBatchesForSale, hideEmptyBatches, hideReplacedByPacks, offerTotal, offerLabel, sameBarcode, normalizeBarcode } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import { printReceipt, getShopSettings, saveShopSettings } from "../thermalPrint.js";
 import { WALK_IN } from "../shortcuts.js";
@@ -280,7 +280,7 @@ export default function AddSales() {
       const seenItemIds = new Set(allInv.map((b) => Number(b.item_id)).filter(Boolean));
       // Bulk items are stock holders in kg, never sold at the till — their packets are.
       // Used-up batches of a batch-tracked item are dropped as well.
-      const invList = hideEmptyBatches(allInv.filter((b) => Number(b.is_bulk) !== 1));
+      const invList = hideEmptyBatches(hideReplacedByPacks(allInv.filter((b) => Number(b.is_bulk) !== 1)));
       // Synthetic "no-stock" rows for items in master that have no inventory batch
       const synthetic = master
         .filter((it) => !seenItemIds.has(Number(it.id)) && Number(it.isBulk) !== 1)
@@ -645,6 +645,12 @@ export default function AddSales() {
     if (matches.length === 1) {
       // Auto-select single match
       pickBatch(idx, matches[0]);
+    } else if (matches.length > 1 &&
+               matches.every((m) => Number(m.item_id) === Number(matches[0].item_id) && !String(m.batch_no || "").trim())) {
+      // Several stock rows of one item, none with a batch number (bought twice
+      // without one) — nothing to choose between, so take the row the till
+      // would offer first.
+      pickBatch(idx, [...matches].sort(compareBatchesForSale)[0]);
     }
   };
 
@@ -1266,7 +1272,7 @@ export default function AddSales() {
                                 const isZero = qty <= 0;
                                 const isHl = si === highlightIdx;
                                 return (
-                                  <div key={inv.id}
+                                  <div key={`${inv.id}-${inv.item_id}-${Number(inv.is_pack) === 1 ? "p" : "b"}`}
                                     ref={(el) => { if (isHl && el) el.scrollIntoView({ block: "nearest" }); }}
                                     onMouseDown={() => pickBatch(idx, inv)}
                                     style={{

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
-import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches, offerTotal, offerLabel, sameBarcode } from "../ui.jsx";
+import { API, asNum, fmt2, fmtDate, todayISO, withMasterPricing, compareBatchesForSale, hideEmptyBatches, hideReplacedByPacks, offerTotal, offerLabel, sameBarcode } from "../ui.jsx";
 import { buildReceiptHTML } from "../thermalPrint.js";
 import toast from "../toast.js";
 import usePageMeta from "../usePageMeta.js";
@@ -45,7 +45,7 @@ export default function MobileSale() {
         const j = await r.json();
         // Bulk items hold stock in kg and are never sold at the till — their packets
         // are. Used-up batches of a batch-tracked item are dropped as well.
-        if (j.status === "success") setInventory(hideEmptyBatches((j.data || []).map(withMasterPricing).filter((b) => Number(b.is_bulk) !== 1)));
+        if (j.status === "success") setInventory(hideEmptyBatches(hideReplacedByPacks((j.data || []).map(withMasterPricing).filter((b) => Number(b.is_bulk) !== 1))));
       } catch {}
     })();
     (async () => {
@@ -335,7 +335,7 @@ export default function MobileSale() {
               boxShadow: "0 6px 20px rgba(0,0,0,0.12)", maxHeight: 260, overflow: "auto",
             }}>
               {suggestions.map((it) => (
-                <div key={it.id} onClick={() => addToCart(it)} style={{
+                <div key={`${it.id}-${it.item_id}-${Number(it.is_pack) === 1 ? "p" : "b"}`} onClick={() => addToCart(it)} style={{
                   padding: "12px 14px", borderBottom: "1px solid #f3f4f6", cursor: "pointer",
                 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{it.item_name}</div>
@@ -490,7 +490,7 @@ export default function MobileSale() {
               Cart ({itemCount} items)
             </div>
             {cart.map((c, idx) => (
-              <div key={c.invId} style={{
+              <div key={`${c.invId}-${c.itemId}`} style={{
                 background: "#fff", borderRadius: 10, border: "1.5px solid #e5e7eb",
                 padding: "10px 14px", marginBottom: 8,
                 display: "flex", alignItems: "center", gap: 10,
