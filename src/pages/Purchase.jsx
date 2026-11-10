@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiX, FiClock } from "react-icons/fi";
-import { C, GLOBAL_CSS, API, Field, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination } from "../ui.jsx";
+import { FiPlus, FiTrash2, FiDollarSign, FiRefreshCw, FiClock } from "react-icons/fi";
+import { C, GLOBAL_CSS, API, Modal, StatusBadge, SortTH, DATE_RANGES, applyDateRange, fmt2, fmtDate, todayISO, Pagination } from "../ui.jsx";
 import DateInput from "../comps/DateInput.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
+import PurchasePayments from "../comps/PurchasePayments.jsx";
 
-const PAY_MODES = ["Cash", "UPI", "Card", "Bank", "Cheque", "Other"];
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const PAGE_SIZE = 20;   // bills per page on this list
 
@@ -19,14 +19,8 @@ export default function Purchase() {
   const [sort, setSort] = useState({ key: "bill_date", direction: "desc" });
   const [page, setPage] = useState(1);
 
-  // Pay modal
-  const [showPay, setShowPay] = useState(false);
-  const [payRow, setPayRow] = useState(null);
-  const [payDate, setPayDate] = useState(todayISO());
-  const [payLines, setPayLines] = useState([{ type: "Cash", amount: "", referenceNo: "", note: "" }]);
-  const [paySaving, setPaySaving] = useState(false);
-  const [payHistory, setPayHistory] = useState([]);
-  const [payHistLoading, setPayHistLoading] = useState(false);
+  // Payments window
+  const [payBill, setPayBill] = useState(0);
 
   // Delete modal
   const [showDel, setShowDel] = useState(false);
@@ -89,46 +83,6 @@ export default function Purchase() {
 
   const onSort = (k) => setSort((p) => ({ key: k, direction: p.key === k && p.direction === "asc" ? "desc" : "asc" }));
 
-  const openPay = async (row) => {
-    const bal = Number(row.round_off_enabled ? row.rounded_grand_total : row.grand_total) - row.paid_amount;
-    setPayRow(row); setPayDate(todayISO());
-    setPayLines([{ type: "Cash", amount: bal.toFixed(2), referenceNo: "", note: "" }]);
-    setShowPay(true);
-    // Load payment history
-    setPayHistLoading(true);
-    try {
-      const r = await fetch(`${API}/get_purchase_payments.php?purchaseId=${row.id}`);
-      const j = await r.json().catch(() => ({}));
-      setPayHistory(j.data || []);
-    } catch { setPayHistory([]); }
-    finally { setPayHistLoading(false); }
-  };
-
-  const deletePayment = async (payId) => {
-    if (!payRow) return;
-    try {
-      const r = await fetch(`${API}/delete_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: payId, purchaseId: payRow.id }) });
-      const j = await r.json().catch(() => ({}));
-      if (j.status !== "success") throw new Error(j.message || "Failed");
-      openPay(payRow);
-      fetch_();
-    } catch (e) { toast.error(e.message); }
-  };
-
-  const savePay = async () => {
-    if (!payRow) return;
-    const lines = payLines.map((p) => ({ type: p.type, amount: Number(p.amount || 0), referenceNo: String(p.referenceNo || "").trim(), note: String(p.note || "").trim() })).filter((p) => p.amount > 0);
-    if (!lines.length) return toast.warn("Enter at least one amount");
-    try {
-      setPaySaving(true);
-      for (const p of lines) {
-        const res = await fetch(`${API}/add_purchase_payment.php`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ distributorId: payRow.distributor_id, purchaseId: payRow.id, payDate, mode: p.type, amount: p.amount, referenceNo: p.referenceNo, note: p.note, createdBy: user?.id || 1 }) });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok || j.status !== "success") throw new Error(j.message || "Failed");
-      }
-      toast.success("Payment saved"); setShowPay(false); fetch_();
-    } catch (e) { toast.error(e.message); } finally { setPaySaving(false); }
-  };
 
   const deletePurchase = async () => {
     if (!delRow) return;
@@ -220,16 +174,23 @@ export default function Purchase() {
                       </span>
                     </td>
                     <td style={{ fontWeight: 700 }}>₹{fmt2(total)}</td>
-                    <td>₹{fmt2(r.paid_amount)}</td>
+                    <td>
+                      {r.paid_amount > 0 ? (
+                        <span title="View payments" onClick={(e) => { e.stopPropagation(); setPayBill(r.id); }}
+                          style={{ color: C.brand, fontWeight: 600, textDecoration: "underline dotted", cursor: "pointer" }}>
+                          ₹{fmt2(r.paid_amount)}
+                        </span>
+                      ) : `₹${fmt2(r.paid_amount)}`}
+                    </td>
                     <td style={{ fontWeight: 700, color: bal > 0 ? C.orange : C.green }}>₹{fmt2(bal)}</td>
                     <td><StatusBadge status={r.payment_status} /></td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        {r.payment_status !== "Paid" && (
-                          <button className="g-btn success sm" title="Add Payment" onClick={(e) => { e.stopPropagation(); openPay(r); }}>
-                            <FiDollarSign size={12} />
-                          </button>
-                        )}
+                        <button className={`g-btn sm ${r.payment_status === "Paid" ? "ghost" : "success"}`}
+                          title={r.payment_status === "Paid" ? "View / edit payments" : "Add / view payments"}
+                          onClick={(e) => { e.stopPropagation(); setPayBill(r.id); }}>
+                          {r.payment_status === "Paid" ? <FiClock size={12} /> : <FiDollarSign size={12} />}
+                        </button>
                         <button className="g-btn danger sm" title="Delete" onClick={(e) => { e.stopPropagation(); setDelRow(r); setShowDel(true); }}>
                           <FiTrash2 size={12} />
                         </button>
@@ -244,64 +205,7 @@ export default function Purchase() {
         <Pagination total={sorted.length} page={page} onPage={setPage} pageSize={PAGE_SIZE} />
       </div>
 
-      {/* Pay Modal */}
-      <Modal show={showPay} title="Add Payment" onClose={() => setShowPay(false)} footer={
-        <><button className="g-btn ghost" onClick={() => setShowPay(false)}>Cancel</button><button className="g-btn success" onClick={savePay} disabled={paySaving}>{paySaving ? "Saving…" : "Save Payment"}</button></>
-      }>
-        {payRow && (
-          <div style={{ background: C.brandLight, border: `1.5px solid #93c5fd`, borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
-            <div><strong>Bill:</strong> {payRow.bill_no} · <strong>Distributor:</strong> {payRow.distributor_name}</div>
-            <div style={{ marginTop: 4 }}><strong>Total:</strong> ₹{fmt2(payRow.round_off_enabled ? payRow.rounded_grand_total : payRow.grand_total)} · <strong>Paid:</strong> ₹{fmt2(payRow.paid_amount)} · <strong>Balance:</strong> ₹{fmt2((payRow.round_off_enabled ? payRow.rounded_grand_total : payRow.grand_total) - payRow.paid_amount)}</div>
-          </div>
-        )}
-        {/* Existing payments */}
-        {payHistLoading ? <div style={{ padding: 12, textAlign: "center", color: C.textSub, fontSize: 13 }}>Loading history...</div> : payHistory.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, marginBottom: 6, textTransform: "uppercase" }}>Payment History</div>
-            <table className="g-table" style={{ fontSize: 13 }}>
-              <thead><tr><th>Date</th><th>Mode</th><th style={{ textAlign: "right" }}>Amount</th><th style={{ width: 36 }}></th></tr></thead>
-              <tbody>
-                {payHistory.map((p) => (
-                  <tr key={p.id}>
-                    <td style={{ color: C.textSub }}>{fmtDate(p.pay_date)}</td>
-                    <td style={{ fontWeight: 600 }}>{p.mode}</td>
-                    <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmt2(p.amount)}</td>
-                    <td><button className="g-btn danger sm" onClick={() => deletePayment(p.id)}><FiX size={11} /></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <Field label="Payment Date"><DateInput className="g-inp" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></Field>
-        <div style={{ marginTop: 14 }}>
-          {payLines.map((p, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "160px 1fr 36px", gap: 10, alignItems: "end", marginBottom: 12 }}>
-              <Field label={i === 0 ? "Mode" : ""}>
-                <select className="g-sel" value={p.type} onChange={(e) => setPayLines((prev) => { const n = [...prev]; n[i] = { ...n[i], type: e.target.value }; return n; })}>
-                  {PAY_MODES.map((m) => <option key={m}>{m}</option>)}
-                </select>
-              </Field>
-              <Field label={i === 0 ? "Amount (₹)" : ""}>
-                <input className="g-inp" value={p.amount} onChange={(e) => setPayLines((prev) => { const n = [...prev]; n[i] = { ...n[i], amount: e.target.value }; return n; })} inputMode="decimal" placeholder="0.00" />
-              </Field>
-              <div style={{ paddingBottom: 2 }}>
-                {payLines.length > 1 && (
-                  <button className="g-btn danger sm" onClick={() => setPayLines((p) => p.filter((_, j) => j !== i))}><FiX size={13} /></button>
-                )}
-              </div>
-              <div style={{ gridColumn: "1 / 3" }}>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <input className="g-inp sm" style={{ flex: 1 }} value={p.referenceNo} onChange={(e) => setPayLines((prev) => { const n = [...prev]; n[i] = { ...n[i], referenceNo: e.target.value }; return n; })} placeholder="Txn / Cheque No (optional)" />
-                  <input className="g-inp sm" style={{ flex: 1 }} value={p.note} onChange={(e) => setPayLines((prev) => { const n = [...prev]; n[i] = { ...n[i], note: e.target.value }; return n; })} placeholder="Note (optional)" />
-                </div>
-              </div>
-            </div>
-          ))}
-          <button className="g-btn ghost sm" onClick={() => setPayLines((p) => [...p, { type: "Cash", amount: "", referenceNo: "", note: "" }])}>+ Add Line</button>
-        </div>
-      </Modal>
+      <PurchasePayments show={payBill > 0} purchaseId={payBill} onClose={() => setPayBill(0)} onChanged={fetch_} />
 
       {/* Delete Modal */}
       <Modal show={showDel} title="Delete Purchase?" onClose={() => setShowDel(false)} footer={

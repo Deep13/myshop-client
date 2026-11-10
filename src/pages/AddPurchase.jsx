@@ -8,6 +8,7 @@ import HsnInput from "../comps/HsnInput.jsx";
 import CategorySelect from "../comps/CategorySelect.jsx";
 import usePageMeta from "../usePageMeta.js";
 import toast from "../toast.js";
+import PurchasePayments from "../comps/PurchasePayments.jsx";
 import { printLabel } from "../printLabel.js";
 
 /* ── helpers ── */
@@ -221,6 +222,7 @@ export default function AddPurchase() {
 
   /* round off */
   const [roundOff, setRoundOff] = useState(true);
+  const [schemeDisc, setSchemeDisc] = useState(""); // discount off the whole bill: "500" or "2%"
 
   /* upload / import */
   const [showMapping, setShowMapping] = useState(false);
@@ -336,6 +338,7 @@ export default function AddPurchase() {
           }),
         );
         setRoundOff(Boolean(h.round_off_enabled));
+        setSchemeDisc(h.scheme_discount || (asNum(h.scheme_discount_value) > 0 ? String(asNum(h.scheme_discount_value)) : ""));
       } catch (e) {
         toast(e.message || "Failed to load", "error");
       }
@@ -343,6 +346,8 @@ export default function AddPurchase() {
   }, [purchaseId, masterLoaded]);
 
   /* ── Load full payment history (date, mode, amount, ref, note) for the detail panel ── */
+  const [payHistVer, setPayHistVer] = useState(0); // bumped after payments are edited in the Payments window
+  const [showPayWin, setShowPayWin] = useState(false);
   useEffect(() => {
     if (!purchaseId) { setPayHist([]); return; }
     (async () => {
@@ -352,7 +357,7 @@ export default function AddPurchase() {
         if (j.status === "success") setPayHist(j.data || []);
       } catch { setPayHist([]); }
     })();
-  }, [purchaseId]);
+  }, [purchaseId, payHistVer]);
 
   /* ── Item search filtering ── */
   const getSug = (text) => {
@@ -520,7 +525,13 @@ export default function AddPurchase() {
     return rows.reduce((a, r) => a + (asNum(r.amount) * asNum(r.tax)) / 100, 0);
   }, [rows, isGST, gstMode]);
   // For inclusive: grand total = subTotal (tax is already inside), for exclusive: grand total = subTotal + tax on top
-  const grandTotal = useMemo(() => (gstMode === "inclusive" ? subTotal : subTotal + taxTotal), [subTotal, taxTotal, gstMode]);
+  const billTotal = useMemo(() => (gstMode === "inclusive" ? subTotal : subTotal + taxTotal), [subTotal, taxTotal, gstMode]);
+  // Scheme discount comes off the whole bill, after tax: "500" or "2%"
+  const schemeValue = useMemo(() => Math.min(Math.max(parseDiscount(schemeDisc, billTotal), 0), Math.max(billTotal, 0)), [schemeDisc, billTotal]);
+  const grandTotal = useMemo(() => billTotal - schemeValue, [billTotal, schemeValue]);
+  const filledRows = useMemo(() => rows.filter((r) => String(r.itemName || "").trim()), [rows]);
+  const totalQty = useMemo(() => filledRows.reduce((a, r) => a + asNum(r.qty), 0), [filledRows]);
+  const totalFree = useMemo(() => filledRows.reduce((a, r) => a + asNum(r.freeQty), 0), [filledRows]);
   const roundedTotal = useMemo(() => (roundOff ? smartRound(grandTotal) : grandTotal), [grandTotal, roundOff]);
   const roundDiff = useMemo(() => roundedTotal - grandTotal, [roundedTotal, grandTotal]);
   const sumPay = useMemo(() => payments.reduce((a, p) => a + asNum(p.amount), 0), [payments]);
@@ -960,6 +971,8 @@ export default function AddPurchase() {
       subTotal: asNum(subTotal),
       taxTotal: asNum(taxTotal),
       grandTotal: asNum(grandTotal),
+      schemeDiscount: schemeValue > 0 ? String(schemeDisc).trim() : "",
+      schemeDiscountValue: Number(schemeValue.toFixed(2)),
       roundOffEnabled: roundOff,
       roundOffDiff: asNum(roundDiff),
       roundedGrandTotal: asNum(roundedTotal),
@@ -1752,6 +1765,66 @@ export default function AddPurchase() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 18, alignItems: "start" }}>
         {/* Payment, with the selected item's purchase history under it */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
+        {isEdit ? (
+          /* Editing a bill: payments are managed in the Payments window, so the
+             card just shows what has been paid and opens that window. */
+          <div className="g-card" style={{ marginBottom: 0 }}>
+            <SectionHead
+              num="3"
+              icon={<FiCreditCard size={15} />}
+              title={`Payment History (${payHist.length})`}
+              actions={
+                <button className="g-btn success sm" onClick={() => setShowPayWin(true)}>
+                  <FiDollarSign size={13} /> Add / Edit Payments
+                </button>
+              }
+            />
+            <div style={{ display: "flex", gap: 28, padding: "12px 18px", borderBottom: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+              {[
+                { l: "Bill Total", v: roundedTotal, c: C.text },
+                { l: "Paid", v: alreadyPaid, c: C.green },
+                { l: "Balance", v: roundedTotal - alreadyPaid, c: roundedTotal - alreadyPaid > 0.005 ? C.orange : C.green },
+              ].map(({ l, v, c }) => (
+                <div key={l}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.04em" }}>{l}</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: c }}>₹{fmt2(v)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="g-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Mode</th>
+                    <th style={{ textAlign: "right" }}>Amount</th>
+                    <th>Reference</th>
+                    <th>Note</th>
+                    <th>By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payHist.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center", color: C.textLight, padding: 16 }}>
+                        No payments yet — use <strong>Add / Edit Payments</strong> to record one.
+                      </td>
+                    </tr>
+                  ) : payHist.map((p) => (
+                    <tr key={p.id} onClick={() => setShowPayWin(true)} style={{ cursor: "pointer" }} title="Click to edit payments">
+                      <td>{fmtDate(p.pay_date)}</td>
+                      <td style={{ fontWeight: 600 }}>{p.mode || "Cash"}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, color: C.green }}>₹{fmt2(p.amount)}</td>
+                      <td style={{ fontSize: 12, color: C.textSub }}>{p.reference_no || "—"}</td>
+                      <td style={{ fontSize: 12, color: C.textSub }}>{p.note || "—"}</td>
+                      <td style={{ fontSize: 12, color: C.textSub }}>{p.created_by_name || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
         <div className="g-card" style={{ marginBottom: 0 }}>
           <SectionHead
             num="3"
@@ -1882,6 +1955,7 @@ export default function AddPurchase() {
             )}
           </div>
         </div>
+        )}
 
         {histItem && (
           <div className="g-card" style={{ marginBottom: 0 }}>
@@ -1895,6 +1969,7 @@ export default function AddPurchase() {
                 <thead>
                   <tr>
                     <th>Bill No</th>
+                    <th style={{ textAlign: "right" }}>Qty</th>
                     <th style={{ textAlign: "right" }}>Purchase Price</th>
                     <th style={{ textAlign: "right" }}>MRP</th>
                     <th>Date of Purchase</th>
@@ -1903,7 +1978,7 @@ export default function AddPurchase() {
                 <tbody>
                   {histLoading || histRows.length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: "center", fontSize: 12, color: C.textLight, padding: 14 }}>
+                      <td colSpan={5} style={{ textAlign: "center", fontSize: 12, color: C.textLight, padding: 14 }}>
                         {histLoading ? "Loading…" : "No earlier purchases of this item."}
                       </td>
                     </tr>
@@ -1917,6 +1992,10 @@ export default function AddPurchase() {
                           {h.bill_no || `#${h.bill_id}`}
                         </Link>
                       </td>
+                      <td style={{ textAlign: "right" }}>
+                        {fmt2(h.qty).replace(/\.00$/, "")}
+                        {asNum(h.free_qty) > 0 && <span style={{ color: C.green, fontSize: 12 }}> +{fmt2(h.free_qty).replace(/\.00$/, "")} free</span>}
+                      </td>
                       <td style={{ textAlign: "right", fontWeight: 700 }}>₹{fmtDec(h.purchase_price)}</td>
                       <td style={{ textAlign: "right" }}>₹{fmt2(h.mrp)}</td>
                       <td>{fmtDate(h.bill_date)}</td>
@@ -1929,44 +2008,9 @@ export default function AddPurchase() {
         )}
         </div>
 
-        {/* Payment history (read-only) — only when editing an existing bill with payments */}
-        {isEdit && payHist.length > 0 && (
-          <div className="g-card" style={{ marginBottom: 16 }}>
-            <div className="g-card-head">
-              <div className="g-card-title">
-                <FiDollarSign size={14} style={{ color: C.green }} /> Payment History ({payHist.length})
-              </div>
-              <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600 }}>
-                Paid: ₹{fmt2(payHist.reduce((s, p) => s + Number(p.amount || 0), 0))}
-              </div>
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="g-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Mode</th>
-                    <th style={{ textAlign: "right" }}>Amount</th>
-                    <th>Reference</th>
-                    <th>Note</th>
-                    <th style={{ fontSize: 11, color: C.textLight }}>Recorded</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payHist.map((p) => (
-                    <tr key={p.id}>
-                      <td>{fmtDate(p.pay_date)}</td>
-                      <td><StatusBadge status={p.mode || "Cash"} /></td>
-                      <td style={{ textAlign: "right", fontWeight: 700, color: C.green }}>₹{fmt2(p.amount)}</td>
-                      <td style={{ fontSize: 12, color: C.textSub }}>{p.reference_no || "—"}</td>
-                      <td style={{ fontSize: 12, color: C.textSub }}>{p.note || "—"}</td>
-                      <td style={{ fontSize: 11, color: C.textLight }}>{p.created_at ? new Date(p.created_at).toLocaleString("en-IN") : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        {isEdit && (
+          <PurchasePayments show={showPayWin} purchaseId={Number(purchaseId)} onClose={() => setShowPayWin(false)}
+            onChanged={() => setPayHistVer((v) => v + 1)} />
         )}
 
         {/* Summary */}
@@ -1975,6 +2019,16 @@ export default function AddPurchase() {
             <div className="g-card-title">Summary</div>
           </div>
           <div className="g-card-body">
+            {/* How much is on the bill */}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, paddingBottom: 10, marginBottom: 10, borderBottom: "1px solid #f3f4f6" }}>
+              <span style={{ color: C.textSub }}>Items</span>
+              <span style={{ fontWeight: 700 }}>
+                {filledRows.length} line{filledRows.length === 1 ? "" : "s"}
+                <span style={{ color: C.textSub, fontWeight: 600 }}> · </span>
+                {fmt2(totalQty).replace(/\.00$/, "")} qty
+                {totalFree > 0 && <span style={{ color: C.green }}> + {fmt2(totalFree).replace(/\.00$/, "")} free</span>}
+              </span>
+            </div>
             {[
               ...(isGST && gstMode === "inclusive"
                 ? [
@@ -1988,6 +2042,17 @@ export default function AddPurchase() {
                 <span style={{ fontWeight: 600 }}>{v}</span>
               </div>
             ))}
+
+            {/* Scheme discount off the whole bill */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span style={{ fontSize: 14, color: C.textSub }}>Scheme Discount</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input className="g-inp" value={schemeDisc} onChange={(e) => setSchemeDisc(e.target.value)}
+                  inputMode="decimal" placeholder="0 or 2%" title="Discount off the whole bill: an amount (500) or a percent (2%)"
+                  style={{ width: 90, textAlign: "right", padding: "6px 8px" }} />
+                {schemeValue > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: C.red, minWidth: 70, textAlign: "right" }}>−₹{fmt2(schemeValue)}</span>}
+              </div>
+            </div>
 
             <div
               style={{
